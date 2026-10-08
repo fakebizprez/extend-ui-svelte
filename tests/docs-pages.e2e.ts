@@ -35,6 +35,6 @@ test('home page links to every component preview', async ({ page }) => {
 for (const slug of SLUGS) {
 	test(`${slug} preview page renders a heading`, async ({ page }) => {
 		await page.goto(`/${slug}`);
-		await expect(page.locator('h1')).toBeVisible();
+		await expect(page.locator('h1').first()).toBeVisible();
 	});
 }
