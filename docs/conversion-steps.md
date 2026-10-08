@@ -1,6 +1,6 @@
 # Extend UI to Svelte 5: conversion steps
 
-Goal and rules are in `CLAUDE.md`. Work in order. Each phase ends with its tests passing.
+Goal and rules are in `CLAUDE.md` (or `AGENTS.md` if you prefer). Work in order. Each phase ends with its tests passing.
 
 ## 0. Get the upstream source
 
