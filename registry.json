@@ -4,144 +4,326 @@
 	"homepage": "https://github.com/extend-hq/ui",
 	"items": [
 		{
+			"name": "dark-mode",
+			"type": "registry:lib",
+			"title": "Dark Mode Contract",
+			"description": "Shared isDark plus onIsDarkChange contract. Svelte 5 port of Extend UI.",
+			"files": [{ "path": "src/lib/dark-mode.ts", "type": "registry:lib" }]
+		},
+		{
+			"name": "utils",
+			"type": "registry:lib",
+			"title": "Shared Utilities",
+			"description": "Shared class-name helper used by the primitives. Svelte 5 port of Extend UI.",
+			"files": [{ "path": "src/lib/utils.ts", "type": "registry:lib" }]
+		},
+		{
+			"name": "virtual-list",
+			"type": "registry:lib",
+			"title": "Virtual List",
+			"description": "Shared windowed list for pages, rows, and slides. Svelte 5 port of Extend UI.",
+			"files": [
+				{ "path": "src/lib/virtual-list/VirtualList.svelte", "type": "registry:component" },
+				{ "path": "src/lib/virtual-list/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/virtual-list/window.ts", "type": "registry:lib" }
+			]
+		},
+		{
+			"name": "engines",
+			"type": "registry:lib",
+			"title": "Document Engines",
+			"description": "Client-only PDF, DOCX, XLSX, and PPTX engine wrappers. Svelte 5 port of Extend UI.",
+			"files": [
+				{ "path": "src/lib/engines/pdf/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/pdf/pdf-engine.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/pdf/worker-url.d.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/docx/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/xlsx/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/xlsx/xlsx.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/pptx/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/pptx/pptx.ts", "type": "registry:lib" },
+				{ "path": "src/lib/engines/pptx/pptx-browser.d.ts", "type": "registry:lib" }
+			],
+			"dependencies": [
+				"pdfjs-dist@^6.4.299",
+				"docx-preview@^0.4.1",
+				"xlsx@^0.18.5",
+				"pptx-browser@^4.1.5"
+			]
+		},
+		{
 			"name": "file-upload",
 			"type": "registry:component",
 			"title": "File Upload",
 			"description": "Drop zone and file input. Svelte 5 port of Extend UI file-upload.",
-			"files": [{ "path": "src/lib/components/file-upload/file-upload.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/file-upload/FileUpload.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/file-upload/index.ts", "type": "registry:lib" }
+			]
 		},
 		{
 			"name": "csv-tsv-viewer",
 			"type": "registry:component",
 			"title": "CSV/TSV Viewer",
 			"description": "Parse with papaparse, render with a virtual table, add search. Svelte 5 port of Extend UI csv-tsv-viewer.",
-			"files": [{ "path": "src/lib/components/csv-tsv-viewer/csv-tsv-viewer.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/csv-tsv-viewer/CsvTsvViewer.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/csv-tsv-viewer/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/csv-tsv-viewer/parse.ts", "type": "registry:lib" }
+			],
+			"dependencies": ["papaparse@^5.7.0"]
 		},
 		{
 			"name": "document-viewer-sidebar",
 			"type": "registry:component",
 			"title": "Document Viewer Sidebar",
 			"description": "Sidebar layout for document viewers. Svelte 5 port of Extend UI document-viewer-sidebar.",
-			"files": [{ "path": "src/lib/components/document-viewer-sidebar/document-viewer-sidebar.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/document-viewer-sidebar/DocumentViewerSidebar.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/document-viewer-sidebar/index.ts", "type": "registry:lib" }
+			]
 		},
 		{
 			"name": "file-thumbnail",
 			"type": "registry:component",
 			"title": "File Thumbnail",
 			"description": "File thumbnail rendered through the PDF engine wrapper. Svelte 5 port of Extend UI file-thumbnail.",
-			"files": [{ "path": "src/lib/components/file-thumbnail/file-thumbnail.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/file-thumbnail/FileThumbnail.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/file-thumbnail/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/file-thumbnail/pdf-thumbnail.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["engines"]
 		},
 		{
 			"name": "pdf-viewer",
 			"type": "registry:component",
 			"title": "PDF Viewer",
 			"description": "Toolbar, zoom, rotate, page overlay, download, active page event. Svelte 5 port of Extend UI pdf-viewer.",
-			"files": [{ "path": "src/lib/components/pdf-viewer/pdf-viewer.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/pdf-viewer/PdfViewer.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/pdf-viewer/PdfPage.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/pdf-viewer/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/pdf-viewer/types.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/pdf-viewer/zoom.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["engines", "virtual-list"]
 		},
 		{
 			"name": "docx-viewer",
 			"type": "registry:component",
 			"title": "DOCX Viewer",
 			"description": "Preview with thumbnail sidebar and dark mode. Svelte 5 port of Extend UI docx-viewer.",
-			"files": [{ "path": "src/lib/components/docx-viewer/docx-viewer.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/docx-viewer/DocxViewer.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/docx-viewer/index.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["engines", "virtual-list"]
 		},
 		{
 			"name": "xlsx-viewer",
 			"type": "registry:component",
 			"title": "XLSX Viewer",
 			"description": "Sheet tabs, virtual rows, dark mode. Svelte 5 port of Extend UI xlsx-viewer.",
-			"files": [{ "path": "src/lib/components/xlsx-viewer/xlsx-viewer.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/xlsx-viewer/XlsxViewer.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "engines", "virtual-list"]
 		},
 		{
 			"name": "pptx-viewer",
 			"type": "registry:component",
 			"title": "PPTX Viewer",
 			"description": "Slide list with virtual rendering. Svelte 5 port of Extend UI pptx-viewer.",
-			"files": [{ "path": "src/lib/components/pptx-viewer/pptx-viewer.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/pptx-viewer/PptxViewer.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/pptx-viewer/PptxSlide.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/pptx-viewer/index.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["engines", "virtual-list"]
 		},
 		{
 			"name": "pdf-editor",
 			"type": "registry:component",
 			"title": "PDF Editor",
 			"description": "PDF editing. Svelte 5 port of Extend UI pdf-editor.",
-			"files": [{ "path": "src/lib/components/pdf-editor/pdf-editor.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/pdf-editor/PdfEditor.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/pdf-editor/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/pdf-editor/page-model.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["pdf-viewer", "engines", "virtual-list"],
+			"dependencies": ["pdf-lib@^1.17.1"]
 		},
 		{
 			"name": "docx-editor",
 			"type": "registry:component",
 			"title": "DOCX Editor",
 			"description": "Document editing. Svelte 5 port of Extend UI docx-editor.",
-			"files": [{ "path": "src/lib/components/docx-editor/docx-editor.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/docx-editor/DocxEditor.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/docx-editor/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/docx-editor/export.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "engines"],
+			"dependencies": ["jszip@^3.10.2"]
 		},
 		{
 			"name": "xlsx-editor",
 			"type": "registry:component",
 			"title": "XLSX Editor",
 			"description": "Built on the XLSX viewer: formulas, cell styling, export. Svelte 5 port of Extend UI xlsx-editor.",
-			"files": [{ "path": "src/lib/components/xlsx-editor/xlsx-editor.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/xlsx-editor/XlsxEditor.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/xlsx-editor/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/xlsx-editor/formulas.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/xlsx-editor/workbook-export.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "engines", "virtual-list"],
+			"dependencies": ["xlsx@^0.18.5"]
 		},
 		{
 			"name": "file-system",
 			"type": "registry:component",
 			"title": "File System",
 			"description": "File tree browser. Svelte 5 port of Extend UI file-system.",
-			"files": [{ "path": "src/lib/components/file-system/file-system.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/file-system/FileSystem.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/file-system/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/file-system/tree.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/file-system/types.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode"]
 		},
 		{
 			"name": "document-splits",
 			"type": "registry:component",
 			"title": "Document Splits",
 			"description": "Split documents with drag and drop. Svelte 5 port of Extend UI document-splits.",
-			"files": [{ "path": "src/lib/components/document-splits/document-splits.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/document-splits/DocumentSplits.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/document-splits/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/document-splits/splits.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "file-thumbnail"]
 		},
 		{
 			"name": "schema-builder",
 			"type": "registry:component",
 			"title": "Schema Builder",
 			"description": "Build extraction schemas. Svelte 5 port of Extend UI schema-builder.",
-			"files": [{ "path": "src/lib/components/schema-builder/schema-builder.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/schema-builder/SchemaBuilder.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/schema-builder/index.ts", "type": "registry:lib" }
+			]
 		},
 		{
 			"name": "layout-blocks",
 			"type": "registry:component",
 			"title": "Layout Blocks",
 			"description": "Document layout blocks. Svelte 5 port of Extend UI layout-blocks.",
-			"files": [{ "path": "src/lib/components/layout-blocks/layout-blocks.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/layout-blocks/LayoutBlocks.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/layout-blocks/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/layout-blocks/layout-blocks.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "virtual-list"],
+			"dependencies": ["marked@^18.1.0"]
 		},
 		{
 			"name": "bounding-box-citations",
 			"type": "registry:component",
 			"title": "Bounding Box Citations",
 			"description": "Citation overlays on the PDF viewer. Svelte 5 port of Extend UI bounding-box-citations.",
-			"files": [{ "path": "src/lib/components/bounding-box-citations/bounding-box-citations.svelte", "type": "registry:component" }]
+			"files": [
+				{
+					"path": "src/lib/components/bounding-box-citations/BoundingBoxCitations.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/bounding-box-citations/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/bounding-box-citations/citations.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["pdf-viewer"]
 		},
 		{
 			"name": "e-signature",
 			"type": "registry:component",
 			"title": "E-Signature",
 			"description": "Draw with signature_pad, place with pdf-lib. Svelte 5 port of Extend UI e-signature.",
-			"files": [{ "path": "src/lib/components/e-signature/e-signature.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/e-signature/ESignature.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/e-signature/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/e-signature/sign-pdf.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["engines"],
+			"dependencies": ["pdf-lib@^1.17.1", "signature_pad@^5.1.4"]
 		},
 		{
 			"name": "group",
 			"type": "registry:component",
 			"title": "Group",
 			"description": "Grouping primitive. Svelte 5 port of Extend UI group.",
-			"files": [{ "path": "src/lib/components/group/group.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/group/Group.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/group/GroupSeparator.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/group/GroupText.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/group/index.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "utils"]
 		},
 		{
 			"name": "color-picker",
 			"type": "registry:component",
 			"title": "Color Picker",
 			"description": "Color picker primitive. Svelte 5 port of Extend UI color-picker.",
-			"files": [{ "path": "src/lib/components/color-picker/color-picker.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/color-picker/ColorPicker.svelte", "type": "registry:component" },
+				{
+					"path": "src/lib/components/color-picker/ColorPickerPanel.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/color-picker/vertical-slider.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/color-picker/draft-input.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/color-picker/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/color-picker/color-utils.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "utils"]
 		},
 		{
 			"name": "toggle",
 			"type": "registry:component",
 			"title": "Toggle",
 			"description": "Toggle primitive. Svelte 5 port of Extend UI toggle.",
-			"files": [{ "path": "src/lib/components/toggle/toggle.svelte", "type": "registry:component" }]
+			"files": [
+				{ "path": "src/lib/components/toggle/Toggle.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/toggle/ToggleGroup.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/toggle/ToggleGroupItem.svelte", "type": "registry:component" },
+				{ "path": "src/lib/components/toggle/index.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/toggle/toggle-context.ts", "type": "registry:lib" }
+			],
+			"registryDependencies": ["dark-mode", "utils"]
 		}
 	]
 }
