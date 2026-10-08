@@ -1,0 +1,3 @@
+<h1>PDF Viewer</h1>
+<p>Coming soon: the <code>pdf-viewer</code> preview will live here.</p>
+<p><a href="/">Back to all components</a></p>
