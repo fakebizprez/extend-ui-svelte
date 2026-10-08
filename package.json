@@ -70,6 +70,7 @@
 	"dependencies": {
 		"docx-preview": "^0.4.1",
 		"jszip": "^3.10.2",
+		"marked": "^18.1.0",
 		"papaparse": "^5.7.0",
 		"pdf-lib": "^1.17.1",
 		"pdfjs-dist": "^6.4.299",
