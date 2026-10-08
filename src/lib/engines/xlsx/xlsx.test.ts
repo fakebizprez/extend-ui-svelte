@@ -1,0 +1,71 @@
+// MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
+// Unit tests for the XLSX engine wrapper: run in the Vitest node project.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+	listSheetNames,
+	loadWorkbookFromBytes,
+	loadWorkbookFromUrl,
+	sheetToRows
+} from './xlsx.js';
+
+const FIXTURE_PATH = join(__dirname, '..', '..', '..', '..', 'tests', 'fixtures', 'sample.xlsx');
+
+function fixtureBytes(): Uint8Array {
+	return new Uint8Array(readFileSync(FIXTURE_PATH));
+}
+
+describe('xlsx engine', () => {
+	it('loads a workbook from bytes and lists its sheet names', async () => {
+		const workbook = await loadWorkbookFromBytes(fixtureBytes());
+
+		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes']);
+	});
+
+	it('loads a workbook from a URL', async () => {
+		const base64 = Buffer.from(fixtureBytes()).toString('base64');
+		const workbook = await loadWorkbookFromUrl(`data:application/octet-stream;base64,${base64}`);
+
+		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes']);
+	});
+
+	it('converts a sheet to rows with sheet_to_json', async () => {
+		const workbook = await loadWorkbookFromBytes(fixtureBytes());
+		const rows = await sheetToRows(workbook, 'Inventory');
+
+		expect(rows).toHaveLength(5);
+		expect(rows[0]).toEqual({ SKU: 'A-9001', Item: 'Resistor kit', Qty: 120, Warehouse: 'Reno' });
+		expect(rows[4]).toEqual({ SKU: 'A-9005', Item: 'Multimeter', Qty: 42, Warehouse: 'Reno' });
+	});
+
+	it('converts every fixture sheet with the expected row counts', async () => {
+		const workbook = await loadWorkbookFromBytes(fixtureBytes());
+
+		expect(await sheetToRows(workbook, 'Inventory')).toHaveLength(5);
+		expect(await sheetToRows(workbook, 'Summary')).toHaveLength(2);
+		expect(await sheetToRows(workbook, 'Notes')).toHaveLength(3);
+	});
+
+	it('keeps numeric cells numeric', async () => {
+		const workbook = await loadWorkbookFromBytes(fixtureBytes());
+		const rows = await sheetToRows(workbook, 'Summary');
+
+		expect(rows).toEqual([
+			{ Metric: 'Total SKUs', Value: 5 },
+			{ Metric: 'Total units', Value: 787 }
+		]);
+	});
+
+	it('throws a clear error for an unknown sheet', async () => {
+		const workbook = await loadWorkbookFromBytes(fixtureBytes());
+
+		await expect(sheetToRows(workbook, 'Missing')).rejects.toThrow('Unknown sheet: "Missing"');
+	});
+
+	it('throws a clear error for empty input', async () => {
+		await expect(loadWorkbookFromBytes(new Uint8Array(0))).rejects.toThrow(
+			'Cannot load workbook from empty data'
+		);
+	});
+});
