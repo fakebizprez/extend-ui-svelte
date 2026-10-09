@@ -25,3 +25,7 @@ Baseline before the change: 44 unit test files, 489 tests, all passing.
 ## Rollback
 
 Revert the branch. `pnpm-lock.yaml` returns with it.
+
+## Known flake (not caused by this migration)
+
+The original pnpm commit exits 1 in about 4 of 6 unit runs: "EnvironmentTeardownError" while loading `pdfjs-dist/build/pdf.worker.mjs?url` after a test file finishes. All tests still pass. Bun runs behave the same.
