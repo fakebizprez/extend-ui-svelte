@@ -5,12 +5,12 @@ for document-heavy apps. Library plus docs site in one SvelteKit project.
 
 ## Scripts
 
-- `pnpm dev` — docs site with live component previews
-- `pnpm test` — Vitest unit/component suite, then Playwright end-to-end
-- `pnpm test:unit` — Vitest in watch mode
-- `pnpm test:e2e` — Playwright docs-site tests
-- `pnpm build` — docs site plus `svelte-package` library build with `publint`
-- `pnpm check` — `svelte-check` type checking
+- `bun dev` — docs site with live component previews
+- `bun run test` — Vitest unit/component suite, then Playwright end-to-end
+- `bun run test:unit` — Vitest in watch mode
+- `bun run test:e2e` — Playwright docs-site tests
+- `bun run build` — docs site plus `svelte-package` library build with `publint`
+- `bun run check` — `svelte-check` type checking
 
 ## Layout
 

@@ -10,7 +10,7 @@ Goal and rules are in `CLAUDE.md` (or `AGENTS.md` if you prefer). Work in order.
 
 ## 1. Project setup
 
-- Initialize a SvelteKit project with Svelte 5, TypeScript, and pnpm.
+- Initialize a SvelteKit project with Svelte 5, TypeScript, and Bun.
 - Set up the library package with `svelte-package`, an exports map with `types` and `svelte` conditions, and `publint`.
 - Add Vitest, Svelte Testing Library, and Playwright.
 - Add a docs site (SvelteKit) with one preview page per component.
