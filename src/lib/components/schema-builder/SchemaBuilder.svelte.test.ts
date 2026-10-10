@@ -1,0 +1,274 @@
+// MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import SchemaBuilder, {
+	serializeSchema,
+	type SchemaBuilderSchema,
+	type SerializedSchema
+} from './SchemaBuilder.svelte';
+
+const EMPTY_SCHEMA: SchemaBuilderSchema = { properties: [] };
+
+function getFieldRows() {
+	return screen.getAllByTestId('schema-builder-field');
+}
+
+describe('SchemaBuilder', () => {
+	it('renders the empty state with an add-field control', () => {
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA });
+
+		expect(screen.getByTestId('schema-builder')).toBeInTheDocument();
+		expect(screen.getByTestId('schema-builder-empty')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Add field' })).toBeInTheDocument();
+	});
+
+	it('adds a field and emits onSchemaChange', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, onSchemaChange });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+
+		expect(getFieldRows()).toHaveLength(1);
+		expect(onSchemaChange).toHaveBeenCalledTimes(1);
+		const emitted = onSchemaChange.mock.calls[0][0] as SchemaBuilderSchema;
+		expect(emitted.properties).toHaveLength(1);
+		expect(emitted.properties[0].type).toBe('string');
+	});
+
+	it('editing a field key updates the emitted schema', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, onSchemaChange });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const keyInput = within(getFieldRows()[0]).getByLabelText('Field key');
+		await fireEvent.input(keyInput, { target: { value: 'invoiceNumber' } });
+
+		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		expect(emitted.properties[0].key).toBe('invoiceNumber');
+	});
+
+	it('changing a field type updates the emitted schema', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, onSchemaChange });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const typeSelect = within(getFieldRows()[0]).getByLabelText('Field type');
+		await fireEvent.change(typeSelect, { target: { value: 'number' } });
+
+		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		expect(emitted.properties[0].type).toBe('number');
+	});
+
+	it('supports the enum, object, and array field types', async () => {
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const typeSelect = within(getFieldRows()[0]).getByLabelText('Field type');
+		const options = within(typeSelect as HTMLElement)
+			.getAllByRole('option')
+			.map((o) => (o as HTMLOptionElement).value);
+
+		for (const type of ['string', 'number', 'boolean', 'enum', 'object', 'array']) {
+			expect(options).toContain(type);
+		}
+	});
+
+	it('required flags are emitted in the serialized schema output event', async () => {
+		const onSerializedSchemaChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: EMPTY_SCHEMA,
+			onSerializedSchemaChange
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const row = getFieldRows()[0];
+		await fireEvent.input(within(row).getByLabelText('Field key'), {
+			target: { value: 'total' }
+		});
+		await fireEvent.change(within(row).getByLabelText('Field type'), {
+			target: { value: 'number' }
+		});
+		await fireEvent.click(within(row).getByLabelText('Required'));
+
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)[0] as SerializedSchema;
+		expect(emitted.type).toBe('object');
+		expect(emitted.properties['total']).toEqual({ type: 'number' });
+		expect(emitted.required).toEqual(['total']);
+	});
+
+	it('removes a field and emits onSchemaChange', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: {
+				properties: [
+					{ id: 'a', key: 'alpha', type: 'string', description: '' },
+					{ id: 'b', key: 'beta', type: 'string', description: '' }
+				]
+			},
+			onSchemaChange
+		});
+
+		expect(getFieldRows()).toHaveLength(2);
+		const rows = getFieldRows();
+		await fireEvent.click(within(rows[0]).getByRole('button', { name: 'Remove field' }));
+
+		expect(getFieldRows()).toHaveLength(1);
+		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		expect(emitted.properties).toHaveLength(1);
+		expect(emitted.properties[0].key).toBe('beta');
+	});
+
+	it('reorders fields with native drag-and-drop and emits onSchemaChange', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: {
+				properties: [
+					{ id: 'a', key: 'alpha', type: 'string', description: '' },
+					{ id: 'b', key: 'beta', type: 'string', description: '' }
+				]
+			},
+			onSchemaChange
+		});
+
+		const rows = getFieldRows();
+		const dataTransfer = {
+			data: {} as Record<string, string>,
+			setData(format: string, value: string) {
+				this.data[format] = value;
+			},
+			getData(format: string) {
+				return this.data[format] ?? '';
+			},
+			effectAllowed: 'move'
+		};
+		await fireEvent.dragStart(rows[0], { dataTransfer });
+		await fireEvent.dragOver(rows[1], { dataTransfer });
+		await fireEvent.drop(rows[1], { dataTransfer });
+
+		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		expect(emitted.properties.map((p) => p.key)).toEqual(['beta', 'alpha']);
+	});
+
+	it('enum fields expose editable enum values that serialize to enum + descriptions', async () => {
+		const onSerializedSchemaChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: {
+				properties: [{ id: 'e', key: 'status', type: 'enum', description: '', enumValues: [] }]
+			},
+			onSerializedSchemaChange
+		});
+
+		const row = getFieldRows()[0];
+		await fireEvent.click(within(row).getByRole('button', { name: 'Add enum value' }));
+		const valueInputs = within(row).getAllByLabelText('Enum value');
+		await fireEvent.input(valueInputs[0], { target: { value: 'paid' } });
+
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)[0] as SerializedSchema;
+		expect(emitted.properties['status'].enum).toEqual(['paid']);
+	});
+
+	it('shows a live JSON preview of the serialized schema', async () => {
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		await fireEvent.input(within(getFieldRows()[0]).getByLabelText('Field key'), {
+			target: { value: 'vendor' }
+		});
+
+		expect(screen.getByTestId('schema-builder-output')).toHaveTextContent('"vendor"');
+		expect(screen.getByTestId('schema-builder-output')).toHaveTextContent('"type": "object"');
+	});
+
+	it('controlled schema prop renders the given fields', () => {
+		render(SchemaBuilder, {
+			schema: {
+				properties: [{ id: 'x', key: 'controlled', type: 'boolean', description: '' }]
+			}
+		});
+
+		expect(getFieldRows()).toHaveLength(1);
+		expect(
+			within(getFieldRows()[0]).getByLabelText('Field key')
+		).toHaveDisplayValue('controlled');
+	});
+
+	it('dark-mode contract: isDark sets the dark theme', () => {
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, isDark: true });
+
+		expect(screen.getByTestId('schema-builder')).toHaveAttribute('data-theme', 'dark');
+	});
+
+	it('dark-mode toggle notifies onIsDarkChange', async () => {
+		const onIsDarkChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: EMPTY_SCHEMA,
+			isDark: false,
+			onIsDarkChange
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark mode' }));
+
+		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
+		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	});
+});
+
+describe('serializeSchema', () => {
+	it('serializes nested objects, arrays, and enum descriptions', () => {
+		expect(
+			serializeSchema({
+				properties: [
+					{
+						id: 'o',
+						key: 'address',
+						type: 'object',
+						description: 'Mailing address',
+						required: true,
+						properties: [{ id: 'c', key: 'city', type: 'string', description: '' }]
+					},
+					{
+						id: 'arr',
+						key: 'tags',
+						type: 'array',
+						description: '',
+						items: { type: 'string' }
+					},
+					{
+						id: 'en',
+						key: 'status',
+						type: 'enum',
+						description: '',
+						enumValues: [
+							{ id: 'v1', value: 'paid', description: 'Invoice paid' },
+							{ id: 'v2', value: 'open', description: '' }
+						]
+					}
+				]
+			})
+		).toEqual({
+			type: 'object',
+			properties: {
+				address: {
+					type: 'object',
+					description: 'Mailing address',
+					properties: { city: { type: 'string' } }
+				},
+				tags: { type: 'array', items: { type: 'string' } },
+				status: {
+					type: 'string',
+					enum: ['paid', 'open'],
+					enumDescriptions: { paid: 'Invoice paid' }
+				}
+			},
+			required: ['address']
+		});
+	});
+
+	it('skips fields with blank keys', () => {
+		expect(
+			serializeSchema({
+				properties: [{ id: 'b', key: '   ', type: 'string', description: '' }]
+			})
+		).toEqual({ type: 'object', properties: {} });
+	});
+});

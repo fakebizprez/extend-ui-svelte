@@ -1,0 +1,220 @@
+// MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
+// Framework-free PDF engine wrapper around PDF.js (pdfjs-dist).
+//
+// Browser-only: PDF.js is loaded lazily with dynamic `import()` the first
+// time a document is loaded or rendered, so this module is safe to import
+// during SSR. The worker URL is always set explicitly before `getDocument`.
+import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import type {
+	PDFDocumentLoadingTask,
+	PDFDocumentProxy,
+	PDFPageProxy,
+	RenderParameters
+} from 'pdfjs-dist/types/src/display/api.js';
+
+export type PdfSource = string | URL | ArrayBuffer | Uint8Array;
+
+export type PdfPageChangeHandler = (page: number) => void;
+
+export interface PdfRenderOptions {
+	/** Render scale. Defaults to 1. */
+	scale?: number;
+	/** Rotation in degrees. Defaults to 0. */
+	rotation?: number;
+}
+
+export interface PdfPageSize {
+	width: number;
+	height: number;
+}
+
+export interface PdfEngine {
+	/** Number of pages in the loaded document, or 0 when unloaded. */
+	readonly pageCount: number;
+	/** Current page (1-based), or 0 when no document is loaded. */
+	readonly currentPage: number;
+	/** Load a document from a URL or raw bytes. Resolves with the page count. */
+	load(source: PdfSource): Promise<number>;
+	/** Render a page (1-based) into a canvas. Resolves with the page size in CSS pixels. */
+	renderPage(pageNumber: number, canvas: HTMLCanvasElement, options?: PdfRenderOptions): Promise<PdfPageSize>;
+	/** Set the current page, clamped to [1, pageCount]; notifies page-change listeners. */
+	setCurrentPage(page: number): void;
+	/** Subscribe to page changes. Returns an unsubscribe function. */
+	onPageChange(handler: PdfPageChangeHandler): () => void;
+	/** Release the loaded document and reset to the unloaded state. */
+	destroy(): Promise<void>;
+}
+
+type PdfjsModule = typeof import('pdfjs-dist');
+
+let workerSrcOverride: string | null = null;
+let pdfjsPromise: Promise<PdfjsModule> | null = null;
+
+/**
+ * Override the PDF.js worker URL. When unset, the worker bundled with the
+ * installed pdfjs-dist version is used, keeping the worker version-locked
+ * to the API by construction.
+ */
+export function setPdfWorkerSrc(url: string): void {
+	workerSrcOverride = url;
+	if (pdfjsPromise) {
+		void pdfjsPromise.then((pdfjs) => {
+			pdfjs.GlobalWorkerOptions.workerSrc = url;
+		});
+	}
+}
+
+function workerSrc(): string {
+	return workerSrcOverride ?? workerUrl;
+}
+
+async function loadPdfjs(): Promise<PdfjsModule> {
+	if (!pdfjsPromise) {
+		pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+			pdfjs.GlobalWorkerOptions.workerSrc = workerSrc();
+			return pdfjs;
+		});
+	}
+	return pdfjsPromise;
+}
+
+function toDocumentSource(source: PdfSource): { url: string } | { data: Uint8Array } {
+	if (typeof source === 'string') {
+		return { url: source };
+	}
+	if (source instanceof URL) {
+		return { url: source.toString() };
+	}
+	if (source instanceof ArrayBuffer) {
+		return { data: new Uint8Array(source.slice(0)) };
+	}
+	if (source instanceof Uint8Array) {
+		// Copy: PDF.js may detach the buffer it is given.
+		return { data: new Uint8Array(source) };
+	}
+	throw new TypeError(
+		'PdfEngine.load: expected a URL string, URL, ArrayBuffer, or Uint8Array.'
+	);
+}
+
+export function createPdfEngine(): PdfEngine {
+	let doc: PDFDocumentProxy | null = null;
+	let loadingTask: PDFDocumentLoadingTask | null = null;
+	let pageCount = 0;
+	let currentPage = 0;
+	let renderTask: { cancel(): void } | null = null;
+	const listeners = new Set<PdfPageChangeHandler>();
+
+	function notify(page: number): void {
+		for (const handler of listeners) {
+			handler(page);
+		}
+	}
+
+	function setPage(page: number): void {
+		if (currentPage !== page) {
+			currentPage = page;
+			notify(page);
+		}
+	}
+
+	return {
+		get pageCount(): number {
+			return pageCount;
+		},
+
+		get currentPage(): number {
+			return currentPage;
+		},
+
+		async load(source: PdfSource): Promise<number> {
+			const params = toDocumentSource(source);
+			const pdfjs = await loadPdfjs();
+			const previousTask = loadingTask;
+			loadingTask = null;
+			doc = null;
+			const task = pdfjs.getDocument(params);
+			doc = await task.promise;
+			loadingTask = task;
+			if (previousTask) {
+				await previousTask.destroy();
+			}
+			pageCount = doc.numPages;
+			setPage(pageCount > 0 ? 1 : 0);
+			return pageCount;
+		},
+
+		async renderPage(
+			pageNumber: number,
+			canvas: HTMLCanvasElement,
+			options: PdfRenderOptions = {}
+		): Promise<PdfPageSize> {
+			if (!doc) {
+				throw new Error('PdfEngine.renderPage: no document loaded.');
+			}
+			if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pageCount) {
+				throw new RangeError(
+					`PdfEngine.renderPage: page ${pageNumber} out of range (1..${pageCount}).`
+				);
+			}
+			const context = canvas.getContext('2d');
+			if (!context) {
+				throw new Error('PdfEngine.renderPage: canvas 2d context unavailable.');
+			}
+			const page: PDFPageProxy = await doc.getPage(pageNumber);
+			const viewport = page.getViewport({
+				scale: options.scale ?? 1,
+				rotation: options.rotation ?? 0
+			});
+			canvas.width = Math.ceil(viewport.width);
+			canvas.height = Math.ceil(viewport.height);
+			if (renderTask) {
+				renderTask.cancel();
+				renderTask = null;
+			}
+			const task = page.render({
+				canvasContext: context,
+				viewport
+			} as RenderParameters);
+			renderTask = task;
+			try {
+				await task.promise;
+			} finally {
+				if (renderTask === task) {
+					renderTask = null;
+				}
+			}
+			return { width: viewport.width, height: viewport.height };
+		},
+
+		setCurrentPage(page: number): void {
+			if (!doc || pageCount === 0) {
+				return;
+			}
+			const clamped = Math.min(Math.max(Math.floor(page), 1), pageCount);
+			setPage(clamped);
+		},
+
+		onPageChange(handler: PdfPageChangeHandler): () => void {
+			listeners.add(handler);
+			return () => {
+				listeners.delete(handler);
+			};
+		},
+
+		async destroy(): Promise<void> {
+			if (renderTask) {
+				renderTask.cancel();
+				renderTask = null;
+			}
+			if (loadingTask) {
+				const previousTask = loadingTask;
+				loadingTask = null;
+				doc = null;
+				await previousTask.destroy();
+			}
+			pageCount = 0;
+			currentPage = 0;
+		}
+	};
+}

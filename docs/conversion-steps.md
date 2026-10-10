@@ -10,7 +10,7 @@ Goal and rules are in `CLAUDE.md` (or `AGENTS.md` if you prefer). Work in order.
 
 ## 1. Project setup
 
-- Initialize a SvelteKit project with Svelte 5, TypeScript, and pnpm.
+- Initialize a SvelteKit project with Svelte 5, TypeScript, and Bun.
 - Set up the library package with `svelte-package`, an exports map with `types` and `svelte` conditions, and `publint`.
 - Add Vitest, Svelte Testing Library, and Playwright.
 - Add a docs site (SvelteKit) with one preview page per component.
@@ -42,6 +42,8 @@ Fill this in during phase 0. Columns: component, React deps, Svelte path (reuse 
 | bounding-box-citations | not captured | overlay on PDF viewer | medium |
 
 Cross-cutting: replace `@hugeicons/react` with a Svelte icon set or the SVG assets. Port the registry, not just the components.
+
+Installed Svelte-side versions (from `package.json`, phase 5/7): `svelte@^5.57.1`, `@sveltejs/kit@^3.0.0`, `pdfjs-dist@^6.4.299`, `docx-preview@^0.4.1` + `jszip@^3.10.2`, `xlsx@^0.18.5`, `pptx-browser@^4.1.5` (picked over `pptxviewjs`, see `src/lib/engines/pptx/DECISION.md`), `papaparse@^5.7.0`, `pdf-lib@^1.17.1`, `signature_pad@^5.1.4`, `marked@^18.1.0`. Test toolchain: `vitest@^4.1.8`, `@testing-library/svelte@^5.4.2`, `@playwright/test@^1.60.0`, `publint@^0.3.21`. No Tailwind: components use scoped CSS. No DnD library: native HTML5 drag-and-drop.
 
 ## 3. Foundation
 

@@ -1,0 +1,82 @@
+{
+	"name": "extend-ui-svelte",
+	"version": "0.0.1",
+	"description": "Svelte 5 port of Extend UI (extend-hq/ui): components for document-heavy apps.",
+	"license": "MIT",
+	"packageManager": "bun@1.4.0",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build && bun run prepack",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"prepack": "svelte-kit sync && svelte-package && publint",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test:unit": "vitest",
+		"test": "bun run test:unit -- --run && bun run test:e2e",
+		"test:e2e": "playwright install && playwright test"
+	},
+	"files": [
+		"dist",
+		"!dist/**/*.test.*",
+		"!dist/**/*.spec.*"
+	],
+	"sideEffects": [
+		"**/*.css"
+	],
+	"svelte": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js"
+		}
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.60.0",
+		"@sveltejs/adapter-auto": "^8.0.0",
+		"@sveltejs/kit": "^3.0.0",
+		"@sveltejs/package": "^2.5.8",
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@testing-library/jest-dom": "^7.0.1",
+		"@testing-library/svelte": "^5.4.2",
+		"@types/papaparse": "^5.5.2",
+		"jsdom": "^30.1.2",
+		"playwright": "^1.60.0",
+		"publint": "^0.3.21",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.0",
+		"vitest": "^4.1.8"
+	},
+	"keywords": [
+		"svelte",
+		"sveltekit",
+		"components",
+		"document-viewer",
+		"pdf",
+		"docx",
+		"xlsx",
+		"csv"
+	],
+	"imports": {
+		"#lib": "./src/lib/index.js",
+		"#lib/*": "./src/lib/*"
+	},
+	"dependencies": {
+		"docx-preview": "^0.4.1",
+		"jszip": "^3.10.2",
+		"marked": "^18.1.0",
+		"papaparse": "^5.7.0",
+		"pdf-lib": "^1.17.1",
+		"pdfjs-dist": "^6.4.299",
+		"pptx-browser": "^4.1.5",
+		"signature_pad": "^5.1.4",
+		"xlsx": "^0.18.5"
+	}
+}

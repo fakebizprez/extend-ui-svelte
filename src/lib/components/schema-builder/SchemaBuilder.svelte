@@ -1,0 +1,620 @@
+<!--
+	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
+	SchemaBuilder: visual JSON-schema field builder (rewrite of the React version).
+-->
+<script module lang="ts">
+	export type SchemaBuilderScalarType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
+	export type SchemaBuilderFieldType = SchemaBuilderScalarType | 'object' | 'array' | 'enum';
+	export type SchemaBuilderArrayScalarType = Exclude<SchemaBuilderScalarType, 'null'>;
+	export type SchemaBuilderArrayItemType = SchemaBuilderArrayScalarType | 'object' | 'enum';
+
+	export interface SchemaBuilderEnumValue {
+		id: string;
+		value: string;
+		description: string;
+	}
+
+	export interface SchemaBuilderProperty {
+		id: string;
+		key: string;
+		type: SchemaBuilderFieldType;
+		description: string;
+		required?: boolean;
+		enumValues?: SchemaBuilderEnumValue[];
+		properties?: SchemaBuilderProperty[];
+		items?: {
+			type: SchemaBuilderArrayItemType;
+			properties?: SchemaBuilderProperty[];
+			enumValues?: SchemaBuilderEnumValue[];
+		};
+	}
+
+	export interface SchemaBuilderSchema {
+		properties: SchemaBuilderProperty[];
+	}
+
+	export interface SerializedSchemaProperty {
+		type: string;
+		description?: string;
+		enum?: string[];
+		enumDescriptions?: Record<string, string>;
+		properties?: Record<string, SerializedSchemaProperty>;
+		items?: SerializedSchemaProperty;
+	}
+
+	export interface SerializedSchema {
+		type: 'object';
+		properties: Record<string, SerializedSchemaProperty>;
+		required?: string[];
+	}
+
+	export const SCHEMA_BUILDER_FIELD_TYPES: SchemaBuilderFieldType[] = [
+		'string',
+		'number',
+		'integer',
+		'boolean',
+		'null',
+		'object',
+		'array',
+		'enum'
+	];
+
+	export const SCHEMA_BUILDER_ARRAY_ITEM_TYPES: SchemaBuilderArrayItemType[] = [
+		'string',
+		'number',
+		'integer',
+		'boolean',
+		'object',
+		'enum'
+	];
+
+	let nextId = 0;
+
+	export function createSchemaBuilderId(prefix = 'field'): string {
+		nextId += 1;
+		if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+			return `${prefix}-${crypto.randomUUID()}`;
+		}
+		return `${prefix}-${Date.now().toString(36)}-${nextId}`;
+	}
+
+	export function createSchemaBuilderProperty(
+		type: SchemaBuilderFieldType = 'string'
+	): SchemaBuilderProperty {
+		const base: SchemaBuilderProperty = {
+			id: createSchemaBuilderId(),
+			key: '',
+			type,
+			description: ''
+		};
+		return normalizePropertyForType(base, type);
+	}
+
+	export function createSchemaBuilderEnumValue(): SchemaBuilderEnumValue {
+		return { id: createSchemaBuilderId('enum'), value: '', description: '' };
+	}
+
+	export function normalizePropertyForType(
+		property: SchemaBuilderProperty,
+		type: SchemaBuilderFieldType
+	): SchemaBuilderProperty {
+		const base = { ...property, type };
+		if (type === 'enum') {
+			return { ...base, enumValues: base.enumValues ?? [], properties: undefined, items: undefined };
+		}
+		if (type === 'object') {
+			return {
+				...base,
+				enumValues: undefined,
+				properties: base.properties?.length
+					? base.properties
+					: [{ ...createSchemaBuilderProperty('string'), key: '' }],
+				items: undefined
+			};
+		}
+		if (type === 'array') {
+			return {
+				...base,
+				enumValues: undefined,
+				properties: undefined,
+				items: base.items ?? { type: 'string' }
+			};
+		}
+		return { ...base, enumValues: undefined, properties: undefined, items: undefined };
+	}
+
+	function serializeProperty(property: SchemaBuilderProperty): SerializedSchemaProperty {
+		const description = property.description.trim();
+		const base = description ? { description } : {};
+
+		if (property.type === 'enum') {
+			const enumValues = property.enumValues ?? [];
+			return {
+				type: 'string',
+				...base,
+				enum: enumValues.map((option) => option.value),
+				enumDescriptions: Object.fromEntries(
+					enumValues
+						.filter((option) => option.description.trim())
+						.map((option) => [option.value, option.description])
+				)
+			};
+		}
+
+		if (property.type === 'object') {
+			return {
+				type: 'object',
+				...base,
+				properties: serializeProperties(property.properties ?? [])
+			};
+		}
+
+		if (property.type === 'array') {
+			const items = property.items ?? { type: 'string' as const };
+			if (items.type === 'object') {
+				return {
+					type: 'array',
+					...base,
+					items: {
+						type: 'object',
+						properties: serializeProperties(items.properties ?? [])
+					}
+				};
+			}
+			if (items.type === 'enum') {
+				const enumValues = items.enumValues ?? [];
+				return {
+					type: 'array',
+					...base,
+					items: {
+						type: 'string',
+						enum: enumValues.map((option) => option.value),
+						enumDescriptions: Object.fromEntries(
+							enumValues
+								.filter((option) => option.description.trim())
+								.map((option) => [option.value, option.description])
+						)
+					}
+				};
+			}
+			return { type: 'array', ...base, items: { type: items.type } };
+		}
+
+		return { type: property.type, ...base };
+	}
+
+	function serializeProperties(
+		properties: SchemaBuilderProperty[]
+	): Record<string, SerializedSchemaProperty> {
+		return Object.fromEntries(
+			properties
+				.filter((property) => property.key.trim())
+				.map((property) => [property.key.trim(), serializeProperty(property)])
+		);
+	}
+
+	export function serializeSchema(schema: SchemaBuilderSchema): SerializedSchema {
+		const required = schema.properties
+			.filter((property) => property.required && property.key.trim())
+			.map((property) => property.key.trim());
+		return {
+			type: 'object',
+			properties: serializeProperties(schema.properties),
+			...(required.length > 0 ? { required } : {})
+		};
+	}
+</script>
+
+<script lang="ts">
+	import { untrack } from 'svelte';
+
+	interface Props {
+		defaultSchema?: SchemaBuilderSchema;
+		schema?: SchemaBuilderSchema;
+		onSchemaChange?: (schema: SchemaBuilderSchema) => void;
+		onSerializedSchemaChange?: (schema: SerializedSchema) => void;
+		isDark?: boolean;
+		onIsDarkChange?: (isDark: boolean) => void;
+	}
+
+	let {
+		defaultSchema = { properties: [] },
+		schema = $bindable(undefined),
+		onSchemaChange,
+		onSerializedSchemaChange,
+		isDark = $bindable(false),
+		onIsDarkChange
+	}: Props = $props();
+
+	let uncontrolled = $state<SchemaBuilderSchema>(untrack(() => defaultSchema));
+	const current = $derived<SchemaBuilderSchema>(schema ?? uncontrolled);
+	const serialized = $derived<SerializedSchema>(serializeSchema(current));
+
+	let lastSerializedSource: SchemaBuilderSchema | undefined = undefined;
+	$effect(() => {
+		const source = current;
+		if (source !== lastSerializedSource) {
+			lastSerializedSource = source;
+			onSerializedSchemaChange?.(serializeSchema(source));
+		}
+	});
+
+	function commit(next: SchemaBuilderSchema): void {
+		if (schema !== undefined) {
+			schema = next;
+		} else {
+			uncontrolled = next;
+		}
+		onSchemaChange?.(next);
+	}
+
+	function updateProperties(
+		updater: (properties: SchemaBuilderProperty[]) => SchemaBuilderProperty[]
+	): void {
+		commit({ properties: updater(current.properties) });
+	}
+
+	function updatePropertyById(
+		properties: SchemaBuilderProperty[],
+		id: string,
+		update: (property: SchemaBuilderProperty) => SchemaBuilderProperty
+	): SchemaBuilderProperty[] {
+		return properties.map((property) => {
+			if (property.id === id) return update(property);
+			let next = property;
+			if (property.properties) {
+				const nested = updatePropertyById(property.properties, id, update);
+				if (nested !== property.properties) next = { ...next, properties: nested };
+			}
+			if (property.items?.properties) {
+				const nested = updatePropertyById(property.items.properties, id, update);
+				if (nested !== property.items.properties) {
+					next = { ...next, items: { ...property.items, properties: nested } };
+				}
+			}
+			return next === property
+				? property
+				: { ...next, properties: next.properties, items: next.items };
+		});
+	}
+
+	function patchProperty(id: string, patch: Partial<SchemaBuilderProperty>): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, id, (property) => ({ ...property, ...patch }))
+		);
+	}
+
+	function setPropertyType(id: string, type: SchemaBuilderFieldType): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, id, (property) => normalizePropertyForType(property, type))
+		);
+	}
+
+	function addField(): void {
+		updateProperties((properties) => [...properties, createSchemaBuilderProperty('string')]);
+	}
+
+	function addNestedField(parentId: string): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, parentId, (property) => ({
+				...property,
+				properties: [...(property.properties ?? []), createSchemaBuilderProperty('string')]
+			}))
+		);
+	}
+
+	function removeProperty(id: string): void {
+		const removeFrom = (properties: SchemaBuilderProperty[]): SchemaBuilderProperty[] =>
+			properties
+				.filter((property) => property.id !== id)
+				.map((property) => ({
+					...property,
+					properties: property.properties ? removeFrom(property.properties) : property.properties,
+					items:
+						property.items?.properties !== undefined && property.items
+							? { ...property.items, properties: removeFrom(property.items.properties) }
+							: property.items
+				}));
+		updateProperties(removeFrom);
+	}
+
+	function moveProperty(activeId: string, overId: string): void {
+		if (activeId === overId) return;
+		updateProperties((properties) => {
+			const from = properties.findIndex((property) => property.id === activeId);
+			const to = properties.findIndex((property) => property.id === overId);
+			if (from === -1 || to === -1) return properties;
+			const next = [...properties];
+			const [moved] = next.splice(from, 1);
+			next.splice(to, 0, moved);
+			return next;
+		});
+	}
+
+	function handleDragStart(event: DragEvent, id: string): void {
+		event.dataTransfer?.setData('text/plain', id);
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+	}
+
+	function handleDrop(event: DragEvent, overId: string): void {
+		event.preventDefault();
+		const activeId = event.dataTransfer?.getData('text/plain');
+		if (activeId) moveProperty(activeId, overId);
+	}
+
+	function addEnumValue(propertyId: string): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, propertyId, (property) => ({
+				...property,
+				enumValues: [...(property.enumValues ?? []), createSchemaBuilderEnumValue()]
+			}))
+		);
+	}
+
+	function patchEnumValue(propertyId: string, valueId: string, patch: Partial<SchemaBuilderEnumValue>): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, propertyId, (property) => ({
+				...property,
+				enumValues: (property.enumValues ?? []).map((value) =>
+					value.id === valueId ? { ...value, ...patch } : value
+				)
+			}))
+		);
+	}
+
+	function removeEnumValue(propertyId: string, valueId: string): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, propertyId, (property) => ({
+				...property,
+				enumValues: (property.enumValues ?? []).filter((value) => value.id !== valueId)
+			}))
+		);
+	}
+
+	function setArrayItemType(propertyId: string, type: SchemaBuilderArrayItemType): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, propertyId, (property) => {
+				const previous = property.items;
+				if (type === 'object') {
+					return {
+						...property,
+						items: {
+							type,
+							properties: previous?.properties?.length
+								? previous.properties
+								: [createSchemaBuilderProperty('string')]
+						}
+					};
+				}
+				if (type === 'enum') {
+					return { ...property, items: { type, enumValues: previous?.enumValues ?? [] } };
+				}
+				return { ...property, items: { type } };
+			})
+		);
+	}
+
+	function toggleDark(): void {
+		isDark = !isDark;
+		onIsDarkChange?.(isDark);
+	}
+</script>
+
+{#snippet enumEditor(property: SchemaBuilderProperty)}
+	<div class="schema-builder-enum" data-testid="schema-builder-enum-editor">
+		{#each property.enumValues ?? [] as enumValue (enumValue.id)}
+			<div class="schema-builder-enum-row" data-testid="schema-builder-enum-value">
+				<input
+					type="text"
+					aria-label="Enum value"
+					placeholder="Value"
+					value={enumValue.value}
+					oninput={(event) =>
+						patchEnumValue(property.id, enumValue.id, { value: event.currentTarget.value })}
+				/>
+				<input
+					type="text"
+					aria-label="Enum description"
+					placeholder="Description (optional)"
+					value={enumValue.description}
+					oninput={(event) =>
+						patchEnumValue(property.id, enumValue.id, {
+							description: event.currentTarget.value
+						})}
+				/>
+				<button type="button" onclick={() => removeEnumValue(property.id, enumValue.id)}>
+					Remove enum value
+				</button>
+			</div>
+		{/each}
+		<button type="button" onclick={() => addEnumValue(property.id)}>Add enum value</button>
+	</div>
+{/snippet}
+
+{#snippet fieldRows(properties: SchemaBuilderProperty[], nested: boolean)}
+	{#each properties as property (property.id)}
+		{@const rowTestId = nested ? 'schema-builder-nested-field' : 'schema-builder-field'}
+		<div
+			class="schema-builder-field"
+			role="listitem"
+			data-testid={rowTestId}
+			data-field-id={property.id}
+			draggable={nested ? undefined : true}
+			ondragstart={nested ? undefined : (event) => handleDragStart(event, property.id)}
+			ondragover={nested ? undefined : (event) => event.preventDefault()}
+			ondrop={nested ? undefined : (event) => handleDrop(event, property.id)}
+		>
+			{#if !nested}
+				<span class="schema-builder-drag-handle" aria-hidden="true">⠿</span>
+			{/if}
+			<input
+				type="text"
+				aria-label="Field key"
+				placeholder="Field name"
+				value={property.key}
+				oninput={(event) => patchProperty(property.id, { key: event.currentTarget.value })}
+			/>
+			<select
+				aria-label="Field type"
+				value={property.type}
+				onchange={(event) =>
+					setPropertyType(property.id, event.currentTarget.value as SchemaBuilderFieldType)}
+			>
+				{#each SCHEMA_BUILDER_FIELD_TYPES as type (type)}
+					<option value={type}>{type}</option>
+				{/each}
+			</select>
+			<label>
+				<input
+					type="checkbox"
+					aria-label="Required"
+					checked={property.required ?? false}
+					onchange={(event) => patchProperty(property.id, { required: event.currentTarget.checked })}
+				/>
+				Required
+			</label>
+			<input
+				type="text"
+				aria-label="Description"
+				placeholder="Description (optional)"
+				value={property.description}
+				oninput={(event) => patchProperty(property.id, { description: event.currentTarget.value })}
+			/>
+			<button type="button" onclick={() => removeProperty(property.id)}>Remove field</button>
+			{#if property.type === 'enum'}
+				{@render enumEditor(property)}
+			{:else if property.type === 'object'}
+				<div class="schema-builder-nested" data-testid="schema-builder-nested">
+					{@render fieldRows(property.properties ?? [], true)}
+					<button type="button" onclick={() => addNestedField(property.id)}>
+						Add nested field
+					</button>
+				</div>
+			{:else if property.type === 'array'}
+				<div class="schema-builder-array" data-testid="schema-builder-array-editor">
+					<label>
+						Array item type
+						<select
+							aria-label="Array item type"
+							value={property.items?.type ?? 'string'}
+							onchange={(event) =>
+								setArrayItemType(
+									property.id,
+									event.currentTarget.value as SchemaBuilderArrayItemType
+								)}
+						>
+							{#each SCHEMA_BUILDER_ARRAY_ITEM_TYPES as itemType (itemType)}
+								<option value={itemType}>{itemType}</option>
+							{/each}
+						</select>
+					</label>
+					{#if property.items?.type === 'object'}
+						{@render fieldRows(property.items.properties ?? [], true)}
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/each}
+{/snippet}
+
+<section
+	data-testid="schema-builder"
+	data-theme={isDark ? 'dark' : 'light'}
+	class="schema-builder"
+	class:dark={isDark}
+>
+	<header class="schema-builder-header">
+		<h2>Schema Builder</h2>
+		<button type="button" onclick={toggleDark}>
+			{isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+		</button>
+	</header>
+
+	<div class="schema-builder-body">
+		<div class="schema-builder-fields" data-testid="schema-builder-fields">
+			{#if current.properties.length === 0}
+				<p data-testid="schema-builder-empty">No fields yet. Add the first field to begin.</p>
+			{/if}
+			{@render fieldRows(current.properties, false)}
+			<button type="button" onclick={addField}>Add field</button>
+		</div>
+
+		<pre
+			class="schema-builder-output"
+			data-testid="schema-builder-output">{JSON.stringify(serialized, null, 2)}</pre>
+	</div>
+</section>
+
+<style>
+	.schema-builder {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: 0.75rem;
+		padding: 1rem;
+		background: var(--color-surface, #fff);
+		color: var(--color-foreground, #111);
+	}
+	.schema-builder.dark {
+		--color-border: #3f3f46;
+		--color-surface: #18181b;
+		--color-foreground: #fafafa;
+	}
+	.schema-builder-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.schema-builder-header h2 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.schema-builder-body {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	.schema-builder-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.schema-builder-field {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: 0.5rem;
+		padding: 0.5rem;
+	}
+	.schema-builder-drag-handle {
+		cursor: grab;
+		user-select: none;
+	}
+	.schema-builder-nested,
+	.schema-builder-array,
+	.schema-builder-enum {
+		flex-basis: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding-left: 1rem;
+		border-left: 2px solid var(--color-border, #e5e7eb);
+	}
+	.schema-builder-enum-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+	.schema-builder-output {
+		margin: 0;
+		overflow: auto;
+		max-height: 32rem;
+		border: 1px solid var(--color-border, #e5e7eb);
+		border-radius: 0.5rem;
+		padding: 0.75rem;
+		font-size: 0.8rem;
+	}
+</style>
