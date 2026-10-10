@@ -19,7 +19,7 @@ Bun is the package manager (`docs/bun-migration.md`). Node runs Vite, Vitest, an
 - `bun run check` runs svelte-check.
 - `bun run test:unit -- --run` runs Vitest once. `bun run test:e2e` runs Playwright. `bun run test` runs both.
 - `bun run build` builds the docs site and packages the library.
-- `.claude/settings.json` enables the `svelte@svelte` plugin but does not install it. Each collaborator registers the marketplace if needed and runs `claude plugin install svelte@svelte --scope project` before using the Svelte autofixer and `svelte-file-editor` agent.
+- `.claude/settings.json` enables the `svelte@svelte` plugin but does not install it. Each collaborator runs `claude plugin marketplace add sveltejs/ai-tools` (if not yet registered), then `claude plugin install svelte@svelte --scope project`, before using the Svelte autofixer and `svelte-file-editor` agent.
 - Known flake: unit runs sometimes exit 1 with "EnvironmentTeardownError" from `pdf.worker.mjs` even though all tests pass.
 
 ## Rules for this work
