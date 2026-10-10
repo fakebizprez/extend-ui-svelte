@@ -553,12 +553,15 @@
 	.es-field {
 		display: grid;
 		gap: 0.25rem;
+		min-width: 0;
 		font-size: 12px;
 		color: var(--es-muted);
 	}
 
 	.es-field input[type='number'] {
+		box-sizing: border-box;
 		width: 100%;
+		min-width: 0;
 		padding: 0.375rem 0.5rem;
 		border: 1px solid var(--es-border);
 		border-radius: 0.375rem;
@@ -568,12 +571,19 @@
 	}
 
 	.es-scale {
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
+	}
+
+	.es-scale input[type='range'] {
+		width: 100%;
+		min-width: 0;
+		margin: 0;
 	}
 
 	.es-button {
 		flex: none;
+		max-width: 100%;
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--es-border);
 		border-radius: 0.375rem;

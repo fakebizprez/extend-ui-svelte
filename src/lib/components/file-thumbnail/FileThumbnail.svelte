@@ -9,8 +9,9 @@
 	  engine wrapper (dynamically imported on the client). Upstream renders
 	  thumbnails in docs-level wrappers around @embedpdf; here PDF.js does it
 	  in-component. Only the requested page is rendered, never the document.
-	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange) with a
-	  small theme toggle, matching the other ported components.
+	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange). Like
+	  upstream it renders no theme toggle (it is often nested inside a parent
+	  button), so it reflects `isDark` and never invokes the callback.
 -->
 <script module lang="ts">
 	export interface ThumbnailFile {
@@ -67,8 +68,7 @@
 		pdfFile = null,
 		pageNumber = DEFAULT_THUMBNAIL_PAGE,
 		width = DEFAULT_THUMBNAIL_WIDTH,
-		isDark = false,
-		onIsDarkChange
+		isDark = false
 	}: Props = $props();
 
 	// PDF mode is the fallback source: explicit image/snippet previews win.
@@ -105,6 +105,7 @@
 				(pdfActive && pdfStatus === 'error') ||
 				(!previewImageUrl && !hasPreviewContent && !pdfActive))
 	);
+	// CSS aspect-ratio is width / height.
 	const aspectRatio = $derived(previewAspectRatio ?? (pdfActive ? (pdfAspect ?? 1) : 1));
 	const fallbackGlyph = $derived(
 		file?.name.split('.').pop()?.toUpperCase().slice(0, 4) || 'FILE'
@@ -188,7 +189,7 @@
 					dpr
 				});
 				if (run !== pdfRun) return;
-				pdfAspect = result.width > 0 ? result.height / result.width : null;
+				pdfAspect = result.height > 0 ? result.width / result.height : null;
 				pdfStatus = 'ready';
 			} catch {
 				if (run !== pdfRun) return;
@@ -209,15 +210,6 @@
 </script>
 
 <div class={['file-thumbnail', className]} class:dark={isDark} data-testid="file-thumbnail">
-	<button
-		type="button"
-		class="theme-toggle"
-		aria-label="Toggle dark mode"
-		aria-pressed={isDark}
-		onclick={() => onIsDarkChange?.(!isDark)}
-	>
-		{isDark ? 'Light' : 'Dark'}
-	</button>
 	<div
 		class={['preview', previewClassName]}
 		class:preview-loading={showLoading}
@@ -236,7 +228,7 @@
 				class="preview-image"
 				class:image-loading={showLoading}
 				data-testid="file-thumbnail-image"
-				onload={(event) => markImageLoaded(event.currentTarget, previewImageUrl)}
+				onload={(event) => markImageLoaded(event.currentTarget as HTMLImageElement, previewImageUrl)}
 				onerror={handleImageError}
 			/>
 		{/if}
@@ -291,20 +283,6 @@
 		--ft-muted: #1f2937;
 		--ft-muted-fg: #9ca3af;
 		--ft-border: rgba(243, 244, 246, 0.16);
-	}
-
-	.theme-toggle {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		z-index: 20;
-		border: 1px solid var(--ft-border);
-		border-radius: 999px;
-		background: var(--ft-bg);
-		color: var(--ft-muted-fg);
-		font-size: 0.75rem;
-		padding: 0.15rem 0.6rem;
-		cursor: pointer;
 	}
 
 	.preview {

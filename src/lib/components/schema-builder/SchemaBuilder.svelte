@@ -100,7 +100,12 @@
 	): SchemaBuilderProperty {
 		const base = { ...property, type };
 		if (type === 'enum') {
-			return { ...base, enumValues: base.enumValues ?? [], properties: undefined, items: undefined };
+			return {
+				...base,
+				enumValues: base.enumValues?.length ? base.enumValues : [createSchemaBuilderEnumValue()],
+				properties: undefined,
+				items: undefined
+			};
 		}
 		if (type === 'object') {
 			return {
@@ -342,31 +347,15 @@
 		if (activeId) moveProperty(activeId, overId);
 	}
 
-	function addEnumValue(propertyId: string): void {
-		updateProperties((properties) =>
-			updatePropertyById(properties, propertyId, (property) => ({
-				...property,
-				enumValues: [...(property.enumValues ?? []), createSchemaBuilderEnumValue()]
-			}))
-		);
+	function setEnumValues(propertyId: string, enumValues: SchemaBuilderEnumValue[]): void {
+		patchProperty(propertyId, { enumValues });
 	}
 
-	function patchEnumValue(propertyId: string, valueId: string, patch: Partial<SchemaBuilderEnumValue>): void {
+	function setArrayItemEnumValues(propertyId: string, enumValues: SchemaBuilderEnumValue[]): void {
 		updateProperties((properties) =>
 			updatePropertyById(properties, propertyId, (property) => ({
 				...property,
-				enumValues: (property.enumValues ?? []).map((value) =>
-					value.id === valueId ? { ...value, ...patch } : value
-				)
-			}))
-		);
-	}
-
-	function removeEnumValue(propertyId: string, valueId: string): void {
-		updateProperties((properties) =>
-			updatePropertyById(properties, propertyId, (property) => ({
-				...property,
-				enumValues: (property.enumValues ?? []).filter((value) => value.id !== valueId)
+				items: { type: 'enum', ...property.items, enumValues }
 			}))
 		);
 	}
@@ -387,7 +376,15 @@
 					};
 				}
 				if (type === 'enum') {
-					return { ...property, items: { type, enumValues: previous?.enumValues ?? [] } };
+					return {
+						...property,
+						items: {
+							type,
+							enumValues: previous?.enumValues?.length
+								? previous.enumValues
+								: [createSchemaBuilderEnumValue()]
+						}
+					};
 				}
 				return { ...property, items: { type } };
 			})
@@ -400,9 +397,12 @@
 	}
 </script>
 
-{#snippet enumEditor(property: SchemaBuilderProperty)}
+{#snippet enumEditor(
+	values: SchemaBuilderEnumValue[],
+	onChange: (values: SchemaBuilderEnumValue[]) => void
+)}
 	<div class="schema-builder-enum" data-testid="schema-builder-enum-editor">
-		{#each property.enumValues ?? [] as enumValue (enumValue.id)}
+		{#each values as enumValue (enumValue.id)}
 			<div class="schema-builder-enum-row" data-testid="schema-builder-enum-value">
 				<input
 					type="text"
@@ -410,7 +410,11 @@
 					placeholder="Value"
 					value={enumValue.value}
 					oninput={(event) =>
-						patchEnumValue(property.id, enumValue.id, { value: event.currentTarget.value })}
+						onChange(
+							values.map((value) =>
+								value.id === enumValue.id ? { ...value, value: event.currentTarget.value } : value
+							)
+						)}
 				/>
 				<input
 					type="text"
@@ -418,16 +422,25 @@
 					placeholder="Description (optional)"
 					value={enumValue.description}
 					oninput={(event) =>
-						patchEnumValue(property.id, enumValue.id, {
-							description: event.currentTarget.value
-						})}
+						onChange(
+							values.map((value) =>
+								value.id === enumValue.id
+									? { ...value, description: event.currentTarget.value }
+									: value
+							)
+						)}
 				/>
-				<button type="button" onclick={() => removeEnumValue(property.id, enumValue.id)}>
+				<button
+					type="button"
+					onclick={() => onChange(values.filter((value) => value.id !== enumValue.id))}
+				>
 					Remove enum value
 				</button>
 			</div>
 		{/each}
-		<button type="button" onclick={() => addEnumValue(property.id)}>Add enum value</button>
+		<button type="button" onclick={() => onChange([...values, createSchemaBuilderEnumValue()])}>
+			Add enum value
+		</button>
 	</div>
 {/snippet}
 
@@ -482,7 +495,7 @@
 			/>
 			<button type="button" onclick={() => removeProperty(property.id)}>Remove field</button>
 			{#if property.type === 'enum'}
-				{@render enumEditor(property)}
+				{@render enumEditor(property.enumValues ?? [], (values) => setEnumValues(property.id, values))}
 			{:else if property.type === 'object'}
 				<div class="schema-builder-nested" data-testid="schema-builder-nested">
 					{@render fieldRows(property.properties ?? [], true)}
@@ -510,6 +523,10 @@
 					</label>
 					{#if property.items?.type === 'object'}
 						{@render fieldRows(property.items.properties ?? [], true)}
+					{:else if property.items?.type === 'enum'}
+						{@render enumEditor(property.items.enumValues ?? [], (values) =>
+							setArrayItemEnumValues(property.id, values)
+						)}
 					{/if}
 				</div>
 			{/if}

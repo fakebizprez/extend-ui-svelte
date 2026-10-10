@@ -1,8 +1,32 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import DocumentSplits from './DocumentSplits.svelte';
 import type { DocumentSplit } from './splits.js';
+
+const pdfMock = vi.hoisted(() => ({
+	created: 0,
+	loads: [] as unknown[],
+	rendered: [] as number[]
+}));
+
+vi.mock('#lib/engines/pdf/index.js', () => ({
+	createPdfEngine: () => {
+		pdfMock.created += 1;
+		return {
+			load: async (source: unknown) => {
+				pdfMock.loads.push(source);
+				return 5;
+			},
+			renderPage: async (page: number, _canvas: HTMLCanvasElement, options?: { scale?: number }) => {
+				pdfMock.rendered.push(page);
+				const scale = options?.scale ?? 1;
+				return { width: 612 * scale, height: 792 * scale };
+			},
+			destroy: async () => {}
+		};
+	}
+}));
 
 const SPLITS: DocumentSplit[] = [
 	{ id: 'split-1', title: 'Intro', pages: ['page-1', 'page-2'] },
@@ -286,5 +310,92 @@ describe('DocumentSplits', () => {
 		rerender({ splits: SPLITS, withFrameDivider: false });
 
 		expect(root).toHaveAttribute('data-frame-divider', 'false');
+	});
+
+	describe('lazy PDF page thumbnails', () => {
+		class FakeIntersectionObserver {
+			static instances: FakeIntersectionObserver[] = [];
+			readonly targets = new Set<Element>();
+			constructor(readonly callback: IntersectionObserverCallback) {
+				FakeIntersectionObserver.instances.push(this);
+			}
+			observe(target: Element) {
+				this.targets.add(target);
+			}
+			unobserve(target: Element) {
+				this.targets.delete(target);
+			}
+			disconnect() {
+				this.targets.clear();
+			}
+		}
+
+		function scrollIntoView(...targets: Element[]) {
+			for (const observer of FakeIntersectionObserver.instances) {
+				const entries = targets
+					.filter((target) => observer.targets.has(target))
+					.map((target) => ({ target, isIntersecting: true }) as IntersectionObserverEntry);
+				if (entries.length) {
+					observer.callback(entries, observer as unknown as IntersectionObserver);
+				}
+			}
+		}
+
+		function setup() {
+			pdfMock.created = 0;
+			pdfMock.loads = [];
+			pdfMock.rendered = [];
+			FakeIntersectionObserver.instances = [];
+			vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+			vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==');
+		}
+
+		afterEach(() => {
+			vi.unstubAllGlobals();
+			vi.restoreAllMocks();
+		});
+
+		it('loads the PDF once for all pages and renders only pages that scroll into view', async () => {
+			setup();
+			render(DocumentSplits, { splits: SPLITS, pdfUrl: '/fixtures/sample.pdf' });
+
+			// Nothing is near the viewport yet: no page renders.
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(pdfMock.rendered).toEqual([]);
+
+			scrollIntoView(screen.getByTestId('split-page-page-3'));
+			await vi.waitFor(() => expect(pdfMock.rendered).toContain(3));
+			expect(new Set(pdfMock.rendered)).toEqual(new Set([3]));
+
+			scrollIntoView(screen.getByTestId('split-page-page-1'), screen.getByTestId('split-page-page-2'));
+			await vi.waitFor(() => expect(new Set(pdfMock.rendered)).toEqual(new Set([1, 2, 3])));
+
+			// Pages 4 and 5 stayed offscreen, and the document loaded exactly once.
+			expect(pdfMock.created).toBe(1);
+			expect(pdfMock.loads).toEqual(['/fixtures/sample.pdf']);
+
+			await vi.waitFor(() => {
+				const image = within(screen.getByTestId('split-page-page-3')).getByTestId(
+					'file-thumbnail-image'
+				);
+				expect(image).toHaveAttribute('src', 'data:image/png;base64,AA==');
+			});
+			expect(
+				within(screen.getByTestId('split-page-page-5')).queryByTestId('file-thumbnail-image')
+			).not.toBeInTheDocument();
+		});
+
+		it('never renders pages that already have cached thumbnail images', async () => {
+			setup();
+			render(DocumentSplits, {
+				splits: SPLITS,
+				pdfUrl: '/fixtures/sample.pdf',
+				thumbnailImages: { 'page-1': 'data:image/png;base64,CACHED' }
+			});
+
+			scrollIntoView(screen.getByTestId('split-page-page-1'), screen.getByTestId('split-page-page-2'));
+			await vi.waitFor(() => expect(pdfMock.rendered).toContain(2));
+			expect(pdfMock.rendered).not.toContain(1);
+		});
 	});
 });

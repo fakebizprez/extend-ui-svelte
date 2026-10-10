@@ -41,6 +41,76 @@ test('xlsx-editor cell edit persists across sheet switches', async ({ page }) =>
 	await expect(editor.getByTestId('formula-bar')).toHaveValue('Resistor kit pro');
 });
 
+// These use real keystrokes, not .fill(): .fill() focuses the input itself and
+// would hide a missing focus on edit start.
+test('xlsx-editor double-click then typing replaces the value and Enter commits', async ({
+	page
+}) => {
+	await page.goto('/xlsx-editor');
+
+	const editor = page.getByTestId('xlsx-editor').first();
+	const cell = editor.getByRole('gridcell', { name: '120', exact: true });
+	await expect(cell).toBeVisible();
+
+	await cell.dblclick();
+	const input = editor.getByTestId('cell-input');
+	await expect(input).toBeFocused();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('999');
+	await expect(input).toHaveValue('999');
+	await page.keyboard.press('Enter');
+
+	await expect(input).toHaveCount(0);
+	const edited = editor.getByRole('gridcell', { name: '999', exact: true });
+	await expect(edited).toBeVisible();
+	await expect(edited).toBeFocused();
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('999');
+	await expect(page.getByTestId('last-change')).toContainText('999');
+});
+
+test('xlsx-editor Escape cancels a typed edit and restores the value', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+
+	const editor = page.getByTestId('xlsx-editor').first();
+	const cell = editor.getByRole('gridcell', { name: '120', exact: true });
+	await expect(cell).toBeVisible();
+
+	await cell.dblclick();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('999');
+	await expect(editor.getByTestId('cell-input')).toHaveValue('999');
+	await page.keyboard.press('Escape');
+
+	await expect(editor.getByTestId('cell-input')).toHaveCount(0);
+	await expect(cell).toBeVisible();
+	await expect(cell).toBeFocused();
+	await expect(editor.getByRole('gridcell', { name: '999', exact: true })).toHaveCount(0);
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('120');
+	await expect(page.getByTestId('last-change')).toContainText('none yet');
+});
+
+test('xlsx-editor Enter on a selected cell focuses the edit input', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+
+	const editor = page.getByTestId('xlsx-editor').first();
+	const cell = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
+	await expect(cell).toBeVisible();
+
+	await cell.click();
+	await page.keyboard.press('Enter');
+
+	const input = editor.getByTestId('cell-input');
+	await expect(input).toBeVisible();
+	expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+		'cell-input'
+	);
+	// Caret lands at the end, so typing appends.
+	await page.keyboard.type(' pro');
+	await expect(input).toHaveValue('Resistor kit pro');
+	await page.keyboard.press('Enter');
+	await expect(editor.getByRole('gridcell', { name: 'Resistor kit pro' })).toBeFocused();
+});
+
 test('xlsx-editor export produces an .xlsx download with the edits', async ({ page }) => {
 	await page.goto('/xlsx-editor');
 

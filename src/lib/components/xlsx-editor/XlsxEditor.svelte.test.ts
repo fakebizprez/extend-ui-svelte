@@ -99,6 +99,41 @@ describe('XlsxEditor', () => {
 		expect(onCellChange).not.toHaveBeenCalled();
 	});
 
+	it('focuses the edit input with the caret at the end when editing starts', async () => {
+		render(XlsxEditor, { data: inventoryBytes() });
+		await gridLoaded();
+
+		await fireEvent.dblClick(screen.getByRole('gridcell', { name: 'Resistor kit' }));
+		const input = (await screen.findByTestId('cell-input')) as HTMLInputElement;
+		expect(input).toHaveFocus();
+		expect(input.selectionStart).toBe('Resistor kit'.length);
+		expect(input.selectionEnd).toBe('Resistor kit'.length);
+
+		// Enter commits and hands focus back to the cell for keyboard use.
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
+		expect(screen.getByRole('gridcell', { name: 'Resistor kit' })).toHaveFocus();
+
+		// Enter on the focused, selected cell edits it again with focus in the input.
+		await fireEvent.keyDown(screen.getByRole('gridcell', { name: 'Resistor kit' }), {
+			key: 'Enter'
+		});
+		expect(await screen.findByTestId('cell-input')).toHaveFocus();
+	});
+
+	it('returns focus to the cell after Escape cancels an edit', async () => {
+		render(XlsxEditor, { data: inventoryBytes() });
+		await gridLoaded();
+
+		await fireEvent.dblClick(screen.getByRole('gridcell', { name: '120' }));
+		const input = await screen.findByTestId('cell-input');
+		await fireEvent.input(input, { target: { value: '999' } });
+		await fireEvent.keyDown(input, { key: 'Escape' });
+
+		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
+		expect(screen.getByRole('gridcell', { name: '120' })).toHaveFocus();
+	});
+
 	it('evaluates a formula entered into a cell', async () => {
 		render(XlsxEditor, { data: inventoryBytes() });
 		await gridLoaded();

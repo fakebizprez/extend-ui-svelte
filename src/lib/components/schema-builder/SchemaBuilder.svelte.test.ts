@@ -167,6 +167,75 @@ describe('SchemaBuilder', () => {
 		expect(emitted.properties['status'].enum).toEqual(['paid']);
 	});
 
+	it('switching to enum, or to array of enum, starts with one blank value like upstream', async () => {
+		render(SchemaBuilder, {
+			defaultSchema: {
+				properties: [
+					{ id: 'e', key: 'status', type: 'string', description: '' },
+					{ id: 'a', key: 'tags', type: 'string', description: '' }
+				]
+			}
+		});
+
+		const [enumRow, arrayRow] = getFieldRows();
+		await fireEvent.change(within(enumRow).getByLabelText('Field type'), {
+			target: { value: 'enum' }
+		});
+		await fireEvent.change(within(arrayRow).getByLabelText('Field type'), {
+			target: { value: 'array' }
+		});
+		await fireEvent.change(within(arrayRow).getByLabelText('Array item type'), {
+			target: { value: 'enum' }
+		});
+
+		for (const row of getFieldRows()) {
+			const values = within(row).getAllByLabelText('Enum value') as HTMLInputElement[];
+			expect(values.map((input) => input.value)).toEqual(['']);
+		}
+	});
+
+	it('array fields with enum items expose an enum editor whose values serialize into items', async () => {
+		const onSerializedSchemaChange = vi.fn();
+		render(SchemaBuilder, {
+			defaultSchema: {
+				properties: [{ id: 'a', key: 'tags', type: 'string', description: '' }]
+			},
+			onSerializedSchemaChange
+		});
+
+		const row = getFieldRows()[0];
+		await fireEvent.change(within(row).getByLabelText('Field type'), {
+			target: { value: 'array' }
+		});
+		await fireEvent.change(within(row).getByLabelText('Array item type'), {
+			target: { value: 'enum' }
+		});
+
+		const editor = within(row).getByTestId('schema-builder-enum-editor');
+		// One blank value is seeded on switching to enum items; add a second.
+		await fireEvent.click(within(editor).getByRole('button', { name: 'Add enum value' }));
+		const valueInputs = within(editor).getAllByLabelText('Enum value');
+		await fireEvent.input(valueInputs[0], { target: { value: 'urgent' } });
+		await fireEvent.input(valueInputs[1], { target: { value: 'billing' } });
+		await fireEvent.input(within(editor).getAllByLabelText('Enum description')[0], {
+			target: { value: 'Needs attention' }
+		});
+
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)![0] as SerializedSchema;
+		expect(emitted.properties['tags']).toEqual({
+			type: 'array',
+			items: {
+				type: 'string',
+				enum: ['urgent', 'billing'],
+				enumDescriptions: { urgent: 'Needs attention' }
+			}
+		});
+
+		await fireEvent.click(within(editor).getAllByRole('button', { name: 'Remove enum value' })[0]);
+		const afterRemove = onSerializedSchemaChange.mock.calls.at(-1)![0] as SerializedSchema;
+		expect(afterRemove.properties['tags'].items?.enum).toEqual(['billing']);
+	});
+
 	it('shows a live JSON preview of the serialized schema', async () => {
 		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA });
 

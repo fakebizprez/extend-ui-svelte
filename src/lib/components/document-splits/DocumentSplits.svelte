@@ -14,15 +14,22 @@
 	  upstream), uncontrolled, or with `bind:splits`.
 	- New operations upstream inlines or lacks: rename via a title input,
 	  `Split <title> in two` (midpoint cut), and an `activePage` highlight.
-	- Page thumbnails reuse FileThumbnail; pass `pdfUrl` to render real PDF
-	  pages through the shared PDF engine, or `thumbnailImages` for cached
-	  data URLs exactly like upstream.
+	- Page thumbnails reuse FileThumbnail; pass `thumbnailImages` for cached
+	  data URLs exactly like upstream, or `pdfUrl` to render real PDF pages.
+	  Like upstream's lazy PDF page thumbnails, the document loads once per
+	  `pdfUrl` and each page renders to an image only when it scrolls near the
+	  viewport (IntersectionObserver; all pages render where it is missing).
 	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange);
 	  this component renders no theme switcher, so it reflects `isDark` and
 	  never invokes the callback.
 -->
 <script lang="ts">
-	import { FileThumbnail } from '#lib/components/file-thumbnail/index.js';
+	import { onMount, untrack } from 'svelte';
+	import {
+		FileThumbnail,
+		renderLoadedPdfThumbnail
+	} from '#lib/components/file-thumbnail/index.js';
+	import type { PdfEngine } from '#lib/engines/pdf/index.js';
 	import { resolveIsDark } from '#lib/dark-mode.js';
 	import {
 		addSplit,
@@ -238,6 +245,105 @@
 		if (fromIndex === -1) return;
 		commit(reorderSplits(splits, fromIndex, fromIndex + direction));
 	}
+
+	// Page thumbnail box, matching upstream THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT.
+	const THUMBNAIL_WIDTH = 72;
+	const THUMBNAIL_HEIGHT = 92;
+
+	// Page images rendered from pdfUrl; null marks a page that failed to render.
+	let pdfImages = $state<Partial<Record<DocumentSplitPageId, string | null>>>({});
+	let pdfDocument: Promise<{ engine: PdfEngine; pageCount: number }> | null = null;
+	let pdfRun = 0;
+	// Pages render one at a time, in the order they scroll into view.
+	let renderQueue: Promise<void> = Promise.resolve();
+	const requestedPages = new Set<DocumentSplitPageId>();
+	const visiblePages = new Set<DocumentSplitPageId>();
+	const observedPages = new Map<Element, DocumentSplitPageId>();
+	let pageObserver: IntersectionObserver | null = null;
+
+	function requestPageImage(pageId: DocumentSplitPageId): void {
+		const documentPromise = pdfDocument;
+		if (!documentPromise || thumbnailImages[pageId] || requestedPages.has(pageId)) return;
+		requestedPages.add(pageId);
+		const run = pdfRun;
+		renderQueue = renderQueue.then(async () => {
+			if (run !== pdfRun) return;
+			try {
+				const { engine, pageCount } = await documentPromise;
+				const pageNumber = getPageNumber(pageId);
+				if (pageNumber > pageCount) throw new RangeError(`No page ${pageNumber}`);
+				if (run !== pdfRun) return;
+				const canvas = document.createElement('canvas');
+				await renderLoadedPdfThumbnail(engine, pageCount, canvas, {
+					pageNumber,
+					width: THUMBNAIL_WIDTH,
+					dpr: window.devicePixelRatio || 1
+				});
+				if (run !== pdfRun) return;
+				pdfImages = { ...pdfImages, [pageId]: canvas.toDataURL() };
+			} catch {
+				if (run === pdfRun) pdfImages = { ...pdfImages, [pageId]: null };
+			}
+		});
+	}
+
+	// Load the document once per pdfUrl; every page thumbnail shares it.
+	$effect(() => {
+		const url = pdfUrl;
+		pdfImages = {};
+		requestedPages.clear();
+		if (!url) return;
+		// Browser-only: the engine (and PDF.js behind it) loads on the client.
+		const loading = import('#lib/engines/pdf/index.js').then(async (module) => {
+			const engine = module.createPdfEngine();
+			return { engine, pageCount: await engine.load(url) };
+		});
+		pdfDocument = loading;
+		// Pages already near the viewport will not report again; render them now.
+		untrack(() => visiblePages.forEach(requestPageImage));
+		return () => {
+			pdfRun += 1;
+			pdfDocument = null;
+			void loading.then(
+				({ engine }) => engine.destroy(),
+				() => undefined
+			);
+		};
+	});
+
+	function observePage(node: HTMLElement, pageId: DocumentSplitPageId) {
+		if (typeof IntersectionObserver === 'undefined') {
+			visiblePages.add(pageId);
+			requestPageImage(pageId);
+			return;
+		}
+		pageObserver ??= new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					const id = observedPages.get(entry.target);
+					if (!id) continue;
+					if (entry.isIntersecting) {
+						visiblePages.add(id);
+						requestPageImage(id);
+					} else {
+						visiblePages.delete(id);
+					}
+				}
+			},
+			{ rootMargin: '200px' }
+		);
+		observedPages.set(node, pageId);
+		pageObserver.observe(node);
+		return {
+			destroy() {
+				observedPages.delete(node);
+				visiblePages.delete(pageId);
+				pageObserver?.unobserve(node);
+			}
+		};
+	}
+
+	onMount(() => () => pageObserver?.disconnect());
 </script>
 
 <aside
@@ -356,6 +462,7 @@
 								{@const pageNumber = getPageNumber(pageId)}
 								{@const isFirstPage = pageIndex === 0}
 								{@const isLastPage = pageIndex === group.pages.length - 1}
+								{@const imageUrl = thumbnailImages[pageId] ?? pdfImages[pageId] ?? null}
 								<div class="split-page">
 									<button
 										type="button"
@@ -370,14 +477,14 @@
 										ondragover={(event) => onPageDragOver(event, pageId)}
 										ondrop={(event) => onPageDrop(event, pageId)}
 										ondragend={clearDragState}
+										use:observePage={pageId}
 									>
 										<FileThumbnail
 											file={{ name: `page-${pageNumber}.pdf`, type: 'application/pdf' }}
-											previewImageUrl={thumbnailImages[pageId] ?? null}
-											isLoading={!thumbnailImages[pageId] && !pdfUrl}
-											{pdfUrl}
-											{pageNumber}
-											width={72}
+											previewImageUrl={imageUrl}
+											isLoading={!imageUrl && pdfImages[pageId] !== null}
+											hasError={!imageUrl && pdfImages[pageId] === null}
+											previewAspectRatio={THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT}
 											isDark={dark}
 										/>
 										<span class="split-page-badge">{pageNumber}</span>

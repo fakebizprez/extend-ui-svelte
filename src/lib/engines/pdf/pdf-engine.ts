@@ -102,7 +102,9 @@ export function createPdfEngine(): PdfEngine {
 	let loadingTask: PDFDocumentLoadingTask | null = null;
 	let pageCount = 0;
 	let currentPage = 0;
-	let renderTask: { cancel(): void } | null = null;
+	// One in-flight render per canvas: redrawing a canvas cancels its previous
+	// render, while different canvases (several pages in view) render in parallel.
+	const renderTasks = new Map<HTMLCanvasElement, { cancel(): void }>();
 	const listeners = new Set<PdfPageChangeHandler>();
 
 	function notify(page: number): void {
@@ -166,22 +168,20 @@ export function createPdfEngine(): PdfEngine {
 				scale: options.scale ?? 1,
 				rotation: options.rotation ?? 0
 			});
+			// Stop the canvas's previous render before resizing it under that render.
+			renderTasks.get(canvas)?.cancel();
 			canvas.width = Math.ceil(viewport.width);
 			canvas.height = Math.ceil(viewport.height);
-			if (renderTask) {
-				renderTask.cancel();
-				renderTask = null;
-			}
 			const task = page.render({
 				canvasContext: context,
 				viewport
 			} as RenderParameters);
-			renderTask = task;
+			renderTasks.set(canvas, task);
 			try {
 				await task.promise;
 			} finally {
-				if (renderTask === task) {
-					renderTask = null;
+				if (renderTasks.get(canvas) === task) {
+					renderTasks.delete(canvas);
 				}
 			}
 			return { width: viewport.width, height: viewport.height };
@@ -203,10 +203,10 @@ export function createPdfEngine(): PdfEngine {
 		},
 
 		async destroy(): Promise<void> {
-			if (renderTask) {
-				renderTask.cancel();
-				renderTask = null;
+			for (const task of renderTasks.values()) {
+				task.cancel();
 			}
+			renderTasks.clear();
 			if (loadingTask) {
 				const previousTask = loadingTask;
 				loadingTask = null;

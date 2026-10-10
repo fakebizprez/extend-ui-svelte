@@ -5,6 +5,19 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import FileThumbnail from './FileThumbnail.svelte';
 
+// A US Letter page (612x792 pt): portrait, so width/height is below 1.
+const LETTER = { width: 612, height: 792 };
+vi.mock('#lib/engines/pdf/index.js', () => ({
+	createPdfEngine: () => ({
+		load: async () => 3,
+		renderPage: async (_page: number, _canvas: HTMLCanvasElement, options?: { scale?: number }) => ({
+			width: LETTER.width * (options?.scale ?? 1),
+			height: LETTER.height * (options?.scale ?? 1)
+		}),
+		destroy: async () => {}
+	})
+}));
+
 const customPreview = () =>
 	createRawSnippet(() => ({ render: () => '<span>custom preview content</span>' }));
 
@@ -148,17 +161,30 @@ describe('FileThumbnail', () => {
 		expect(screen.getByTestId('file-thumbnail')).toHaveClass('dark');
 	});
 
-	it('notifies the parent through onIsDarkChange from the theme toggle', async () => {
-		const onIsDarkChange = vi.fn();
-		render(FileThumbnail, {
+	it('renders no buttons of its own, so it can sit inside a parent button', () => {
+		const { container } = render(FileThumbnail, {
 			file: { name: 'report.pdf', type: 'application/pdf' },
+			pdfUrl: '/fixtures/sample.pdf',
 			isDark: false,
-			onIsDarkChange
+			onIsDarkChange: vi.fn()
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: /toggle dark mode/i }));
+		expect(container.querySelectorAll('button')).toHaveLength(0);
+		expect(screen.queryByText(/^(Dark|Light)$/)).not.toBeInTheDocument();
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('pdf mode sizes the preview to the page shape as width / height', async () => {
+		render(FileThumbnail, {
+			file: { name: 'sample.pdf', type: 'application/pdf' },
+			pdfUrl: '/fixtures/sample.pdf',
+			width: 240
+		});
+
+		const preview = screen.getByTestId('file-thumbnail-preview');
+		await vi.waitFor(() => {
+			expect(screen.queryByTestId('file-thumbnail-loading')).not.toBeInTheDocument();
+		});
+		// CSS aspect-ratio is width / height; a portrait page must be below 1.
+		expect(parseFloat(preview.style.aspectRatio)).toBeCloseTo(LETTER.width / LETTER.height, 3);
 	});
 });

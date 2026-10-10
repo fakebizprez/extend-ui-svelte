@@ -57,9 +57,8 @@ export function thumbnailScale(pageWidth: number, targetWidth: number, dpr = 1):
 
 /**
  * Render one PDF page into a canvas at the requested CSS width. The engine
- * loads the document, the page is measured with a scale-1 render, and a second
- * render targets the exact width (skipped when the scale is already 1). Only
- * the single requested page is ever rendered.
+ * loads the document, then the page renders through renderLoadedPdfThumbnail.
+ * Only the single requested page is ever rendered.
  */
 export async function renderPdfThumbnail(
 	engine: PdfEngine,
@@ -68,6 +67,21 @@ export async function renderPdfThumbnail(
 	options: PdfThumbnailRenderOptions = {}
 ): Promise<PdfThumbnailRenderResult> {
 	const pageCount = await engine.load(source);
+	return renderLoadedPdfThumbnail(engine, pageCount, canvas, options);
+}
+
+/**
+ * Render one page of an already-loaded document at the requested CSS width,
+ * so many pages can share a single load. The page is measured with a scale-1
+ * render, and a second render targets the exact width (skipped when the scale
+ * is already 1).
+ */
+export async function renderLoadedPdfThumbnail(
+	engine: PdfEngine,
+	pageCount: number,
+	canvas: HTMLCanvasElement,
+	options: PdfThumbnailRenderOptions = {}
+): Promise<PdfThumbnailRenderResult> {
 	const pageNumber = clampPageNumber(options.pageNumber ?? DEFAULT_THUMBNAIL_PAGE, pageCount);
 	const width = options.width ?? DEFAULT_THUMBNAIL_WIDTH;
 	const dpr = options.dpr ?? 1;

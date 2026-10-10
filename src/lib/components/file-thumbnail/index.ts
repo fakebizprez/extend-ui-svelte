@@ -10,6 +10,7 @@ export {
 	clampPageNumber,
 	DEFAULT_THUMBNAIL_PAGE,
 	DEFAULT_THUMBNAIL_WIDTH,
+	renderLoadedPdfThumbnail,
 	renderPdfThumbnail,
 	thumbnailScale
 } from './pdf-thumbnail.js';

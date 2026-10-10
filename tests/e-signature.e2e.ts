@@ -60,3 +60,54 @@ test('placing the signature and exporting produces a signed pdf download', async
 	const path = await download.path();
 	expect(path).toBeTruthy();
 });
+
+for (const width of [1280, 390]) {
+	test(`placement controls stay inside the card without overlapping at ${width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/e-signature');
+
+		const cards = page.getByTestId('e-signature');
+		await expect(cards.first()).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+		await expect(cards.nth(1)).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+
+		for (const card of [cards.first(), cards.nth(1)]) {
+			const cardBox = await card.boundingBox();
+			expect(cardBox).not.toBeNull();
+			if (!cardBox) return;
+			const inputs = card.locator('input');
+			const boxes = [];
+			for (let i = 0; i < (await inputs.count()); i += 1) {
+				const box = await inputs.nth(i).boundingBox();
+				expect(box).not.toBeNull();
+				if (box) boxes.push(box);
+			}
+			expect(boxes.length).toBeGreaterThanOrEqual(4);
+
+			for (const box of boxes) {
+				expect(box.x).toBeGreaterThanOrEqual(cardBox.x);
+				expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+			}
+			for (const button of await card.getByRole('button').all()) {
+				const box = await button.boundingBox();
+				expect(box).not.toBeNull();
+				if (!box) continue;
+				expect(box.x).toBeGreaterThanOrEqual(cardBox.x);
+				expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+			}
+			for (let i = 0; i < boxes.length; i += 1) {
+				for (let j = i + 1; j < boxes.length; j += 1) {
+					const a = boxes[i];
+					const b = boxes[j];
+					const overlaps =
+						a.x < b.x + b.width &&
+						b.x < a.x + a.width &&
+						a.y < b.y + b.height &&
+						b.y < a.y + a.height;
+					expect(overlaps, `inputs ${i} and ${j} overlap`).toBe(false);
+				}
+			}
+		}
+	});
+}

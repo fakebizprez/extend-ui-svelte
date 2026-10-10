@@ -238,6 +238,12 @@
 		editing = false;
 	}
 
+	/** Matches upstream: the edit input takes focus with the caret at the end. */
+	function focusAtEnd(input: HTMLInputElement): void {
+		input.focus();
+		input.setSelectionRange(input.value.length, input.value.length);
+	}
+
 	function commitFormulaBar(value: string): void {
 		if (!selected) return;
 		const { row, col } = selected;
@@ -604,6 +610,7 @@
 												data-testid="cell-input"
 												aria-label={`Edit ${columnIndexToLetter(col)}${index + 1}`}
 												value={draft}
+												{@attach focusAtEnd}
 												oninput={(event) => {
 													draft = event.currentTarget.value;
 												}}
@@ -614,7 +621,11 @@
 													} else if (event.key === 'Escape') {
 														event.preventDefault();
 														cancelEdit();
+													} else {
+														return;
 													}
+													// Hand focus back to the cell so keyboard use continues.
+													event.currentTarget.parentElement?.focus();
 												}}
 												onblur={() => commitEdit()}
 											/>
