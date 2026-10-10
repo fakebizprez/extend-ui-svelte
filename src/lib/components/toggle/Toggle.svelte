@@ -84,6 +84,7 @@
 	const inGroup = $derived(group !== undefined && value !== undefined);
 
 	// Initial capture is intended: uncontrolled state starts from the default.
+	// svelte-ignore state_referenced_locally
 	let internalPressed = $state(defaultPressed);
 	const pressed = $derived(
 		inGroup && group ? group.isSelected(value as string) : (pressedProp ?? internalPressed)
