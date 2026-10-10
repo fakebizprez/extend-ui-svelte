@@ -169,7 +169,13 @@ function portProps(source: string): string[] {
 	const keys: string[] = [];
 	let current = '';
 	depth = 0;
-	for (const c of body) {
+	for (let i = 0; i < body.length; i++) {
+		const c = body[i];
+		// The `>` of an arrow (`=>`) is not a closing delimiter.
+		if (c === '>' && body[i - 1] === '=') {
+			current += c;
+			continue;
+		}
 		if ('{([<'.includes(c)) depth++;
 		else if ('})]>'.includes(c)) depth--;
 		if (c === ',' && depth === 0) {
@@ -266,6 +272,7 @@ describe('port parity: props', () => {
 			'b',
 			'class'
 		]);
+		expect(portProps('let { onSave = () => {}, src }: P = $props();')).toEqual(['onSave', 'src']);
 	});
 
 	for (const [path, { upstream, props }] of Object.entries(UPSTREAM_PROPS)) {
@@ -289,7 +296,6 @@ const KNOWN_SELF_THEMING = [
 describe('port parity: dark mode is owned by the parent', () => {
 	for (const path of Object.keys(UPSTREAM_PROPS)) {
 		const source = read(path);
-		if (!portProps(source).includes('isDark')) continue;
 		it(`${path} never assigns isDark itself`, () => {
 			// `$bindable` lets the child write it back; an `isDark = ...;` statement flips it locally.
 			// Destructure defaults and prop passing (`isDark={dark}`) have no trailing semicolon.
