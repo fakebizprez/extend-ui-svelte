@@ -188,7 +188,7 @@
 				<thead>
 					<tr>
 						<th scope="col" class="csv-rownum" aria-label="Row number">#</th>
-						{#each parsed.headers as header}
+						{#each parsed.headers as header, i (i)}
 							<th scope="col">{header}</th>
 						{/each}
 					</tr>
