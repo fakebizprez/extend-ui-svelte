@@ -1,3 +1,96 @@
+<!-- MIT License — Svelte 5 port of Extend UI color-picker. Upstream: extend-hq/ui (MIT). -->
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { ColorPicker, ColorPickerPanel } from '#lib/components/color-picker/index.js';
+
+	let isDark = $state(false);
+	// Set once hydrated so tests know the controls are live.
+	let ready = $state(false);
+	onMount(() => (ready = true));
+	let brand = $state('#2563EB');
+	let highlight = $state('#F59E0B');
+	let overlay = $state('#11182780');
+	let fill = $state('#EF4444');
+</script>
+
 <h1>Color Picker</h1>
-<p>Coming soon: the <code>color-picker</code> preview will live here.</p>
+<p>
+	Pick a color from an OKLCH plane, hue and opacity sliders, or typed values in Hex, RGB, HSL,
+	or OKLCH. Dark mode is controlled by the parent through <code>isDark</code>; the toggle below
+	lives outside the component.
+</p>
+<p data-ready={ready || undefined}>
+	<label>
+		<input type="checkbox" bind:checked={isDark} />
+		Dark mode
+	</label>
+</p>
+
+<div data-testid="color-picker-demos" style="display: grid; gap: 1.5rem; max-width: 40rem;">
+	<section>
+		<h2>Input</h2>
+		<ColorPicker label="Brand color" value={brand} onChange={(next) => (brand = next)} {isDark} />
+		<p data-testid="brand-value">Brand: {brand}</p>
+	</section>
+
+	<section>
+		<h2>Swatch</h2>
+		<ColorPicker
+			label="Highlight color"
+			color={highlight}
+			onChange={(next) => (highlight = next)}
+			{isDark}
+		/>
+		<p data-testid="highlight-value">Highlight: {highlight}</p>
+	</section>
+
+	<section>
+		<h2>With opacity</h2>
+		<ColorPicker
+			label="Overlay color"
+			value={overlay}
+			showAlpha
+			onChange={(next) => (overlay = next)}
+			{isDark}
+		/>
+		<p data-testid="overlay-value">Overlay: {overlay}</p>
+	</section>
+
+	<section data-testid="panel-demo">
+		<h2>Inline panel</h2>
+		<ColorPickerPanel label="Fill" color={fill} onChange={(next) => (fill = next)} {isDark} />
+		<p data-testid="panel-value">Fill: {fill}</p>
+	</section>
+
+	<section>
+		<h2>Disabled</h2>
+		<ColorPicker label="Disabled color" value="#6B7280" variant="swatch" disabled {isDark} />
+	</section>
+</div>
+
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Exported as <code>ColorPicker</code> and <code>ColorPickerPanel</code>, like upstream.
+			<code>className</code> and <code>class</code> are both accepted.
+		</li>
+		<li><code>icon</code> is a Svelte snippet instead of a React component type.</li>
+		<li>
+			The format picker is a native <code>select</code>, and the popover is an inline panel that
+			opens from the trigger and closes on Escape (no Select, Popover, or Tooltip primitives are
+			ported).
+		</li>
+		<li>Copy buttons, focus-reselect, and opacity scrub-dragging are not ported.</li>
+		<li>
+			In containers narrower than the panel (phones), the fields column wraps under the plane;
+			upstream keeps one row and overflows.
+		</li>
+		<li>
+			Accepts <code>isDark</code> and <code>onIsDarkChange</code>; it reflects <code>isDark</code>
+			and never calls <code>onIsDarkChange</code>.
+		</li>
+	</ul>
+</section>
+
 <p><a href="/">Back to all components</a></p>

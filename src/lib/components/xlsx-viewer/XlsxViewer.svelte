@@ -1,19 +1,34 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI xlsx-viewer. Upstream: extend-hq/ui (MIT).
-	Deliberate changes vs the React XlsxViewerPreview ({ src, fileName, isDark,
-	onIsDarkChange, showDownload, showToolbar, showUpload }):
-	- The grid is a virtualized native table (SheetJS rows + the shared
-	  VirtualList) instead of @extend-ai/react-xlsx, which is React-only.
-	- A data prop (workbook bytes) is accepted alongside src so tests and file
-	  drops can pass bytes without a fetch round-trip.
-	- Zoom, search, upload, and download actions are out of scope for this port.
+	Exported as XlsxViewer and under the upstream name XlsxViewerPreview.
+	Like upstream, the grid shows column letters and row numbers from A1, with
+	row 1 as data and blank rows kept. Differences from upstream (keep in sync
+	with the docs page, src/routes/xlsx-viewer/+page.svelte):
+	- The grid is a virtualized native grid over SheetJS values instead of
+	  @extend-ai/react-xlsx, which is React-only.
+	- Added props: data (workbook bytes), rowHeight, height, overscan; the
+	  toolbar shows a row count.
+	- The dark-mode control is a toolbar switch, not an item in a workbook
+	  actions menu; it only calls onIsDarkChange.
+	- Not ported: cell formatting (fonts, fills, borders, number formats, merged
+	  cells), frozen panes, column resize, zoom, search, sheet thumbnails, and
+	  the upload/download menu (showDownload, showUpload, toolbarActions).
 -->
 <script lang="ts">
 	import { VirtualList } from '#lib/virtual-list/index.js';
 	import type { DarkModeProps } from '#lib/dark-mode.js';
-	import type { WorkBook, XlsxRow } from '#lib/engines/xlsx/index.js';
+	import type { WorkBook } from '#lib/engines/xlsx/index.js';
 
 	type EngineModule = typeof import('#lib/engines/xlsx/index.js');
+
+	/** Zero-based column index to spreadsheet letters (0 is A, 26 is AA). */
+	function columnIndexToLetter(index: number): string {
+		let letters = '';
+		for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+			letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+		}
+		return letters;
+	}
 
 	interface Props extends DarkModeProps {
 		/** Workbook URL. Loaded with fetch on the client. */
@@ -31,6 +46,8 @@
 		/** Extra rows rendered above/below the visible window. */
 		overscan?: number;
 		class?: string;
+		/** Alias of `class`, matching the React prop name. Both are applied. */
+		className?: string;
 	}
 
 	let {
@@ -43,7 +60,8 @@
 		rowHeight = 34,
 		height = 480,
 		overscan = 5,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: Props = $props();
 
 	type Status = 'empty' | 'loading' | 'ready' | 'error';
@@ -54,14 +72,21 @@
 	let activeSheetIndex = $state(0);
 	// Raw state: parsed workbooks and row arrays can be huge and need no deep reactivity.
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
-	let rows = $state.raw<XlsxRow[]>([]);
+	let rows = $state.raw<unknown[][]>([]);
 	let loadingSheet = $state(false);
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 150;
 
 	const activeSheetName = $derived(sheetNames[activeSheetIndex] ?? '');
-	const columns = $derived(rows.length > 0 ? Object.keys(rows[0] as XlsxRow) : []);
+	const columns = $derived(
+		Array.from({ length: rows.reduce((max, row) => Math.max(max, row.length), 0) }, (_, index) =>
+			columnIndexToLetter(index)
+		)
+	);
+	const rootClass = $derived(
+		['xlsx-viewer', isDark ? 'dark' : '', classProp, className].filter(Boolean).join(' ')
+	);
 	const gridTemplate = $derived(
 		`${ROWNUM_WIDTH}px repeat(${Math.max(columns.length, 1)}, ${COLUMN_WIDTH}px)`
 	);
@@ -146,9 +171,9 @@
 		(async () => {
 			try {
 				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
-				const next = await engine.sheetToRows(cached.workbook, sheetName);
+				const next = await engine.sheetToGrid(cached.workbook, sheetName);
 				if (cancelled) return;
-				rows = next;
+				rows = next.values;
 			} catch (failure) {
 				if (cancelled) return;
 				rows = [];
@@ -170,7 +195,7 @@
 </script>
 
 <div
-	class={`xlsx-viewer${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={rootClass}
 	data-dark={String(isDark)}
 	data-testid="xlsx-viewer"
 >
@@ -206,7 +231,7 @@
 		<div class="xlsx-state" role="status">Loading sheet…</div>
 	{:else if rows.length === 0}
 		<div class="xlsx-state">
-			<p class="xlsx-state-title">This sheet has no data rows.</p>
+			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
 		{#if sheetNames.length > 0}
 			<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
@@ -228,7 +253,7 @@
 		<div class="xlsx-scroll">
 			<div class="xlsx-grid" role="table" aria-label={activeSheetName} style={`min-width: ${gridMinWidth}px;`}>
 				<div role="row" class="xlsx-header-row" style={`grid-template-columns: ${gridTemplate};`}>
-					<div role="columnheader" class="xlsx-rownum">#</div>
+					<div role="columnheader" class="xlsx-rownum" aria-label="Row numbers"></div>
 					{#each columns as column (column)}
 						<div role="columnheader" class="xlsx-header-cell">{column}</div>
 					{/each}
@@ -243,8 +268,8 @@
 								style={`grid-template-columns: ${gridTemplate}; height: 100%;`}
 							>
 								<div role="rowheader" class="xlsx-rownum">{index + 1}</div>
-								{#each columns as column (column)}
-									<div role="cell" class="xlsx-cell">{formatCell((row as XlsxRow)[column])}</div>
+								{#each columns as column, col (column)}
+									<div role="cell" class="xlsx-cell">{formatCell(row[col])}</div>
 								{/each}
 							</div>
 						{/snippet}

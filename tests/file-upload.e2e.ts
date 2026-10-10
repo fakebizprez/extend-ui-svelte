@@ -55,3 +55,36 @@ test('dragging a file over the drop area fans out all three cards with their lab
 		XLS: true
 	});
 });
+
+test('the drop area has no dark-mode control and file rows use FileThumbnail', async ({ page }) => {
+	await page.goto('/file-upload');
+	await page.waitForLoadState('networkidle');
+
+	const root = page.locator('.file-upload');
+	await expect(root.getByRole('button', { name: /dark mode/i })).toHaveCount(0);
+	await expect(root.getByText('Dark', { exact: true })).toHaveCount(0);
+
+	await root.locator('input[type="file"]').setInputFiles([
+		{ name: 'report.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') },
+		{
+			name: 'pixel.png',
+			mimeType: 'image/png',
+			buffer: Buffer.from(
+				'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+				'base64'
+			)
+		}
+	]);
+
+	const thumbnails = root.locator('.file-row [data-testid="file-thumbnail"]');
+	await expect(thumbnails).toHaveCount(2);
+	await expect(thumbnails.nth(1).getByTestId('file-thumbnail-image')).toBeVisible();
+	const box = await thumbnails.first().boundingBox();
+	expect(Math.round(box!.width)).toBe(40);
+	expect(Math.round(box!.height)).toBe(40);
+
+	// The parent's toggle, outside the component, drives the theme of the rows too.
+	await page.getByLabel('Dark mode').check();
+	await expect(root).toHaveClass(/\bdark\b/);
+	await expect(thumbnails.first()).toHaveClass(/\bdark\b/);
+});

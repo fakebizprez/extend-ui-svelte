@@ -4,6 +4,8 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { utils, write } from 'xlsx';
 import XlsxViewer from './XlsxViewer.svelte';
+import XlsxEditor from '../xlsx-editor/XlsxEditor.svelte';
+import { XlsxViewerPreview } from './index.js';
 
 function inventoryBytes(): Uint8Array {
 	const workbook = utils.book_new();
@@ -31,6 +33,20 @@ function bigSheetBytes(rowCount: number): Uint8Array {
 	return new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 }
 
+/** Data starts at B2 with a blank row 4 (sheet used range B2:D5). */
+function offsetBytes(): Uint8Array {
+	const workbook = utils.book_new();
+	const sheet = {};
+	utils.sheet_add_aoa(
+		sheet,
+		[['Lane', 'Loads'], ['Reno-Austin', 4], [], ['Austin-Reno', 3]],
+		{ origin: 'B2' }
+	);
+	(sheet as Record<string, unknown>)['!ref'] = 'B2:C5';
+	utils.book_append_sheet(workbook, sheet, 'Lanes');
+	return new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+}
+
 function renderedRowIndexes(container: HTMLElement): number[] {
 	return [...container.querySelectorAll('[data-virtual-index]')].map((el) =>
 		Number((el as HTMLElement).dataset.virtualIndex)
@@ -50,12 +66,60 @@ describe('XlsxViewer', () => {
 		expect(tabs.map((tab) => tab.textContent)).toEqual(['Inventory', 'Summary']);
 		expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
 
-		expect(await screen.findByRole('columnheader', { name: 'SKU' })).toBeVisible();
-		expect(screen.getByRole('columnheader', { name: 'Warehouse' })).toBeVisible();
-		expect(screen.getByRole('cell', { name: 'Resistor kit' })).toBeVisible();
+		expect(await screen.findByRole('cell', { name: 'Resistor kit' })).toBeVisible();
 		expect(screen.getByRole('cell', { name: '120' })).toBeVisible();
 		expect(screen.getAllByRole('cell', { name: 'Reno' })).toHaveLength(2);
-		expect(screen.getByTestId('row-count')).toHaveTextContent('3 rows');
+		expect(screen.getByTestId('row-count')).toHaveTextContent('4 rows');
+	});
+
+	it('shows column letters and row numbers with row 1 as data, like upstream', async () => {
+		const { container } = render(XlsxViewer, { data: inventoryBytes() });
+
+		expect(await screen.findByRole('columnheader', { name: 'A' })).toBeVisible();
+		expect(screen.getByRole('columnheader', { name: 'D' })).toBeVisible();
+		expect(screen.queryByRole('columnheader', { name: 'SKU' })).not.toBeInTheDocument();
+		const firstRow = container.querySelector('[data-row-index="0"]') as HTMLElement;
+		expect(within(firstRow).getByRole('rowheader')).toHaveTextContent('1');
+		expect(within(firstRow).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+			'SKU',
+			'Item',
+			'Qty',
+			'Warehouse'
+		]);
+	});
+
+	it('keeps true positions: A1 origin and blank rows', async () => {
+		const { container } = render(XlsxViewer, { data: offsetBytes() });
+
+		expect(await screen.findByRole('cell', { name: 'Lane' })).toBeVisible();
+		expect(screen.getByTestId('row-count')).toHaveTextContent('5 rows');
+		expect(screen.getByRole('columnheader', { name: 'C' })).toBeVisible();
+		const rowCells = (index: number) =>
+			within(container.querySelector(`[data-row-index="${index}"]`) as HTMLElement)
+				.getAllByRole('cell')
+				.map((cell) => cell.textContent);
+		expect(rowCells(0)).toEqual(['', '', '']);
+		expect(rowCells(1)).toEqual(['', 'Lane', 'Loads']);
+		expect(rowCells(3)).toEqual(['', '', '']);
+		expect(rowCells(4)).toEqual(['', 'Austin-Reno', '3']);
+	});
+
+	it('reports the same row count as the editor for the same file', async () => {
+		const bytes = offsetBytes();
+		render(XlsxViewer, { data: bytes });
+		render(XlsxEditor, { data: bytes });
+
+		await screen.findByRole('cell', { name: 'Lane' });
+		await screen.findByRole('gridcell', { name: 'Lane' });
+		const counts = screen.getAllByTestId('row-count').map((el) => el.textContent);
+		expect(counts).toEqual(['5 rows', '5 rows']);
+	});
+
+	it('accepts className as an alias of class and exports the upstream name', async () => {
+		render(XlsxViewerPreview, { data: inventoryBytes(), class: 'from-class', className: 'from-alias' });
+
+		const viewer = await screen.findByTestId('xlsx-viewer');
+		expect(viewer).toHaveClass('from-class', 'from-alias');
 	});
 
 	it('switches sheets when a tab is clicked', async () => {
@@ -65,7 +129,7 @@ describe('XlsxViewer', () => {
 		await fireEvent.click(summaryTab);
 
 		expect(summaryTab).toHaveAttribute('aria-selected', 'true');
-		expect(await screen.findByRole('columnheader', { name: 'Metric' })).toBeVisible();
+		expect(await screen.findByRole('cell', { name: 'Metric' })).toBeVisible();
 		expect(screen.getByRole('cell', { name: 'Total SKUs' })).toBeVisible();
 		expect(screen.getByRole('cell', { name: '247' })).toBeVisible();
 		expect(screen.queryByRole('cell', { name: 'Resistor kit' })).not.toBeInTheDocument();
@@ -87,8 +151,8 @@ describe('XlsxViewer', () => {
 	it('virtualizes many rows instead of rendering them all', async () => {
 		const { container } = render(XlsxViewer, { data: bigSheetBytes(1000), height: 400 });
 
-		expect(await screen.findByRole('columnheader', { name: 'id' })).toBeVisible();
-		expect(screen.getByTestId('row-count')).toHaveTextContent('1000 rows');
+		expect(await screen.findByRole('cell', { name: 'id' })).toBeVisible();
+		expect(screen.getByTestId('row-count')).toHaveTextContent('1001 rows');
 
 		const rendered = renderedRowIndexes(container);
 		expect(rendered.length).toBeGreaterThan(0);
@@ -96,7 +160,7 @@ describe('XlsxViewer', () => {
 		expect(screen.queryByRole('cell', { name: 'row-999' })).not.toBeInTheDocument();
 
 		const viewport = screen.getByTestId('virtual-viewport');
-		viewport.scrollTop = 1000 * 34;
+		viewport.scrollTop = 1001 * 34;
 		await fireEvent.scroll(viewport);
 
 		expect(await screen.findByRole('cell', { name: 'row-999' })).toBeVisible();

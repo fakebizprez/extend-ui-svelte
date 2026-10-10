@@ -22,3 +22,25 @@ test('pptx viewer renders one canvas per slide', async ({ page }) => {
 	expect(size.width).toBeGreaterThan(0);
 	expect(size.height).toBeGreaterThan(0);
 });
+
+test('pptx viewer has no theme toggle of its own; the page toggles it from outside', async ({
+	page
+}) => {
+	await page.goto('/pptx-viewer');
+	const viewer = page.getByTestId('pptx-viewer');
+	await expect(page.getByTestId('slide-count')).toHaveText('2');
+
+	await expect(viewer.getByRole('switch')).toHaveCount(0);
+	await expect(viewer.getByRole('button', { name: /dark/i })).toHaveCount(0);
+
+	await page.getByLabel('Dark mode').check();
+	await expect(viewer).toHaveAttribute('data-dark', 'true');
+});
+
+test('pptx viewer docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/pptx-viewer');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('PptxViewerPreview');
+	await expect(differences).toContainText('initialSlide');
+});

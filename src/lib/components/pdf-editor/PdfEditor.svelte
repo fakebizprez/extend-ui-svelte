@@ -1,33 +1,46 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI pdf-editor. Upstream: extend-hq/ui (MIT).
-	Deliberate changes vs the React PDFEditor:
-	- The upstream editor is built on the React-only @embedpdf plugin stack
-	  (annotations, forms, redaction, signatures, search); this port covers
-	  document-level edits only: per-page rotate, delete, reorder, and export.
+	Deliberate changes vs the React PDFEditor (also listed on the docs page):
+	- The upstream editor is built on the React-only @embedpdf plugin stack;
+	  this port covers document-level edits only: per-page rotate, delete,
+	  reorder, reset, and download. Annotate, sign, forms, redact, search,
+	  print, password prompts, and the imperative handle are not ported.
 	- Rendering runs on the shared PDF.js engine wrapper (#lib/engines/pdf)
-	  and export runs on pdf-lib, both loaded on the client.
-	- Dark mode is parent-controlled (isDark + onIsDarkChange) per project contract.
-	- `onDocumentLoadSuccess` reports the page count as a number, matching the
-	  local PdfViewer instead of the upstream info object.
-	- `class` replaces React's `className`, matching the other Svelte ports.
+	  and download runs on pdf-lib, both loaded on the client.
+	- The layout is a page list beside a single-page preview instead of the
+	  upstream scrolling workspace with side panels.
+	- Dark mode is parent-controlled (isDark + onIsDarkChange) per project
+	  contract; the editor never renders its own dark toggle.
+	- `class` and `className` are both accepted and merged.
+	- Extra props: `onPagesChange`, `height`, `pageWidth`/`pageHeight`
+	  (fallback page size when the engine cannot report sizes).
 -->
+<script lang="ts" module>
+	// Shared by every editor instance so each loaded document gets a unique id.
+	let documentCounter = 0;
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine, PdfPageSize } from '#lib/engines/pdf/index.js';
 	import PdfPage from '#lib/components/pdf-viewer/PdfPage.svelte';
 	import {
 		formatZoomPercent,
-		getPdfDownloadFileName,
-		resolveInitialZoom,
-		zoomStepIn,
-		zoomStepOut,
+		isZoomMode,
+		resolveZoom,
+		rotatedPageSize,
+		zoomSelectOptions,
+		zoomSelectValue,
+		ZOOM_MODES,
+		zoomStepByRange,
 		type PdfViewerZoomLevel
 	} from '#lib/components/pdf-viewer/zoom.js';
 	import {
 		createEditState,
 		deleteEditPage,
 		exportEditedPdf,
+		getPdfFileName,
 		moveEditPage,
 		rotateEditPage,
 		type EditedPdfPage,
@@ -41,52 +54,69 @@
 		fileName: string;
 	}
 
+	export interface PdfEditorDocumentInfo {
+		numPages: number;
+		documentId: string;
+		fileName: string;
+	}
+
 	export interface PdfEditorProps {
-		/** PDF URL to load. Empty renders the upload prompt. */
-		src?: string;
-		/** Download file name (without the .pdf extension is fine). */
+		/** A URL, or the PDF bytes as an ArrayBuffer, Uint8Array, Blob, or File. Empty renders the upload prompt. */
+		src?: string | ArrayBuffer | Uint8Array | Blob;
+		/** File name for downloads and the load payload (the .pdf extension is optional). */
 		fileName?: string;
-		/** Initial preview zoom; fit modes start at 1. */
+		/** Initial zoom: a scale, or 'fit-page' | 'fit-width' | 'automatic'. */
 		defaultZoom?: PdfEditorZoomLevel;
 		/** Show the toolbar. */
 		showToolbar?: boolean;
-		/** Show the export/download button. */
+		/** Show the download button. */
 		showDownload?: boolean;
 		/** Show the upload control. */
 		showUpload?: boolean;
-		/** Called with the page count once the document loads. */
-		onDocumentLoadSuccess?: (numPages: number) => void;
+		/** Called once the document loads. */
+		onDocumentLoadSuccess?: (info: PdfEditorDocumentInfo) => void;
 		/** Called with the failure message when the document fails to load. */
 		onDocumentLoadError?: (message: string) => void;
 		/** Called when the selected (active) page changes. */
 		onActivePageChange?: (pageNumber: number) => void;
 		/** Called with the edited page list after every edit operation. */
 		onPagesChange?: (pages: EditedPdfPage[]) => void;
-		/** Called with the exported bytes and file name after export. */
+		/** Called with the downloaded bytes and file name. */
 		onSave?: (result: PdfEditorSaveResult) => void;
 		/** Called with the file chosen through the upload control. */
 		onPdfUpload?: (file: File) => void;
 		/** Parent-controlled dark mode flag. */
 		isDark?: boolean;
-		/** Called when the user toggles dark mode. */
+		/** Part of the dark-mode contract; the editor itself never toggles dark mode. */
 		onIsDarkChange?: (isDark: boolean) => void;
 		/** Body height in px. */
 		height?: number;
-		/** Preview page CSS width in px at zoom 1. */
+		/** Fallback page CSS width in px at zoom 1, used until real sizes are known. */
 		pageWidth?: number;
-		/** Preview page CSS height in px at zoom 1. */
+		/** Fallback page CSS height in px at zoom 1, used until real sizes are known. */
 		pageHeight?: number;
 		class?: string;
+		/** Alias of `class`, matching the React prop name. */
+		className?: string;
 	}
+
+	type EditorSource =
+		| { kind: 'url'; url: string; name: string }
+		| { kind: 'bytes'; bytes: Uint8Array; name: string };
 
 	const THUMBNAIL_WIDTH = 96;
 	const THUMBNAIL_HEIGHT = 124;
 	const ROW_HEIGHT = 208;
+	// Upstream editor zoom presets, limits, and viewport gap.
+	const ZOOM_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+	const MIN_ZOOM = 0.1;
+	const MAX_ZOOM = 8;
+	const PAGE_GAP = 24;
 
 	let {
 		src,
 		fileName,
-		defaultZoom = 1,
+		defaultZoom = 'fit-width',
 		showToolbar = true,
 		showDownload = true,
 		showUpload = true,
@@ -97,34 +127,53 @@
 		onSave,
 		onPdfUpload,
 		isDark = false,
-		onIsDarkChange,
 		height = 600,
 		pageWidth = 612,
 		pageHeight = 792,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: PdfEditorProps = $props();
 
 	type LoadStatus = 'empty' | 'loading' | 'ready' | 'error';
 
-	function initialStatus(source: string | undefined): LoadStatus {
-		return source ? 'loading' : 'empty';
-	}
-
 	let engine: PdfEngine | null = $state.raw(null);
 	// svelte-ignore state_referenced_locally: `src` intentionally seeds the initial status only.
-	let status: LoadStatus = $state(initialStatus(src));
+	let status = $state<LoadStatus>(src ? 'loading' : 'empty');
 	let loadError = $state('');
 	let numPages = $state(0);
+	let pageSizes: PdfPageSize[] = $state.raw([]);
+	let loaded = $state.raw<EditorSource | null>(null);
 	let editState: PdfEditState = $state({ pages: [] });
 	let selectedIndex = $state(0);
 	// svelte-ignore state_referenced_locally: `defaultZoom` is intentionally uncontrolled after mount.
-	let zoom = $state(resolveInitialZoom(defaultZoom));
-	let uploadUrl: string | null = $state(null);
+	let zoomLevel: PdfEditorZoomLevel = $state(defaultZoom);
+	let previewWidth = $state(0);
+	let previewHeight = $state(0);
+	let preview: HTMLDivElement | null = $state(null);
+	/** An uploaded file replaces `src` until `src` changes, like upstream. */
+	let upload = $state.raw<{ file: File; forSrc: PdfEditorProps['src'] } | null>(null);
 	let exporting = $state(false);
 	let exportError = $state('');
 
-	const effectiveSrc = $derived(uploadUrl ?? src);
+	const input = $derived(upload && upload.forSrc === src ? upload.file : src);
+	const rootClass = $derived(
+		['pdf-editor', isDark && 'dark', classProp, className].filter(Boolean).join(' ')
+	);
 	const canEdit = $derived(status === 'ready');
+	const baseSizes: PdfPageSize[] = $derived(
+		pageSizes.length === numPages
+			? pageSizes
+			: Array.from({ length: numPages }, () => ({ width: pageWidth, height: pageHeight }))
+	);
+	const zoom = $derived(
+		resolveZoom(
+			zoomLevel,
+			{ width: previewWidth, height: previewHeight, gap: PAGE_GAP },
+			baseSizes,
+			MIN_ZOOM,
+			MAX_ZOOM
+		)
+	);
 	const selectedSafeIndex = $derived(
 		editState.pages.length === 0 ? -1 : Math.min(selectedIndex, editState.pages.length - 1)
 	);
@@ -132,6 +181,39 @@
 	const selectedPage = $derived(
 		selectedSafeIndex < 0 ? null : editState.pages[selectedSafeIndex]
 	);
+
+	/** Page size at zoom 1 after the page's edit rotation. */
+	function editedSize(page: EditedPdfPage): PdfPageSize {
+		const base = baseSizes[page.sourcePage - 1] ?? { width: pageWidth, height: pageHeight };
+		return rotatedPageSize(base, page.rotation);
+	}
+
+	function thumbnailScale(page: EditedPdfPage): number {
+		const size = editedSize(page);
+		return Math.min(THUMBNAIL_WIDTH / size.width, THUMBNAIL_HEIGHT / size.height);
+	}
+
+	/** Normalize every accepted `src` form, matching upstream's naming rules. */
+	async function resolveSource(
+		value: string | ArrayBuffer | Uint8Array | Blob,
+		name: string | undefined
+	): Promise<EditorSource> {
+		if (typeof value === 'string') {
+			return { kind: 'url', url: value, name: getPdfFileName(name, value) };
+		}
+		if (value instanceof ArrayBuffer) {
+			return { kind: 'bytes', bytes: new Uint8Array(value.slice(0)), name: getPdfFileName(name) };
+		}
+		if (value instanceof Uint8Array) {
+			return { kind: 'bytes', bytes: new Uint8Array(value), name: getPdfFileName(name) };
+		}
+		const blobName = name ?? (value instanceof File ? value.name : undefined);
+		return {
+			kind: 'bytes',
+			bytes: new Uint8Array(await value.arrayBuffer()),
+			name: getPdfFileName(blobName)
+		};
+	}
 
 	// Browser-only: the engine (and PDF.js behind it) loads on the client.
 	onMount(() => {
@@ -145,18 +227,19 @@
 			cancelled = true;
 			const created = engine;
 			engine = null;
-			if (uploadUrl) URL.revokeObjectURL(uploadUrl);
-			uploadUrl = null;
 			void created?.destroy();
 		};
 	});
 
 	// Client-only: $effect never runs on the server.
 	$effect(() => {
-		const source = effectiveSrc;
+		const value = input;
+		const name = upload && value === upload.file ? upload.file.name : fileName;
 		const eng = engine;
 		if (!eng) return;
-		if (!source) {
+		loaded = null;
+		pageSizes = [];
+		if (!value) {
 			status = 'empty';
 			numPages = 0;
 			editState = { pages: [] };
@@ -166,29 +249,86 @@
 		let cancelled = false;
 		status = 'loading';
 		loadError = '';
-		eng.load(source).then(
-			(count) => {
-				if (cancelled) return;
-				numPages = count;
-				editState = createEditState(count);
-				selectedIndex = 0;
-				status = 'ready';
-				onDocumentLoadSuccess?.(count);
-				if (count > 0) onActivePageChange?.(1);
-			},
-			(failure: unknown) => {
-				if (cancelled) return;
-				numPages = 0;
-				editState = { pages: [] };
-				status = 'error';
-				loadError =
-					failure instanceof Error ? failure.message : 'Unable to load the PDF document.';
-				onDocumentLoadError?.(loadError);
-			}
-		);
+		(async () => {
+			const source = await resolveSource(value, name);
+			if (cancelled) return;
+			const count = await eng.load(source.kind === 'url' ? source.url : source.bytes);
+			// Unreadable sizes fall back to pageWidth/pageHeight instead of failing the load.
+			const sizes = await Promise.resolve()
+				.then(() => eng.getPageSizes())
+				.catch(() => []);
+			if (cancelled) return;
+			documentCounter += 1;
+			const documentId = `pdf-editor-document-${documentCounter}`;
+			loaded = source;
+			pageSizes = sizes;
+			numPages = count;
+			editState = createEditState(count);
+			selectedIndex = 0;
+			status = 'ready';
+			onDocumentLoadSuccess?.({ numPages: count, documentId, fileName: source.name });
+			if (count > 0) onActivePageChange?.(1);
+		})().catch((failure: unknown) => {
+			if (cancelled) return;
+			numPages = 0;
+			editState = { pages: [] };
+			status = 'error';
+			loadError = failure instanceof Error ? failure.message : 'The PDF could not be loaded.';
+			onDocumentLoadError?.(loadError);
+		});
 		return () => {
 			cancelled = true;
 		};
+	});
+
+	// Keep the point at the preview's centre fixed when the previewed page is zoomed
+	// or rotated, like upstream's EmbedPDF zoom anchoring.
+	const previewSize = $derived.by(() => {
+		if (!selectedPage) return null;
+		const size = editedSize(selectedPage);
+		return { width: size.width * zoom, height: size.height * zoom };
+	});
+	let lastPreview: { index: number; width: number; height: number } | null = null;
+	let pendingPreviewScroll: { x: number; y: number } | null = null;
+
+	$effect.pre(() => {
+		const size = previewSize;
+		const index = selectedSafeIndex;
+		const previous = lastPreview;
+		lastPreview = size ? { index, ...size } : null;
+		const element = preview;
+		if (!element || !size || !previous || previous.index !== index) return;
+		if (previous.width === size.width && previous.height === size.height) return;
+		// Fractions of the page (inside the 24px padding) under the pane's centre.
+		pendingPreviewScroll = {
+			x: (element.scrollLeft + element.clientWidth / 2 - PAGE_GAP) / previous.width,
+			y: (element.scrollTop + element.clientHeight / 2 - PAGE_GAP) / previous.height
+		};
+	});
+
+	$effect(() => {
+		const size = previewSize;
+		const element = preview;
+		const target = pendingPreviewScroll;
+		pendingPreviewScroll = null;
+		if (!element || !size || !target) return;
+		element.scrollTop = Math.max(0, PAGE_GAP + target.y * size.height - element.clientHeight / 2);
+		element.scrollLeft = Math.max(0, PAGE_GAP + target.x * size.width - element.clientWidth / 2);
+	});
+
+	// Measure the preview pane so fit modes follow resizes, like upstream.
+	$effect(() => {
+		const element = preview;
+		if (!element) return;
+		const measure = () => {
+			previewWidth = element.clientWidth;
+			previewHeight = element.clientHeight;
+		};
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
 	});
 
 	function applyEdit(next: PdfEditState): void {
@@ -229,35 +369,42 @@
 		onActivePageChange?.(1);
 	}
 
-	function handleFileChange(event: Event): void {
-		const input = event.currentTarget;
-		if (!(input instanceof HTMLInputElement)) return;
-		const file = input.files?.[0];
-		if (!file) return;
-		onPdfUpload?.(file);
-		if (uploadUrl) URL.revokeObjectURL(uploadUrl);
-		uploadUrl = URL.createObjectURL(file);
-		input.value = '';
+	function setZoom(value: string): void {
+		zoomLevel = isZoomMode(value) ? value : Number(value);
 	}
 
-	async function exportDocument(): Promise<void> {
-		const source = effectiveSrc;
+	function handleFileChange(event: Event): void {
+		const fileInput = event.currentTarget;
+		if (!(fileInput instanceof HTMLInputElement)) return;
+		const file = fileInput.files?.[0];
+		if (!file) return;
+		onPdfUpload?.(file);
+		upload = { file, forSrc: src };
+		fileInput.value = '';
+	}
+
+	async function downloadDocument(): Promise<void> {
+		const source = loaded;
 		if (!source || exporting || editState.pages.length === 0) return;
 		exporting = true;
 		exportError = '';
 		try {
-			const response = await fetch(source);
-			if (!response.ok) {
-				throw new Error(`Export failed with status ${response.status}.`);
+			let sourceBytes: Uint8Array;
+			if (source.kind === 'bytes') {
+				sourceBytes = source.bytes;
+			} else {
+				const response = await fetch(source.url);
+				if (!response.ok) {
+					throw new Error(`Download failed with status ${response.status}.`);
+				}
+				sourceBytes = new Uint8Array(await response.arrayBuffer());
 			}
-			const sourceBytes = new Uint8Array(await response.arrayBuffer());
 			const edited = await exportEditedPdf(sourceBytes, editState);
 			const buffer = edited.buffer.slice(
 				edited.byteOffset,
 				edited.byteOffset + edited.byteLength
 			) as ArrayBuffer;
-			const name = getPdfDownloadFileName(fileName, src ?? source);
-			onSave?.({ buffer, fileName: name });
+			const name = getPdfFileName(source.name);
 			const url = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
 			const anchor = document.createElement('a');
 			anchor.href = url;
@@ -266,55 +413,71 @@
 			anchor.click();
 			anchor.remove();
 			URL.revokeObjectURL(url);
+			onSave?.({ buffer, fileName: name });
 		} catch (failure: unknown) {
-			exportError = failure instanceof Error ? failure.message : 'Export failed.';
+			console.error(failure);
+			exportError = 'The document could not be saved.';
 		} finally {
 			exporting = false;
 		}
 	}
 </script>
 
-<div
-	class={`pdf-editor${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
-	data-dark={String(isDark)}
-	data-testid="pdf-editor"
->
+<div class={rootClass} data-dark={String(isDark)} data-testid="pdf-editor">
 	{#if showToolbar}
 		<div role="toolbar" aria-label="PDF editor toolbar" class="pdf-editor-toolbar">
 			<span class="pdf-editor-indicator" data-testid="pdf-editor-page-indicator">
-				Page {activePage} of {editState.pages.length}
+				Page {editState.pages.length ? activePage : 1} of {editState.pages.length || '–'}
 			</span>
 			<span class="pdf-editor-separator" aria-hidden="true"></span>
 			<button
 				type="button"
 				class="pdf-editor-button"
 				aria-label="Zoom out"
-				disabled={!canEdit}
-				onclick={() => (zoom = zoomStepOut(zoom))}
+				disabled={!canEdit || zoom <= MIN_ZOOM}
+				onclick={() => (zoomLevel = zoomStepByRange(zoom, -1, MIN_ZOOM, MAX_ZOOM))}
 			>
 				&minus;
 			</button>
-			<span class="pdf-editor-indicator" data-testid="pdf-editor-zoom-label">
-				{formatZoomPercent(zoom)}
+			<span class="pdf-editor-zoom">
+				<select
+					class="pdf-editor-zoom-select"
+					aria-label="Zoom level"
+					value={zoomSelectValue(zoomLevel, zoom)}
+					disabled={!canEdit}
+					onchange={(event) => setZoom(event.currentTarget.value)}
+				>
+					{#each ZOOM_MODES as mode (mode.value)}
+						<option value={mode.value}>{mode.label}</option>
+					{/each}
+					{#each zoomSelectOptions(zoom, ZOOM_PRESETS) as option (option)}
+						<option value={String(option)}>{formatZoomPercent(option)}</option>
+					{/each}
+				</select>
+				<!-- Upstream's trigger always shows the current percentage, even in a fit mode. -->
+				<span class="pdf-editor-zoom-value" data-testid="pdf-editor-zoom-label" aria-hidden="true">
+					{formatZoomPercent(zoom)}
+				</span>
 			</span>
 			<button
 				type="button"
 				class="pdf-editor-button"
 				aria-label="Zoom in"
-				disabled={!canEdit}
-				onclick={() => (zoom = zoomStepIn(zoom))}
+				disabled={!canEdit || zoom >= MAX_ZOOM}
+				onclick={() => (zoomLevel = zoomStepByRange(zoom, 1, MIN_ZOOM, MAX_ZOOM))}
 			>
 				+
 			</button>
+			<span class="pdf-editor-separator" aria-hidden="true"></span>
 			{#if showDownload}
 				<button
 					type="button"
 					class="pdf-editor-button pdf-editor-export"
-					aria-label="Export edited PDF"
+					aria-label="Download"
 					disabled={!canEdit || editState.pages.length === 0 || exporting}
-					onclick={() => void exportDocument()}
+					onclick={() => void downloadDocument()}
 				>
-					{exporting ? 'Exporting…' : 'Export'}
+					{exporting ? 'Downloading…' : 'Download'}
 				</button>
 			{/if}
 			<button
@@ -338,16 +501,6 @@
 					/>
 				</label>
 			{/if}
-			<button
-				type="button"
-				class="pdf-editor-button pdf-editor-theme-toggle"
-				role="switch"
-				aria-checked={isDark}
-				aria-label="Toggle dark mode"
-				onclick={() => onIsDarkChange?.(!isDark)}
-			>
-				{isDark ? 'Light' : 'Dark'}
-			</button>
 		</div>
 	{/if}
 
@@ -355,13 +508,13 @@
 		<div class="pdf-editor-state" role="status">Loading PDF…</div>
 	{:else if status === 'error'}
 		<div class="pdf-editor-state pdf-editor-error" role="alert">
-			{loadError || 'Unable to load the PDF document.'}
+			{loadError || 'The PDF could not be loaded.'}
 		</div>
-	{:else if !effectiveSrc}
+	{:else if status === 'empty'}
 		<div class="pdf-editor-state">
 			<p class="pdf-editor-state-title">Upload a PDF to edit</p>
 			<p class="pdf-editor-state-hint">
-				Pass a PDF URL with the <code>src</code> prop or use the upload control.
+				Pass a PDF URL or bytes with the <code>src</code> prop or use the upload control.
 			</p>
 		</div>
 	{:else}
@@ -377,6 +530,8 @@
 			>
 				<VirtualList items={editState.pages} itemHeight={ROW_HEIGHT} height={height}>
 					{#snippet children(page, index)}
+						{@const thumbScale = thumbnailScale(page)}
+						{@const thumbSize = editedSize(page)}
 						<div
 							class={`pdf-editor-entry${index === selectedSafeIndex ? ' selected' : ''}`}
 							data-testid="pdf-editor-page"
@@ -395,10 +550,10 @@
 									<PdfPage
 										engine={engine}
 										pageNumber={page.sourcePage}
-										scale={THUMBNAIL_WIDTH / 612}
+										scale={thumbScale}
 										rotation={page.rotation}
-										width={THUMBNAIL_WIDTH}
-										height={THUMBNAIL_HEIGHT}
+										width={thumbSize.width * thumbScale}
+										height={thumbSize.height * thumbScale}
 									/>
 								{/if}
 								<span class="pdf-editor-entry-label">
@@ -456,15 +611,16 @@
 					{/snippet}
 				</VirtualList>
 			</div>
-			<div class="pdf-editor-preview" data-testid="pdf-editor-preview">
+			<div class="pdf-editor-preview" data-testid="pdf-editor-preview" bind:this={preview}>
 				{#if selectedPage && engine}
+					{@const size = editedSize(selectedPage)}
 					<PdfPage
 						engine={engine}
 						pageNumber={selectedPage.sourcePage}
 						scale={zoom}
 						rotation={selectedPage.rotation}
-						width={pageWidth * zoom}
-						height={pageHeight * zoom}
+						width={size.width * zoom}
+						height={size.height * zoom}
 					/>
 				{:else}
 					<div class="pdf-editor-state">
@@ -488,6 +644,7 @@
 		display: flex;
 		flex-direction: column;
 		width: 100%;
+		min-width: 0;
 		overflow: hidden;
 		background: var(--pdf-editor-bg);
 		color: var(--pdf-editor-fg);
@@ -679,11 +836,57 @@
 
 	.pdf-editor-preview {
 		flex: 1;
+		min-width: 0;
 		display: flex;
-		justify-content: center;
+		justify-content: safe center;
 		align-items: flex-start;
 		overflow: auto;
-		padding: 1rem;
+		/* Matches upstream's 24px viewport gap, which the fit modes subtract. */
+		padding: 24px;
+		box-sizing: border-box;
 		background: var(--pdf-editor-canvas-bg);
+		/* Fit modes size pages from this width, so wide pages must not widen it. */
+		contain: inline-size;
+	}
+
+	.pdf-editor-zoom {
+		position: relative;
+		display: inline-flex;
+	}
+
+	/* The select keeps the native list; its own text is hidden under the percentage. */
+	.pdf-editor-zoom-select {
+		width: 104px;
+		padding: 0.375rem 0.5rem;
+		border: 1px solid var(--pdf-editor-border);
+		border-radius: 0.375rem;
+		background: transparent;
+		color: transparent;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.pdf-editor-zoom-select:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.pdf-editor-zoom-select option {
+		color: var(--pdf-editor-fg);
+		background: var(--pdf-editor-bg);
+	}
+
+	.pdf-editor-zoom-value {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		padding: 0 0.625rem;
+		pointer-events: none;
+		color: var(--pdf-editor-fg);
+	}
+
+	.pdf-editor-zoom-select:disabled + .pdf-editor-zoom-value {
+		opacity: 0.45;
 	}
 </style>

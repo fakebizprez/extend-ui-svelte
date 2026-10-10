@@ -2,10 +2,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import SchemaBuilder, {
+	SAMPLE_SCHEMA,
 	serializeSchema,
 	type SchemaBuilderSchema,
 	type SerializedSchema
 } from './SchemaBuilder.svelte';
+import { SchemaBuilderPanel } from './index.js';
 
 const EMPTY_SCHEMA: SchemaBuilderSchema = { properties: [] };
 
@@ -43,7 +45,7 @@ describe('SchemaBuilder', () => {
 		const keyInput = within(getFieldRows()[0]).getByLabelText('Field key');
 		await fireEvent.input(keyInput, { target: { value: 'invoiceNumber' } });
 
-		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		const emitted = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
 		expect(emitted.properties[0].key).toBe('invoiceNumber');
 	});
 
@@ -55,7 +57,7 @@ describe('SchemaBuilder', () => {
 		const typeSelect = within(getFieldRows()[0]).getByLabelText('Field type');
 		await fireEvent.change(typeSelect, { target: { value: 'number' } });
 
-		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		const emitted = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
 		expect(emitted.properties[0].type).toBe('number');
 	});
 
@@ -90,7 +92,7 @@ describe('SchemaBuilder', () => {
 		});
 		await fireEvent.click(within(row).getByLabelText('Required'));
 
-		const emitted = onSerializedSchemaChange.mock.calls.at(-1)[0] as SerializedSchema;
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)![0] as SerializedSchema;
 		expect(emitted.type).toBe('object');
 		expect(emitted.properties['total']).toEqual({ type: 'number' });
 		expect(emitted.required).toEqual(['total']);
@@ -113,7 +115,7 @@ describe('SchemaBuilder', () => {
 		await fireEvent.click(within(rows[0]).getByRole('button', { name: 'Remove field' }));
 
 		expect(getFieldRows()).toHaveLength(1);
-		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		const emitted = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
 		expect(emitted.properties).toHaveLength(1);
 		expect(emitted.properties[0].key).toBe('beta');
 	});
@@ -145,7 +147,7 @@ describe('SchemaBuilder', () => {
 		await fireEvent.dragOver(rows[1], { dataTransfer });
 		await fireEvent.drop(rows[1], { dataTransfer });
 
-		const emitted = onSchemaChange.mock.calls.at(-1)[0] as SchemaBuilderSchema;
+		const emitted = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
 		expect(emitted.properties.map((p) => p.key)).toEqual(['beta', 'alpha']);
 	});
 
@@ -163,7 +165,7 @@ describe('SchemaBuilder', () => {
 		const valueInputs = within(row).getAllByLabelText('Enum value');
 		await fireEvent.input(valueInputs[0], { target: { value: 'paid' } });
 
-		const emitted = onSerializedSchemaChange.mock.calls.at(-1)[0] as SerializedSchema;
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)![0] as SerializedSchema;
 		expect(emitted.properties['status'].enum).toEqual(['paid']);
 	});
 
@@ -267,18 +269,77 @@ describe('SchemaBuilder', () => {
 		expect(screen.getByTestId('schema-builder')).toHaveAttribute('data-theme', 'dark');
 	});
 
-	it('dark-mode toggle notifies onIsDarkChange', async () => {
+	it('renders no theme toggle of its own and never flips isDark, like upstream', () => {
 		const onIsDarkChange = vi.fn();
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, isDark: false, onIsDarkChange });
+
+		expect(screen.queryByRole('button', { name: /dark mode|light mode/i })).not.toBeInTheDocument();
+		expect(screen.getByTestId('schema-builder')).toHaveAttribute('data-theme', 'light');
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
+
+	it('accepts the upstream theme prop, which wins over isDark', () => {
+		const { unmount } = render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, theme: 'dark' });
+		expect(screen.getByTestId('schema-builder')).toHaveAttribute('data-theme', 'dark');
+		expect(screen.getByTestId('schema-builder')).toHaveClass('dark');
+		unmount();
+
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA, theme: 'light', isDark: true });
+		expect(screen.getByTestId('schema-builder')).toHaveAttribute('data-theme', 'light');
+	});
+
+	it('accepts className as an alias of class on the root', () => {
 		render(SchemaBuilder, {
 			defaultSchema: EMPTY_SCHEMA,
-			isDark: false,
-			onIsDarkChange
+			class: 'from-class',
+			className: 'from-class-name'
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark mode' }));
+		expect(screen.getByTestId('schema-builder')).toHaveClass(
+			'schema-builder',
+			'from-class',
+			'from-class-name'
+		);
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('is exported under the upstream name SchemaBuilderPanel', () => {
+		expect(SchemaBuilderPanel).toBe(SchemaBuilder);
+	});
+
+	it('defaults to the upstream sample bank-statement schema', () => {
+		render(SchemaBuilder, {});
+
+		const keys = getFieldRows().map(
+			(row) => (within(row).getAllByLabelText('Field key')[0] as HTMLInputElement).value
+		);
+		expect(keys).toEqual(['statement_period', 'account_type', 'account_holder', 'transactions']);
+		expect(SAMPLE_SCHEMA.properties.map((property) => property.key)).toEqual(keys);
+		expect(serializeSchema(SAMPLE_SCHEMA).properties['transactions']).toEqual({
+			type: 'array',
+			description: 'Posted account activity during the statement period.',
+			items: {
+				type: 'object',
+				properties: {
+					date: { type: 'string', description: 'Posting date for the transaction.' },
+					description: { type: 'string', description: 'Statement transaction description.' },
+					amount: { type: 'number', description: 'Signed transaction amount.' }
+				}
+			}
+		});
+	});
+
+	it('switching a field to array starts with object items holding one field, like upstream', async () => {
+		render(SchemaBuilder, {
+			defaultSchema: { properties: [{ id: 'a', key: 'lines', type: 'string', description: '' }] }
+		});
+
+		const row = getFieldRows()[0];
+		await fireEvent.change(within(row).getByLabelText('Field type'), {
+			target: { value: 'array' }
+		});
+
+		expect(within(row).getByLabelText('Array item type')).toHaveValue('object');
+		expect(within(row).getAllByTestId('schema-builder-nested-field')).toHaveLength(1);
 	});
 });
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	blockToArea,
 	blockToHighlightArea,
+	estimateOcrBlockRowHeight,
 	getOcrBlocks,
 	renderBlockMarkdown,
 	type OcrBlock,
@@ -283,5 +284,33 @@ describe('renderBlockMarkdown', () => {
 
 	it('returns an empty string for empty input', () => {
 		expect(renderBlockMarkdown('')).toBe('');
+	});
+});
+
+describe('estimateOcrBlockRowHeight', () => {
+	const base: OcrBlock = {
+		id: 'b',
+		type: 'paragraph',
+		text: 'Short.',
+		page: 1,
+		pageWidth: 1275,
+		pageHeight: 1651,
+		confidence: 0.9
+	};
+
+	it('never estimates below the upstream 92px minimum', () => {
+		expect(estimateOcrBlockRowHeight(base)).toBe(92);
+	});
+
+	it('adds 20px per wrapped line of about 42 characters, like upstream', () => {
+		// 210 chars -> 5 lines -> 62 chrome + 100 content + 8 gap.
+		expect(estimateOcrBlockRowHeight({ ...base, text: 'x'.repeat(210) })).toBe(170);
+	});
+
+	it('adds extra room for tables and figures', () => {
+		const lines = 'a\nb\nc\nd';
+		expect(estimateOcrBlockRowHeight({ ...base, text: lines })).toBe(150);
+		expect(estimateOcrBlockRowHeight({ ...base, type: 'table', text: lines })).toBe(178);
+		expect(estimateOcrBlockRowHeight({ ...base, type: 'figure', text: lines })).toBe(194);
 	});
 });

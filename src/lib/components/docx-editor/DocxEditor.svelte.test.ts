@@ -8,6 +8,7 @@ import DocxEditor, {
 	ensureDocxExtension,
 	formatDocumentName
 } from './DocxEditor.svelte';
+import { DocxEditorPreview } from './index.js';
 
 vi.mock('#lib/engines/docx/index.js', () => ({
 	renderDocx: vi.fn(),
@@ -20,6 +21,9 @@ import { clearDocx, renderDocx } from '#lib/engines/docx/index.js';
 
 const mockedRenderDocx = vi.mocked(renderDocx);
 const mockedClearDocx = vi.mocked(clearDocx);
+
+/** Required upstream props: dark mode is parent-controlled. */
+const DARK = { isDark: false, onIsDarkChange: () => {} };
 
 const FIXTURE_TEXT = 'Hello from the DOCX fixture';
 const SECOND_TEXT = 'Second paragraph for the thumbnail sidebar.';
@@ -54,14 +58,14 @@ beforeEach(() => {
 
 describe('DocxEditor', () => {
 	it('renders an empty state when no src is given', async () => {
-		render(DocxEditor, {});
+		render(DocxEditor, { ...DARK });
 
 		expect(await screen.findByText('Upload a Word document to edit')).toBeVisible();
 		expect(mockedRenderDocx).not.toHaveBeenCalled();
 	});
 
 	it('loads docx text through the docx engine', async () => {
-		render(DocxEditor, { src: 'https://example.com/doc.docx' });
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
 
 		await screen.findByText(FIXTURE_TEXT);
 		const editor = screen.getByTestId('docx-editor-content');
@@ -72,7 +76,7 @@ describe('DocxEditor', () => {
 
 	it('applies bold and italic through the toolbar', async () => {
 		const execCommand = execCommandMock();
-		render(DocxEditor, { src: 'https://example.com/doc.docx' });
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
 		await screen.findByTestId('docx-editor-content');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
@@ -84,7 +88,7 @@ describe('DocxEditor', () => {
 
 	it('applies headings and lists through the toolbar', async () => {
 		const execCommand = execCommandMock();
-		render(DocxEditor, { src: 'https://example.com/doc.docx' });
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
 		await screen.findByTestId('docx-editor-content');
 
 		await fireEvent.change(screen.getByLabelText('Block style'), { target: { value: 'h2' } });
@@ -113,6 +117,7 @@ describe('DocxEditor', () => {
 		const onExport = vi.fn();
 		try {
 			render(DocxEditor, {
+				...DARK,
 				src: 'https://example.com/doc.docx',
 				fileName: 'report.docx',
 				onExport
@@ -134,7 +139,7 @@ describe('DocxEditor', () => {
 	});
 
 	it('replaces the document when a file is uploaded', async () => {
-		render(DocxEditor, { src: 'https://example.com/doc.docx' });
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
 		await screen.findByText(FIXTURE_TEXT);
 		mockedRenderDocx.mockClear();
 
@@ -153,6 +158,7 @@ describe('DocxEditor', () => {
 	it('keeps dark mode parent-controlled', async () => {
 		const onIsDarkChange = vi.fn();
 		const { rerender } = render(DocxEditor, {
+			...DARK,
 			src: 'https://example.com/doc.docx',
 			isDark: false,
 			onIsDarkChange
@@ -170,8 +176,56 @@ describe('DocxEditor', () => {
 		expect(editor.classList.contains('dark')).toBe(true);
 	});
 
+	it('accepts className as an alias of class on the root', async () => {
+		render(DocxEditor, { ...DARK, class: 'from-class', className: 'from-class-name' });
+
+		expect(await screen.findByTestId('docx-editor')).toHaveClass(
+			'docx-editor',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('is exported under the upstream name DocxEditorPreview', () => {
+		expect(DocxEditorPreview).toBe(DocxEditor);
+	});
+
+	it('starts at upstream defaultZoomScale 100 and zooms through the upstream steps', async () => {
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		const content = screen.getByTestId('docx-editor-content');
+		const select = screen.getByRole('combobox', { name: 'Zoom level' }) as HTMLSelectElement;
+
+		expect(content.getAttribute('style')).toContain('zoom: 100%');
+		expect(select.value).toBe('100');
+		expect(Array.from(select.options).map((option) => option.value)).toEqual([
+			'50', '75', '90', '100', '110', '125', '150', '175', '200'
+		]);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(content.getAttribute('style')).toContain('zoom: 110%');
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }));
+		expect(select.value).toBe('90');
+	});
+
+	it('honors defaultZoomScale and falls back to 100 for values off the scale, like upstream', async () => {
+		const { unmount } = render(DocxEditor, {
+			...DARK,
+			src: 'https://example.com/doc.docx',
+			defaultZoomScale: 150
+		});
+		await screen.findByText(FIXTURE_TEXT);
+		expect(screen.getByTestId('docx-editor-content').getAttribute('style')).toContain('zoom: 150%');
+		unmount();
+
+		render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx', defaultZoomScale: 130 });
+		await screen.findByText(FIXTURE_TEXT);
+		expect(screen.getByTestId('docx-editor-content').getAttribute('style')).toContain('zoom: 100%');
+	});
+
 	it('clears the engine output on teardown', async () => {
-		const { unmount } = render(DocxEditor, { src: 'https://example.com/doc.docx' });
+		const { unmount } = render(DocxEditor, { ...DARK, src: 'https://example.com/doc.docx' });
 		await screen.findByText(FIXTURE_TEXT);
 
 		unmount();

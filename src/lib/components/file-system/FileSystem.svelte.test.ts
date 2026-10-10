@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import FileSystem from './FileSystem.svelte';
-import type { FileSystemItem } from './types.js';
+import { FileSystem as FileSystemExport } from './index.js';
+import type { FileSystemFileItem, FileSystemItem } from './types.js';
 
 const ITEMS: FileSystemItem[] = [
 	{ kind: 'folder', path: 'invoices/' },
@@ -172,13 +173,55 @@ describe('FileSystem', () => {
 		expect(screen.getByTestId('file-system')).toHaveClass('dark');
 	});
 
-	it('dark-mode toggle notifies onIsDarkChange', async () => {
+	it('renders no theme toggle of its own, like upstream', () => {
 		const onIsDarkChange = vi.fn();
 		render(FileSystem, { items: ITEMS, isDark: false, onIsDarkChange });
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Toggle dark mode' }));
+		expect(screen.queryByRole('button', { name: /dark mode/i })).not.toBeInTheDocument();
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('accepts class alongside the upstream className on the root', () => {
+		render(FileSystem, { items: ITEMS, class: 'from-class', className: 'from-class-name' });
+
+		expect(screen.getByTestId('file-system')).toHaveClass(
+			'file-system',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('is exported under the upstream name FileSystem', () => {
+		expect(FileSystemExport).toBe(FileSystem);
+	});
+
+	it('double-clicking a file calls upstream onFileOpen with its url', async () => {
+		const onFileOpen = vi.fn();
+		const items: FileSystemItem[] = [
+			{ kind: 'file', path: 'contract.pdf', url: 'https://cdn.example.com/contract.pdf' }
+		];
+		render(FileSystem, { items, onFileOpen });
+
+		await fireEvent.dblClick(treeitem('contract.pdf'));
+
+		await vi.waitFor(() => expect(onFileOpen).toHaveBeenCalledTimes(1));
+		const [file, url] = onFileOpen.mock.calls[0] as [FileSystemFileItem, string | null];
+		expect(file.path).toBe('contract.pdf');
+		expect(url).toBe('https://cdn.example.com/contract.pdf');
+	});
+
+	it('resolves a missing file url through upstream getFileUrl before onFileOpen', async () => {
+		const onFileOpen = vi.fn();
+		const getFileUrl = vi.fn(async (file: FileSystemFileItem) => `https://signed/${file.path}`);
+		render(FileSystem, { items: ITEMS, defaultPath: 'invoices/2026/', onFileOpen, getFileUrl });
+
+		await fireEvent.dblClick(treeitem('jan.pdf'));
+
+		await vi.waitFor(() =>
+			expect(onFileOpen).toHaveBeenCalledWith(
+				expect.objectContaining({ path: 'invoices/2026/jan.pdf' }),
+				'https://signed/invoices/2026/jan.pdf'
+			)
+		);
 	});
 });

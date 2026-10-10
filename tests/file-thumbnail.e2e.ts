@@ -64,3 +64,11 @@ test('file-thumbnail renders no theme toggle inside the thumbnail', async ({ pag
 	await expect(thumbnail).toBeVisible();
 	await expect(thumbnail.getByRole('button')).toHaveCount(0);
 });
+
+test('file-thumbnail docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/file-thumbnail');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('FileThumbnailLoadingOverlay');
+	await expect(differences).toContainText('pdfUrl');
+});

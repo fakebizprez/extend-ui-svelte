@@ -3,10 +3,15 @@
 	Ported from apps/v4/components/extend/layout-blocks.tsx (OcrBlocksPanel).
 
 	Deliberate changes from the React version:
-	- Virtualization uses the shared fixed-height VirtualList instead of
-	  @tanstack/react-virtual's variable measurement, so rows share one
-	  itemHeight and taller content is clipped. Size itemHeight for the
-	  longest expected block.
+	- Virtualization uses the shared VirtualList in measured mode instead of
+	  @tanstack/react-virtual: rows start at upstream's per-block size
+	  estimate and then size to their content (ResizeObserver).
+	- Adds `height` (viewport px, default 420 like upstream's h-[420px]) and
+	  `overscan` (default 6 like upstream) props.
+	- Exported as LayoutBlocks and as the upstream name OcrBlocksPanel. The
+	  upstream OcrBlocks demo (panel preloaded with the bundled Attention
+	  sample) is not ported.
+	- `class` is accepted alongside `className`; both merge onto the root.
 	- Markdown renders with marked instead of react-markdown; see
 	  renderBlockMarkdown in layout-blocks.ts.
 	- Type badges are text pills in scoped CSS instead of Hugeicons glyphs.
@@ -20,9 +25,9 @@
 	import { VirtualList } from '#lib/virtual-list/index.js';
 	import type { DarkModeProps } from '#lib/dark-mode.js';
 	import {
-		DEFAULT_LAYOUT_BLOCK_ITEM_HEIGHT,
 		DEFAULT_LAYOUT_BLOCKS_HEIGHT,
 		DEFAULT_LAYOUT_BLOCKS_OVERSCAN,
+		estimateOcrBlockRowHeight,
 		OCR_BLOCK_TYPE_LABELS,
 		renderBlockMarkdown,
 		type OcrBlock
@@ -35,14 +40,10 @@
 		activeBlockId?: string;
 		/** Called when the user focuses a different block. */
 		onBlockFocus?: (block: OcrBlock) => void;
+		class?: string;
 		className?: string;
 		/** Visible height of the scroll viewport in pixels. Defaults to 420. */
 		height?: number;
-		/**
-		 * Fixed height of one row in pixels. Defaults to 140. Rows share one
-		 * height because virtualization is windowed; taller content is clipped.
-		 */
-		itemHeight?: number;
 		/** Extra rows rendered above and below the viewport. Defaults to 6. */
 		overscan?: number;
 	}
@@ -51,9 +52,9 @@
 		blocks,
 		activeBlockId,
 		onBlockFocus,
+		class: classProp,
 		className,
 		height = DEFAULT_LAYOUT_BLOCKS_HEIGHT,
-		itemHeight = DEFAULT_LAYOUT_BLOCK_ITEM_HEIGHT,
 		overscan = DEFAULT_LAYOUT_BLOCKS_OVERSCAN,
 		isDark = false
 	}: Props = $props();
@@ -75,34 +76,49 @@
 
 <aside
 	data-testid="layout-blocks"
-	class="layout-blocks {className ?? ''}"
+	class={['layout-blocks', classProp, className]}
 	class:dark={isDark}
 >
 	{#if blocks.length}
-		<VirtualList items={blocks} {itemHeight} {height} {overscan}>
+		<VirtualList
+			items={blocks}
+			estimateSize={(index) => {
+				const block = blocks[index];
+				return block ? estimateOcrBlockRowHeight(block) : 92;
+			}}
+			{height}
+			{overscan}
+		>
 			{#snippet children(block, index)}
 				{@const isActive = block.id === activeBlock?.id}
-				<button
-					type="button"
-					class="layout-block"
-					class:active={isActive}
-					data-testid="layout-block"
-					data-block-id={block.id}
-					data-block-index={index}
-					data-active={isActive}
-					onmouseenter={() => focusBlock(block)}
-					onfocus={() => focusBlock(block)}
-					onclick={() => focusBlock(block)}
+				<div
+					class="layout-block-row"
+					class:first={index === 0}
+					class:last={index === blocks.length - 1}
 				>
-					<span class="layout-block-header">
-						<span class="layout-block-badge" data-block-type={block.type}>
-							{OCR_BLOCK_TYPE_LABELS[block.type]}
+					<button
+						type="button"
+						class="layout-block"
+						class:active={isActive}
+						data-testid="layout-block"
+						data-block-id={block.id}
+						data-block-index={index}
+						data-block-type={block.type}
+						data-active={isActive}
+						onmouseenter={() => focusBlock(block)}
+						onfocus={() => focusBlock(block)}
+						onclick={() => focusBlock(block)}
+					>
+						<span class="layout-block-header">
+							<span class="layout-block-badge" data-block-type={block.type}>
+								{OCR_BLOCK_TYPE_LABELS[block.type]}
+							</span>
+							<span class="layout-block-confidence">{Math.round(block.confidence * 100)}%</span>
+							<span class="layout-block-page">p. {block.page}</span>
 						</span>
-						<span class="layout-block-confidence">{Math.round(block.confidence * 100)}%</span>
-						<span class="layout-block-page">p. {block.page}</span>
-					</span>
-					<span class="layout-block-body">{@html renderBlockMarkdown(block.text)}</span>
-				</button>
+						<span class="layout-block-body">{@html renderBlockMarkdown(block.text)}</span>
+					</button>
+				</div>
 			{/snippet}
 		</VirtualList>
 	{:else}
@@ -140,13 +156,24 @@
 		--lb-row-hover: rgba(243, 244, 246, 0.06);
 	}
 
+	/* Upstream: rows inset 12px, 8px apart, 12px list padding top and bottom. */
+	.layout-block-row {
+		padding: 0 0.75rem 0.5rem;
+	}
+
+	.layout-block-row.first {
+		padding-top: 0.75rem;
+	}
+
+	.layout-block-row.last {
+		padding-bottom: 1.25rem;
+	}
+
 	.layout-block {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 		width: 100%;
-		height: 100%;
-		overflow: hidden;
 		text-align: left;
 		border-radius: 0.5rem;
 		border: 1px solid var(--lb-border);
@@ -160,9 +187,43 @@
 		background: var(--lb-row-hover);
 	}
 
+	/* Active ring per block type, matching upstream BLOCK_STYLES[type].ring. */
 	.layout-block.active {
-		border-color: #3b82f6;
-		box-shadow: 0 0 0 1px #3b82f6;
+		--lb-ring: 100, 116, 139;
+		border-color: rgba(var(--lb-ring), 0.6);
+		background: rgba(var(--lb-ring), 0.05);
+	}
+
+	.layout-block.active[data-block-type='heading'] {
+		--lb-ring: 139, 92, 246;
+	}
+
+	.layout-block.active[data-block-type='paragraph'] {
+		--lb-ring: 59, 130, 246;
+	}
+
+	.layout-block.active[data-block-type='list'] {
+		--lb-ring: 16, 185, 129;
+	}
+
+	.layout-block.active[data-block-type='table'] {
+		--lb-ring: 245, 158, 11;
+	}
+
+	.layout-block.active[data-block-type='figure'] {
+		--lb-ring: 244, 63, 94;
+	}
+
+	.layout-block.active[data-block-type='header'] {
+		--lb-ring: 6, 182, 212;
+	}
+
+	.layout-block.active[data-block-type='footer'] {
+		--lb-ring: 100, 116, 139;
+	}
+
+	.layout-block.active[data-block-type='page_number'] {
+		--lb-ring: 113, 113, 122;
 	}
 
 	.layout-block:focus-visible {
@@ -260,6 +321,13 @@
 
 	.layout-block-body :global(p) {
 		margin: 0;
+	}
+
+	/* Upstream: lists sit flush (my-0) with a pl-4 indent. */
+	.layout-block-body :global(ul),
+	.layout-block-body :global(ol) {
+		margin: 0;
+		padding-left: 1rem;
 	}
 
 	.layout-block-body :global(table) {

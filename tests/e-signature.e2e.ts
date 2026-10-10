@@ -111,3 +111,23 @@ for (const width of [1280, 390]) {
 		}
 	});
 }
+
+test('loads the document from the upstream file prop with no theme toggle inside', async ({
+	page
+}) => {
+	await page.goto('/e-signature');
+	const scope = page.getByTestId('e-signature').first();
+	await expect(scope).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+
+	await expect(scope.getByRole('switch')).toHaveCount(0);
+	await page.getByLabel('Dark mode').check();
+	await expect(scope).toHaveAttribute('data-dark', 'true');
+});
+
+test('docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/e-signature');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('ESignatureBlock');
+	await expect(differences).toContainText('signed-document.pdf');
+});

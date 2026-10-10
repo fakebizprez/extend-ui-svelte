@@ -54,7 +54,9 @@ export function listSheetNames(workbook: WorkBook): string[] {
 }
 
 /**
- * Converts one sheet to row objects with `sheet_to_json` for the viewer.
+ * Converts one sheet to row objects keyed by its first-row headers with
+ * `sheet_to_json`. For an A1-addressed grid (what the viewer and editor
+ * render), use `sheetToGrid`.
  * Blank cells default to `''` so every row carries the same keys; pass
  * `options` to override. Rejects with a clear error for an unknown sheet.
  */
@@ -64,13 +66,54 @@ export async function sheetToRows<T extends XlsxRow = XlsxRow>(
 	options: XlsxSheetToRowsOptions = {}
 ): Promise<T[]> {
 	const worksheet = workbook.Sheets?.[sheetName];
-	if (!worksheet) {
-		const available = listSheetNames(workbook).join(', ') || '(no sheets)';
-		throw new Error(`Unknown sheet: "${sheetName}". Available sheets: ${available}.`);
-	}
+	if (!worksheet) throw unknownSheetError(workbook, sheetName);
 
 	const XLSX = await loadSheetJs();
 	return XLSX.utils.sheet_to_json<T>(worksheet, { defval: '', ...options });
+}
+
+/** A sheet read cell by cell from A1, the way spreadsheet apps address it. */
+export interface XlsxSheetGrid {
+	/** Cell values (formula cells hold their cached result), blanks as null. */
+	values: unknown[][];
+	/** Formula text without the leading `=`, keyed by zero-based `row:col`. */
+	formulas: Record<string, string>;
+}
+
+function unknownSheetError(workbook: WorkBook, sheetName: string): Error {
+	const available = listSheetNames(workbook).join(', ') || '(no sheets)';
+	return new Error(`Unknown sheet: "${sheetName}". Available sheets: ${available}.`);
+}
+
+/**
+ * Reads one sheet as a grid anchored at A1: the first row is data (not
+ * headers), blank rows and leading blank columns are kept, so `values[r][c]`
+ * is the cell at row r+1, column c. Shared by the viewer and editor so both
+ * show the same rows and A1 addresses.
+ */
+export async function sheetToGrid(workbook: WorkBook, sheetName: string): Promise<XlsxSheetGrid> {
+	const worksheet = workbook.Sheets?.[sheetName];
+	if (!worksheet) throw unknownSheetError(workbook, sheetName);
+	if (!worksheet['!ref']) return { values: [], formulas: {} };
+
+	const XLSX = await loadSheetJs();
+	// The sheet's own range starts at its first used cell; widen it to A1.
+	const used = XLSX.utils.decode_range(worksheet['!ref']);
+	const range = { s: { r: 0, c: 0 }, e: used.e };
+	const values = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+		header: 1,
+		defval: null,
+		blankrows: true,
+		range
+	});
+	const formulas: Record<string, string> = {};
+	for (let r = used.s.r; r <= used.e.r; r += 1) {
+		for (let c = used.s.c; c <= used.e.c; c += 1) {
+			const formula = worksheet[XLSX.utils.encode_cell({ r, c })]?.f;
+			if (typeof formula === 'string' && formula) formulas[`${r}:${c}`] = formula;
+		}
+	}
+	return { values, formulas };
 }
 
 /** Returns the number of data rows `sheetToRows` would return for a sheet. */

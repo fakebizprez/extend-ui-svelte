@@ -4,11 +4,13 @@
 	Base UI Toggle primitive. Props mirror Base UI: `pressed`,
 	`defaultPressed`, `onPressedChange`, `disabled`, plus `variant`/`size`.
 	Deliberate API changes vs React:
-	- `class` instead of `className` (Svelte / shadcn-svelte convention).
+	- `class` and `className` are both accepted and merged onto the root.
 	- `children` is a Svelte snippet instead of ReactNode.
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 	- No `TogglePrimitive` re-export (Base UI is React-only).
+	- Upstream's before-pseudo shadow, touch hit-area, and icon sizing
+	  utilities are not ported; variants and sizes are.
 -->
 <script lang="ts" module>
 	export type ToggleVariant = 'default' | 'outline';
@@ -46,6 +48,7 @@
 	import type { Snippet } from 'svelte';
 	import type { DarkModeProps } from '../../dark-mode.js';
 	import { cn } from '../../utils.js';
+	import { onDestroy } from 'svelte';
 	import { getToggleGroupContext } from './toggle-context.js';
 
 	export interface ToggleProps extends DarkModeProps {
@@ -60,6 +63,8 @@
 		/** Item value when used inside a ToggleGroup. */
 		value?: string;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop name. Both are merged. */
+		className?: string;
 		children?: Snippet;
 		[key: string]: unknown;
 	}
@@ -72,7 +77,9 @@
 		variant = 'default',
 		size = 'default',
 		value,
+		onfocus,
 		class: className = '',
+		className: classNameAlias = '',
 		children,
 		isDark = false,
 		// Shared-contract parity; intentionally unused, the parent owns the theme.
@@ -89,6 +96,18 @@
 		inGroup && group ? group.isSelected(value as string) : (pressedProp ?? internalPressed)
 	);
 	const isDisabled = $derived(disabled || (group?.isDisabled() ?? false));
+
+	// Register at init (not in an effect) so server-rendered HTML already has
+	// the right tab stop. Initial capture of `value` is intended.
+	if (group && value !== undefined) onDestroy(group.register(value, () => disabled));
+	const tabindex = $derived(
+		inGroup && group ? (group.isTabStop(value as string) ? 0 : -1) : undefined
+	);
+
+	function handleFocus(event: FocusEvent) {
+		if (inGroup && group) group.setFocused(value as string);
+		(onfocus as ((event: FocusEvent) => void) | undefined)?.(event);
+	}
 
 	function handleClick(event: MouseEvent) {
 		if (isDisabled) {
@@ -107,12 +126,14 @@
 
 <button
 	type="button"
-	class={cn(toggleVariants({ variant, size }), className, isDark && 'dark')}
+	class={cn(toggleVariants({ variant, size }), className, classNameAlias, isDark && 'dark')}
 	data-slot="toggle"
 	aria-pressed={pressed}
 	data-pressed={pressed || undefined}
 	disabled={isDisabled}
+	{tabindex}
 	onclick={handleClick}
+	onfocus={handleFocus}
 	{...rest}
 >
 	{@render children?.()}

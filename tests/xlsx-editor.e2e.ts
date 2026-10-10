@@ -136,3 +136,55 @@ test('xlsx-editor export produces an .xlsx download with the edits', async ({ pa
 	const rows = utils.sheet_to_json<unknown[]>(workbook.Sheets['Inventory'], { header: 1 });
 	expect(rows[1]).toEqual(['A-9001', 'Resistor kit pro', 120, 'Reno']);
 });
+
+test('xlsx-editor keeps formulas: the bar shows the formula, the grid the value', async ({
+	page
+}) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	await expect(editor.getByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
+
+	// Cross-sheet formula: shows the file's saved value.
+	await editor.getByRole('tab', { name: 'Summary' }).click();
+	await editor.getByRole('gridcell', { name: '787', exact: true }).click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('B3');
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('=SUM(Inventory!C2:C6)');
+
+	// Same-sheet formula recalculates after an edit.
+	await editor.getByRole('tab', { name: 'Lanes' }).click();
+	await editor.getByRole('gridcell', { name: '7', exact: true }).click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('C6');
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('=SUM(C3:C5)');
+	await editor.getByRole('gridcell', { name: '4', exact: true }).dblclick();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('10');
+	await page.keyboard.press('Enter');
+	await expect(editor.getByRole('gridcell', { name: '13', exact: true })).toBeVisible();
+});
+
+test('xlsx-editor export keeps cell addresses, blank rows, and formulas', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	await expect(editor.getByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
+	await editor.getByRole('tab', { name: 'Lanes' }).click();
+	const lane = editor.getByRole('gridcell', { name: 'Lane', exact: true });
+	await lane.click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('B2');
+	await editor.getByRole('gridcell', { name: 'Austin-Reno' }).click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('B5');
+
+	const downloadPromise = page.waitForEvent('download');
+	await editor.getByTestId('export-button').click();
+	const download = await downloadPromise;
+	const workbook = read(readFileSync((await download.path()) as string), { type: 'buffer' });
+
+	const lanes = workbook.Sheets['Lanes'] as Record<string, { v?: unknown; f?: string }>;
+	expect(lanes['A1']).toBeUndefined();
+	expect(lanes['B2']?.v).toBe('Lane');
+	expect(lanes['B3']?.v).toBe('Reno-Austin');
+	expect(lanes['B4']).toBeUndefined();
+	expect(lanes['B5']?.v).toBe('Austin-Reno');
+	expect(lanes['C6']).toMatchObject({ f: 'SUM(C3:C5)', v: 7 });
+	const summary = workbook.Sheets['Summary'] as Record<string, { v?: unknown; f?: string }>;
+	expect(summary['B3']).toMatchObject({ f: 'SUM(Inventory!C2:C6)', v: 787 });
+});

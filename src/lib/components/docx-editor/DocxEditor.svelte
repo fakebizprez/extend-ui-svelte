@@ -7,12 +7,16 @@
 	  contenteditable surface with document.execCommand formatting; the docx
 	  engine wrapper (docx-preview) renders the source document offscreen and
 	  its paragraphs are extracted into the editor.
+	- Also exported as the upstream name DocxEditorPreview; `className` is an
+	  alias of `class`. Port additions: showToolbar, readOnly, onExport.
 	- The toolbar covers the rewrite scope: bold, italic, headings, bulleted
-	  and numbered lists, plus import, export, and the theme switch. Comments,
-	  tracked changes, tables, images, links, and page thumbnails are out of
-	  scope for this port.
-	- Export rebuilds a minimal .docx package from the editor blocks with
-	  jszip (see ./export.js) instead of the react-docx controller API.
+	  and numbered lists, zoom (upstream steps and defaultZoomScale), plus
+	  import, export, and the theme switch. Undo/redo buttons, fonts, color,
+	  highlight, links, alignment, borders, comments, tracked changes, tables,
+	  images, and page thumbnails are out of scope for this port.
+	- Export is lossy: it rebuilds a minimal .docx package from the editor
+	  blocks with jszip (see ./export.js) instead of the react-docx controller
+	  API, so source tables, images, styles, headers, and footers are dropped.
 	- Dark mode stays parent-controlled (isDark + onIsDarkChange) per the
 	  repo contract.
 -->
@@ -26,6 +30,19 @@
 	export const DOCX_UPLOAD_ACCEPT = ['.doc', '.docx', 'application/msword', DOCX_MIME_TYPE].join(
 		','
 	);
+
+	/** Zoom steps offered by the toolbar, in percent, matching upstream. */
+	export const ZOOM_OPTIONS = [50, 75, 90, 100, 110, 125, 150, 175, 200] as const;
+
+	/** Editor zoom when the parent passes no defaultZoomScale, matching upstream. */
+	export const DEFAULT_ZOOM_SCALE = 100;
+
+	/** Like upstream: only values on the zoom scale are honored. */
+	export function normalizeZoomScale(value: number | undefined): number {
+		return typeof value === 'number' && (ZOOM_OPTIONS as readonly number[]).includes(value)
+			? value
+			: DEFAULT_ZOOM_SCALE;
+	}
 
 	/** Prefers an explicit fileName, else the last URL path segment. */
 	export function formatDocumentName(fileName: string | undefined, url: string): string {
@@ -155,7 +172,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { toggleIsDark } from '#lib/dark-mode.js';
 	import type { DocxSource } from '#lib/engines/docx/index.js';
 	import { DOCX_MIME_TYPE as EXPORT_MIME_TYPE, exportDocxBytes } from './export.js';
@@ -168,15 +185,19 @@
 		src?: string;
 		/** Display name used for the toolbar and the export download. */
 		fileName?: string;
-		/** Parent-controlled dark mode flag. */
-		isDark?: boolean;
-		/** Called when the user toggles dark mode in the toolbar. */
-		onIsDarkChange?: (isDark: boolean) => void;
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
+		/** Initial zoom in percent; must be one of ZOOM_OPTIONS. Defaults to 100, like upstream. */
+		defaultZoomScale?: number;
 		/** Show the formatting toolbar. */
 		showToolbar?: boolean;
 		/** Read-only mode: editing and import are disabled, export still works. */
 		readOnly?: boolean;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 		/** Called with the exported .docx bytes on every successful export. */
 		onExport?: (bytes: Uint8Array) => void;
 	}
@@ -188,7 +209,9 @@
 		onIsDarkChange,
 		showToolbar = true,
 		readOnly = false,
-		class: className = '',
+		defaultZoomScale,
+		class: classProp = '',
+		className = '',
 		onExport
 	}: Props = $props();
 
@@ -202,6 +225,8 @@
 	let exporting = $state(false);
 	let uploadedFile = $state.raw<File | null>(null);
 	let blockStyle = $state('p');
+	let zoomScale = $state(untrack(() => normalizeZoomScale(defaultZoomScale)));
+	const zoomIndex = $derived((ZOOM_OPTIONS as readonly number[]).indexOf(zoomScale));
 	let generation = 0;
 
 	const displayFileName = $derived(
@@ -347,7 +372,7 @@
 <div
 	data-testid="docx-editor"
 	data-dark={isDark ? 'true' : 'false'}
-	class="docx-editor {isDark ? 'dark' : ''} {className}"
+	class={['docx-editor', isDark && 'dark', classProp, className].filter(Boolean).join(' ')}
 >
 	{#if showToolbar}
 		<div class="docx-editor-toolbar" role="toolbar" aria-label="Document formatting">
@@ -388,6 +413,27 @@
 				onclick={() => applyFormat('insertOrderedList')}
 			>
 				Numbered list
+			</button>
+			<button
+				type="button"
+				aria-label="Zoom out"
+				disabled={zoomIndex <= 0}
+				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex - 1])}
+			>
+				−
+			</button>
+			<select aria-label="Zoom level" bind:value={zoomScale}>
+				{#each ZOOM_OPTIONS as value (value)}
+					<option {value}>{value}%</option>
+				{/each}
+			</select>
+			<button
+				type="button"
+				aria-label="Zoom in"
+				disabled={zoomIndex >= ZOOM_OPTIONS.length - 1}
+				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex + 1])}
+			>
+				+
 			</button>
 			<button type="button" disabled={readOnly} onclick={() => fileInputEl?.click()}>
 				Upload
@@ -430,6 +476,7 @@
 			bind:this={editorEl}
 			data-testid="docx-editor-content"
 			class="docx-editor-content"
+			style={`zoom: ${zoomScale}%;`}
 			contenteditable={readOnly ? 'false' : 'true'}
 			spellcheck="false"
 			role="textbox"

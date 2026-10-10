@@ -8,10 +8,26 @@
 	import ToggleGroup, { type ToggleGroupProps } from './ToggleGroup.svelte';
 	import ToggleGroupItem from './ToggleGroupItem.svelte';
 
-	let { ...rest }: ToggleGroupProps = $props();
+	interface HarnessItem {
+		value: string;
+		label: string;
+		disabled?: boolean;
+	}
+
+	let {
+		itemClassName,
+		items = [
+			{ value: 'bold', label: 'Bold' },
+			{ value: 'italic', label: 'Italic' }
+		],
+		...rest
+	}: ToggleGroupProps & { itemClassName?: string; items?: HarnessItem[] } = $props();
 </script>
 
 <ToggleGroup {...rest}>
-	<ToggleGroupItem value="bold">Bold</ToggleGroupItem>
-	<ToggleGroupItem value="italic">Italic</ToggleGroupItem>
+	{#each items as item (item.value)}
+		<ToggleGroupItem value={item.value} disabled={item.disabled} className={itemClassName}>
+			{item.label}
+		</ToggleGroupItem>
+	{/each}
 </ToggleGroup>

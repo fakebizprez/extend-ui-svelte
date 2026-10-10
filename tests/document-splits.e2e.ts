@@ -94,3 +94,11 @@ test('loads without console errors, nested buttons, or theme pills over thumbnai
 	await expect(page.getByTestId('document-splits').getByText(/^(Dark|Light)$/)).toHaveCount(0);
 	expect(errors).toEqual([]);
 });
+
+test('docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/document-splits');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('dnd-kit');
+	await expect(differences).toContainText('activePage');
+});

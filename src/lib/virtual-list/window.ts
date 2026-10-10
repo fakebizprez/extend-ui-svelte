@@ -52,3 +52,54 @@ export function totalHeight(itemCount: number, itemHeight: number): number {
 export function offsetTopForIndex(index: number, itemHeight: number): number {
 	return index * itemHeight;
 }
+
+/** Prefix offsets for variable row sizes: `offsets[i]` is the top of row `i`, `offsets[n]` the total height. */
+export function prefixOffsets(sizes: number[]): number[] {
+	const offsets = [0];
+	for (const size of sizes) offsets.push((offsets[offsets.length - 1] ?? 0) + size);
+	return offsets;
+}
+
+export interface VariableWindowOptions {
+	/** Prefix offsets from `prefixOffsets`. */
+	offsets: number[];
+	/** Visible height of the scroll viewport in pixels. */
+	viewportHeight: number;
+	/** Current scroll offset in pixels. */
+	scrollTop: number;
+	/** Extra items rendered above and below the visible range. */
+	overscan?: number;
+}
+
+/** Largest index `i` in `[0, offsets.length - 1)` with `offsets[i] <= value` (binary search). */
+function rowAt(offsets: number[], value: number): number {
+	let low = 0;
+	let high = offsets.length - 2;
+	while (low < high) {
+		const mid = (low + high + 1) >> 1;
+		if ((offsets[mid] ?? 0) <= value) low = mid;
+		else high = mid - 1;
+	}
+	return low;
+}
+
+/** Variable-height counterpart of `computeWindow`. */
+export function computeVariableWindow(options: VariableWindowOptions): VirtualWindow {
+	const { offsets, viewportHeight, overscan = DEFAULT_OVERSCAN } = options;
+	const itemCount = offsets.length - 1;
+	if (itemCount <= 0) return { start: 0, end: 0 };
+
+	const total = offsets[itemCount] ?? 0;
+	const scrollTop = Math.min(Math.max(0, options.scrollTop), Math.max(0, total - viewportHeight));
+	const bottom = scrollTop + viewportHeight;
+
+	const first = rowAt(offsets, scrollTop);
+	let last = rowAt(offsets, bottom);
+	// A row that starts exactly at the bottom edge is not visible.
+	if (last > first && (offsets[last] ?? 0) >= bottom) last -= 1;
+
+	return {
+		start: Math.max(0, first - overscan),
+		end: Math.min(itemCount, last + 1 + overscan)
+	};
+}

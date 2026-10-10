@@ -3,5 +3,7 @@ import type { ComponentProps } from 'svelte';
 import type XlsxViewer from './XlsxViewer.svelte';
 
 export { default as XlsxViewer } from './XlsxViewer.svelte';
+/** Upstream React name. */
+export { default as XlsxViewerPreview } from './XlsxViewer.svelte';
 export { default } from './XlsxViewer.svelte';
 export type XlsxViewerProps = ComponentProps<typeof XlsxViewer>;

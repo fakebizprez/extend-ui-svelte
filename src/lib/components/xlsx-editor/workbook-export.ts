@@ -8,6 +8,12 @@ import { evaluateCell } from './formulas.js';
 export interface EditableSheet {
 	name: string;
 	grid: (string | number | boolean | null)[][];
+	/**
+	 * Values saved in the source file for formula cells, keyed by zero-based
+	 * `row:col`. Used as the cached value when local evaluation fails (for
+	 * example cross-sheet references), so the export keeps the file's result.
+	 */
+	savedResults?: Record<string, string | number | boolean | null>;
 }
 
 /**
@@ -34,10 +40,11 @@ export async function sheetsToXlsxBytes(sheets: EditableSheet[]): Promise<Uint8A
 				const value = gridRow[col];
 				if (typeof value === 'string' && value.startsWith('=') && value.length > 1) {
 					const address = XLSX.utils.encode_cell({ r: row, c: col });
-					const cached = evaluateCell(
-						value,
-						(r, c) => (grid[r] ?? [])[c] ?? null
-					);
+					let cached = evaluateCell(value, (r, c) => (grid[r] ?? [])[c] ?? null);
+					const saved = sheet.savedResults?.[`${row}:${col}`];
+					if (typeof cached === 'string' && cached.startsWith('#') && saved !== undefined) {
+						cached = saved;
+					}
 					worksheet[address] =
 						typeof cached === 'number'
 							? { t: 'n', v: cached, f: value.slice(1) }

@@ -1,5 +1,5 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { createRawSnippet } from 'svelte';
 import { fireEvent, render } from '@testing-library/svelte';
@@ -131,5 +131,83 @@ describe('VirtualList', () => {
 		await tick();
 
 		expect(rowIndexes(container)).toEqual(Array.from({ length: 14 }, (_, i) => 48 + i));
+	});
+});
+
+// jsdom has no layout or ResizeObserver: this fake lets a test report row heights.
+class FakeResizeObserver {
+	static instances: FakeResizeObserver[] = [];
+	readonly targets = new Set<Element>();
+	constructor(private readonly callback: ResizeObserverCallback) {
+		FakeResizeObserver.instances.push(this);
+	}
+	observe(target: Element) {
+		this.targets.add(target);
+	}
+	unobserve(target: Element) {
+		this.targets.delete(target);
+	}
+	disconnect() {
+		this.targets.clear();
+	}
+	report(heights: Record<number, number>) {
+		const entries = [...this.targets]
+			.filter((target) => Number(target.getAttribute('data-virtual-index')) in heights)
+			.map((target) => {
+				const height = heights[Number(target.getAttribute('data-virtual-index'))];
+				Object.defineProperty(target, 'offsetHeight', { configurable: true, value: height });
+				return { target } as unknown as ResizeObserverEntry;
+			});
+		this.callback(entries, this as unknown as ResizeObserver);
+	}
+}
+
+describe('VirtualList measured rows', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		FakeResizeObserver.instances = [];
+	});
+
+	it('positions rows from estimateSize and leaves their height to the content', () => {
+		const items = Array.from({ length: 100 }, (_, i) => `item-${i}`);
+		const { container } = render(VirtualList, {
+			items,
+			estimateSize: (index: number) => (index % 2 === 0 ? 50 : 100),
+			height: VIEWPORT_HEIGHT,
+			overscan: 0
+		});
+
+		const rows = container.querySelectorAll<HTMLElement>('[data-virtual-index]');
+		// 50 + 100 + 50 + 100 = 300 fills the viewport exactly.
+		expect(rowIndexes(container)).toEqual([0, 1, 2, 3]);
+		expect(rows[1]?.style.top).toBe('50px');
+		expect(rows[3]?.style.top).toBe('200px');
+		expect(rows[0]?.style.height).toBe('');
+		const spacer = container.querySelector<HTMLElement>('[data-testid="virtual-spacer"]');
+		expect(spacer?.style.height).toBe('7500px');
+	});
+
+	it('repositions later rows once a row reports its measured height', async () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const items = Array.from({ length: 20 }, (_, i) => `item-${i}`);
+		const { container } = render(VirtualList, {
+			items,
+			estimateSize: () => 100,
+			height: VIEWPORT_HEIGHT,
+			overscan: 0
+		});
+		await tick();
+
+		const observer = FakeResizeObserver.instances[0];
+		expect(observer).toBeDefined();
+		observer?.report({ 0: 20, 1: 30 });
+		await tick();
+
+		const row = (index: number) =>
+			container.querySelector<HTMLElement>(`[data-virtual-index="${index}"]`);
+		expect(row(1)?.style.top).toBe('20px');
+		expect(row(2)?.style.top).toBe('50px');
+		// The freed space pulls another row into the window.
+		expect(rowIndexes(container)).toEqual([0, 1, 2, 3, 4]);
 	});
 });

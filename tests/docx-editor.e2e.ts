@@ -61,3 +61,23 @@ test('export produces a .docx download with the edited text', async ({ page }) =
 	expect(documentXml).toContain(EXPECTED_TEXT);
 	expect(documentXml).toContain('<w:b/>');
 });
+
+test('zooms the editable surface through the upstream zoom steps', async ({ page }) => {
+	await page.goto('/docx-editor');
+	const editor = page.getByTestId('docx-editor-content');
+	await expect(editor).toContainText(EXPECTED_TEXT, { timeout: 20000 });
+	const before = (await editor.boundingBox())?.height ?? 0;
+
+	await page.getByRole('combobox', { name: 'Zoom level' }).selectOption('150');
+
+	await expect(editor).toHaveAttribute('style', /zoom: 150%/);
+	await expect.poll(async () => (await editor.boundingBox())?.height ?? 0).toBeGreaterThan(before);
+});
+
+test('docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/docx-editor');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('DocxEditorPreview');
+	await expect(differences).toContainText('lossy');
+});

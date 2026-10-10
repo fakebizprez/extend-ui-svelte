@@ -3,13 +3,20 @@
 	Ported from apps/v4/components/extend/docx-viewer.tsx (DocxViewerPreview).
 
 	Deliberate changes vs the React version:
+	- Also exported as the upstream name DocxViewerPreview; `className` is an
+	  alias of `class`.
 	- Rendering is delegated to the docx engine wrapper (docx-preview) instead
 	  of @extend-ai/react-docx, which is React-only; comments, tracked changes,
-	  and canvas thumbnails are out of scope for this port.
+	  outline anchors, and canvas thumbnails are out of scope for this port.
+	  Legacy .doc uploads are accepted but docx-preview cannot render them.
 	- The thumbnail sidebar lists page numbers with text excerpts and is
-	  virtualized with the shared VirtualList instead of tanstack virtual.
-	- Zoom is a CSS zoom on the rendered document (defaultZoom, default 100)
-	  instead of the editor's zoom modes (fit-page/fit-width/automatic).
+	  virtualized with the shared VirtualList instead of tanstack virtual; it
+	  stays inline instead of collapsing to an overlay on narrow widths.
+	- toolbarActions is a Snippet instead of a React node.
+	- Zoom is a CSS zoom on the rendered document. defaultZoom matches upstream
+	  (number | 'fit-page' | 'fit-width' | 'automatic', default 50); the fit
+	  modes are resolved here from the first page's size and the viewport
+	  ('automatic' fits the width but never enlarges past 100%).
 	- Dark mode stays parent-controlled (isDark + onIsDarkChange) per the
 	  repo contract; the night render is CSS overrides on docx-preview output.
 -->
@@ -23,8 +30,46 @@
 	/** Zoom steps offered by the toolbar, in percent. */
 	export const ZOOM_OPTIONS = [50, 75, 100, 125, 150, 175, 200] as const;
 
-	/** Toolbar zoom when the parent passes no defaultZoom. */
-	export const DEFAULT_ZOOM = 100;
+	/** Toolbar zoom when the parent passes no defaultZoom, matching upstream. */
+	export const DEFAULT_ZOOM = 50;
+
+	/** Zoom levels accepted by defaultZoom and the zoom select, matching upstream. */
+	export type DocxViewerZoomLevel = number | 'fit-page' | 'fit-width' | 'automatic';
+
+	export const ZOOM_MODE_LABELS = {
+		'fit-page': 'Fit page',
+		'fit-width': 'Fit width',
+		automatic: 'Automatic'
+	} as const;
+
+	export interface DocxZoomMetrics {
+		viewportWidth: number;
+		viewportHeight: number;
+		pageWidth: number;
+		pageHeight: number;
+	}
+
+	/**
+	 * Resolves a zoom level to a percentage. Fit modes need a measured page and
+	 * viewport; returns null until both have a size.
+	 */
+	export function resolveZoomLevel(
+		level: DocxViewerZoomLevel,
+		metrics: DocxZoomMetrics
+	): number | null {
+		if (typeof level === 'number') return level;
+		const { viewportWidth, viewportHeight, pageWidth, pageHeight } = metrics;
+		if (!(pageWidth > 0) || !(viewportWidth > 0)) return null;
+		const fitWidth = (viewportWidth / pageWidth) * 100;
+		if (level === 'fit-width') return fitWidth;
+		if (level === 'automatic') return Math.min(fitWidth, 100);
+		if (!(pageHeight > 0) || !(viewportHeight > 0)) return null;
+		return Math.min(fitWidth, (viewportHeight / pageHeight) * 100);
+	}
+
+	function isZoomMode(value: string): value is keyof typeof ZOOM_MODE_LABELS {
+		return value in ZOOM_MODE_LABELS;
+	}
 
 	/** Fixed sidebar row height in px; shared with tests for scroll math. */
 	export const THUMBNAIL_ITEM_HEIGHT = 72;
@@ -82,19 +127,21 @@
 		src?: string;
 		/** Display name used for the toolbar and downloads. */
 		fileName?: string;
-		/** Parent-controlled dark mode flag. */
-		isDark?: boolean;
-		/** Called when the user toggles dark mode in the toolbar. */
-		onIsDarkChange?: (isDark: boolean) => void;
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
 		/** Show the toolbar (sidebar toggle, pages, zoom, actions). */
 		showToolbar?: boolean;
 		/** Show the download button. */
 		showDownload?: boolean;
 		/** Show the upload button and file input. */
 		showUpload?: boolean;
-		/** Initial zoom in percent. */
-		defaultZoom?: number;
+		/** Initial zoom: a percentage or a fit mode. Defaults to 50, like upstream. */
+		defaultZoom?: DocxViewerZoomLevel;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 		/** Extra toolbar content, matching the upstream `toolbarActions` prop. */
 		toolbarActions?: Snippet;
 	}
@@ -108,7 +155,8 @@
 		showDownload = true,
 		showUpload = true,
 		defaultZoom = DEFAULT_ZOOM,
-		class: className = '',
+		class: classProp = '',
+		className = '',
 		toolbarActions
 	}: Props = $props();
 
@@ -122,8 +170,12 @@
 	let pages = $state.raw<DocxViewerPage[]>([]);
 	let activePage = $state(1);
 	let sidebarOpen = $state(false);
-	let zoom = $state(defaultZoom);
-	let uploadedFile = $state.raw<File | null>(null);
+	// Selected level (number or fit mode) and the resolved percentage it maps to.
+	let zoomLevel = $state<DocxViewerZoomLevel>(untrack(() => defaultZoom));
+	let zoom = $state(untrack(() => (typeof defaultZoom === 'number' ? defaultZoom : DEFAULT_ZOOM)));
+	// Like upstream, an upload applies only while `src` is unchanged; a new src wins.
+	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
+	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
 	let generation = 0;
 
 	const currentSource = $derived<DocxSource | undefined>(uploadedFile ?? src);
@@ -131,6 +183,15 @@
 	const displayFileName = $derived(
 		uploadedFile?.name ?? (src ? formatDocumentName(fileName, src) : (fileName ?? 'document.docx'))
 	);
+	const rootClass = $derived(
+		['docx-viewer', isDark && 'dark', classProp, className].filter(Boolean).join(' ')
+	);
+	const zoomOptions = $derived.by(() => {
+		const rounded = Number(zoom.toFixed(2));
+		return (ZOOM_OPTIONS as readonly number[]).includes(rounded)
+			? [...ZOOM_OPTIONS]
+			: [...ZOOM_OPTIONS, rounded].sort((left, right) => left - right);
+	});
 	const canZoomIn = $derived(zoom < ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]);
 	const canZoomOut = $derived(zoom > ZOOM_OPTIONS[0]);
 
@@ -197,6 +258,8 @@
 				pages = collectPages(element);
 				activePage = 1;
 				status = 'ready';
+				// Like upstream, every new document starts at defaultZoom.
+				setZoomLevel(untrack(() => defaultZoom));
 			},
 			(failure: unknown) => {
 				if (id !== generation) return;
@@ -206,6 +269,43 @@
 			}
 		);
 	});
+
+	// Fit modes follow the viewport size.
+	$effect(() => {
+		const viewport = viewportEl;
+		if (!viewport || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(() => fitZoom());
+		observer.observe(viewport);
+		return () => observer.disconnect();
+	});
+
+	function setZoomLevel(level: DocxViewerZoomLevel): void {
+		zoomLevel = level;
+		if (typeof level === 'number') zoom = level;
+		else fitZoom();
+	}
+
+	/** Re-resolves a fit mode from the first page's natural size and the viewport. */
+	function fitZoom(): void {
+		const level = zoomLevel;
+		const viewport = viewportEl;
+		const page = containerEl?.querySelector<HTMLElement>('[data-docx-page]');
+		if (typeof level === 'number' || !viewport || !page) return;
+		const px = (value: string) => Number.parseFloat(value) || 0;
+		const outer = getComputedStyle(viewport);
+		// docx-preview pads the page wrapper; the padding zooms with the page.
+		const wrapper = page.parentElement ? getComputedStyle(page.parentElement) : null;
+		const resolved = resolveZoomLevel(level, {
+			viewportWidth: viewport.clientWidth - px(outer.paddingLeft) - px(outer.paddingRight),
+			viewportHeight: viewport.clientHeight - px(outer.paddingTop) - px(outer.paddingBottom),
+			// offsetWidth/offsetHeight are unaffected by the CSS zoom on the container.
+			pageWidth:
+				page.offsetWidth + px(wrapper?.paddingLeft ?? '') + px(wrapper?.paddingRight ?? ''),
+			pageHeight:
+				page.offsetHeight + px(wrapper?.paddingTop ?? '') + px(wrapper?.paddingBottom ?? '')
+		});
+		if (resolved !== null) zoom = resolved;
+	}
 
 	/** Reads docx-preview sections back as sidebar pages with text excerpts. */
 	function collectPages(element: HTMLElement): DocxViewerPage[] {
@@ -258,7 +358,7 @@
 		const file = input.files?.[0] ?? null;
 		input.value = '';
 		if (!file) return;
-		uploadedFile = file;
+		upload = { file, sourceUrl: src };
 		activePage = 1;
 	}
 
@@ -274,25 +374,32 @@
 		window.setTimeout(() => URL.revokeObjectURL(url), 0);
 	}
 
-	function handleDownload(): void {
+	let preparingDownload = $state(false);
+
+	// Like upstream: a URL source is fetched and saved as a blob, so the
+	// download name holds even for cross-origin files.
+	async function handleDownload(): Promise<void> {
 		const name = ensureDocxExtension(displayFileName);
 		if (uploadedFile) {
 			downloadBlob(uploadedFile, name);
 			return;
 		}
-		if (!src) return;
-		const anchor = document.createElement('a');
-		anchor.href = src;
-		anchor.download = name;
-		anchor.rel = 'noopener';
-		document.body.append(anchor);
-		anchor.click();
-		anchor.remove();
+		if (!src || preparingDownload) return;
+		preparingDownload = true;
+		try {
+			const response = await fetch(src);
+			if (!response.ok) throw new Error(`Failed to download DOCX (${response.status})`);
+			downloadBlob(await response.blob(), name);
+		} catch (error) {
+			console.error(error);
+		} finally {
+			preparingDownload = false;
+		}
 	}
 </script>
 
 <div
-	class={`docx-viewer${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={rootClass}
 	data-dark={String(isDark)}
 	data-testid="docx-viewer"
 >
@@ -342,16 +449,32 @@
 					type="button"
 					aria-label="Zoom out"
 					disabled={status !== 'ready' || !canZoomOut}
-					onclick={() => (zoom = stepZoom(zoom, -1))}
+					onclick={() => setZoomLevel(stepZoom(zoom, -1))}
 				>
 					−
 				</button>
-				<span data-testid="docx-zoom-level">{zoom}%</span>
+				<select
+					aria-label="Zoom level"
+					disabled={status !== 'ready'}
+					value={String(zoomLevel)}
+					onchange={(event) => {
+						const value = event.currentTarget.value;
+						setZoomLevel(isZoomMode(value) ? value : Number(value));
+					}}
+				>
+					{#each Object.entries(ZOOM_MODE_LABELS) as [value, label] (value)}
+						<option {value}>{label}</option>
+					{/each}
+					{#each zoomOptions as value (value)}
+						<option value={String(value)}>{value}%</option>
+					{/each}
+				</select>
+				<span data-testid="docx-zoom-level">{Math.round(zoom)}%</span>
 				<button
 					type="button"
 					aria-label="Zoom in"
 					disabled={status !== 'ready' || !canZoomIn}
-					onclick={() => (zoom = stepZoom(zoom, 1))}
+					onclick={() => setZoomLevel(stepZoom(zoom, 1))}
 				>
 					+
 				</button>
@@ -367,7 +490,7 @@
 					<button
 						type="button"
 						aria-label="Download"
-						disabled={!currentSource}
+						disabled={!currentSource || preparingDownload}
 						onclick={handleDownload}
 					>
 						Download
@@ -506,7 +629,8 @@
 		gap: 0.375rem;
 	}
 
-	.docx-toolbar button {
+	.docx-toolbar button,
+	.docx-toolbar select {
 		padding: 0.25rem 0.5rem;
 		border: 1px solid var(--docx-border);
 		border-radius: 0.375rem;
@@ -516,7 +640,8 @@
 		cursor: pointer;
 	}
 
-	.docx-toolbar button:disabled {
+	.docx-toolbar button:disabled,
+	.docx-toolbar select:disabled {
 		opacity: 0.45;
 		cursor: default;
 	}
@@ -579,6 +704,8 @@
 		overflow: auto;
 		background: var(--docx-shell);
 		padding: 1.5rem 1rem;
+		/* Zoomed pages scroll here instead of widening the viewer and its parents. */
+		contain: inline-size;
 	}
 
 	.docx-document {

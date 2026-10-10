@@ -4,8 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { PDFDocument } from 'pdf-lib';
 import PdfEditor from './PdfEditor.svelte';
+import * as barrel from './index.js';
 
-const mockState = vi.hoisted(() => ({ pageCount: 3 }));
+type Size = { width: number; height: number };
+const mockState = vi.hoisted(() => ({
+	pageCount: 3,
+	sizes: null as Size[] | null,
+	loads: [] as unknown[]
+}));
 
 vi.mock('#lib/engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
@@ -13,13 +19,15 @@ vi.mock('#lib/engines/pdf/index.js', () => ({
 		const engine = {
 			pageCount: 0,
 			currentPage: 0,
-			load: async () => {
+			load: async (source: unknown) => {
+				mockState.loads.push(source);
 				engine.pageCount = mockState.pageCount;
 				engine.currentPage = mockState.pageCount > 0 ? 1 : 0;
 				for (const listener of listeners) listener(engine.currentPage);
 				return engine.pageCount;
 			},
 			renderPage: async () => ({ width: 612, height: 792 }),
+			...(mockState.sizes ? { getPageSizes: async () => mockState.sizes } : {}),
 			setCurrentPage: (page: number) => {
 				const clamped = Math.min(Math.max(Math.floor(page), 1), engine.pageCount);
 				if (engine.currentPage !== clamped) {
@@ -46,12 +54,42 @@ const SRC = 'https://example.com/files/bank.pdf';
 
 beforeEach(() => {
 	mockState.pageCount = 3;
+	mockState.sizes = null;
+	mockState.loads = [];
 });
 
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+	delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+	delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
 });
+
+const LETTER = { width: 612, height: 792 };
+const LANDSCAPE = { width: 792, height: 612 };
+
+/** Give the preview pane a measured size (jsdom has no layout). */
+function stubPreviewSize(size: { width: number; height: number }): void {
+	for (const [key, axis] of [
+		['clientWidth', 'width'],
+		['clientHeight', 'height']
+	] as const) {
+		Object.defineProperty(HTMLElement.prototype, key, {
+			configurable: true,
+			get(this: HTMLElement) {
+				return this.dataset.testid === 'pdf-editor-preview' ? size[axis] : 0;
+			}
+		});
+	}
+}
+
+function previewPage(): HTMLElement {
+	const page = screen
+		.getByTestId('pdf-editor-preview')
+		.querySelector<HTMLElement>('[data-testid="pdf-page"]');
+	if (!page) throw new Error('No preview page rendered');
+	return page;
+}
 
 function sourceOrder(container: HTMLElement): number[] {
 	return [...container.querySelectorAll('[data-testid="pdf-editor-page"]')].map((entry) =>
@@ -75,7 +113,102 @@ describe('PdfEditor', () => {
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
 		expect(sourceOrder(container)).toEqual([1, 2, 3]);
 		expect(onDocumentLoadSuccess).toHaveBeenCalledTimes(1);
-		expect(onDocumentLoadSuccess).toHaveBeenCalledWith(3);
+		expect(onDocumentLoadSuccess).toHaveBeenCalledWith({
+			numPages: 3,
+			documentId: expect.any(String),
+			fileName: 'bank.pdf'
+		});
+	});
+
+	it('loads ArrayBuffer, Uint8Array and Blob sources like upstream', async () => {
+		const bytes = await sourcePdfBytes();
+		const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+		const cases: Array<{ src: ArrayBuffer | Uint8Array | Blob; fileName?: string; name: string }> = [
+			{ src: buffer as ArrayBuffer, name: 'document.pdf' },
+			{ src: bytes, fileName: 'contract', name: 'contract.pdf' },
+			{ src: new File([bytes as BlobPart], 'scan.pdf', { type: 'application/pdf' }), name: 'scan.pdf' }
+		];
+		for (const { src, fileName, name } of cases) {
+			mockState.loads = [];
+			const onDocumentLoadSuccess = vi.fn();
+			const { unmount } = render(PdfEditor, { src, fileName, onDocumentLoadSuccess });
+
+			expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+			const loaded = mockState.loads.at(-1);
+			expect(loaded).toBeInstanceOf(Uint8Array);
+			expect([...(loaded as Uint8Array).subarray(0, 5)]).toEqual([...bytes.subarray(0, 5)]);
+			expect(onDocumentLoadSuccess).toHaveBeenCalledWith({
+				numPages: 3,
+				documentId: expect.any(String),
+				fileName: name
+			});
+			unmount();
+		}
+	});
+
+	it('gives each loaded document its own id', async () => {
+		const ids: string[] = [];
+		const first = render(PdfEditor, { src: SRC, onDocumentLoadSuccess: (info) => ids.push(info.documentId) });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		first.unmount();
+		render(PdfEditor, { src: SRC, onDocumentLoadSuccess: (info) => ids.push(info.documentId) });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+
+		expect(ids).toHaveLength(2);
+		expect(ids[0]).not.toBe(ids[1]);
+	});
+
+	it('starts at fit width by default, like upstream', async () => {
+		mockState.sizes = [LETTER, LETTER, LETTER];
+		stubPreviewSize({ width: 800, height: 600 });
+		render(PdfEditor, { src: SRC });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		// (800 - 2 * 24) / 612 = 1.228
+		await vi.waitFor(() =>
+			expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('123%')
+		);
+		expect(screen.getByRole('combobox', { name: 'Zoom level' })).toHaveValue('fit-width');
+	});
+
+	it('offers the upstream editor zoom modes and presets, stepping by range', async () => {
+		render(PdfEditor, { src: SRC, defaultZoom: 1 });
+
+		const select = await screen.findByRole('combobox', { name: 'Zoom level' });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
+			'Fit page',
+			'Fit width',
+			'Automatic',
+			'25%',
+			'50%',
+			'75%',
+			'100%',
+			'125%',
+			'150%',
+			'200%',
+			'300%',
+			'400%'
+		]);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('120%');
+		await fireEvent.change(select, { target: { value: '3' } });
+		expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('300%');
+	});
+
+	it('previews the selected page at its real size', async () => {
+		mockState.sizes = [LETTER, LANDSCAPE, LETTER];
+		render(PdfEditor, { src: SRC, defaultZoom: 1 });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await fireEvent.click(screen.getByRole('button', { name: 'Select page 2' }));
+
+		await vi.waitFor(() => expect(previewPage().style.width).toBe('792px'));
+		expect(previewPage().style.height).toBe('612px');
+		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 2 clockwise' }));
+		expect(previewPage().style.width).toBe('612px');
+		expect(previewPage().style.height).toBe('792px');
 	});
 
 	it('rotates a page and reports the edited state', async () => {
@@ -187,7 +320,7 @@ describe('PdfEditor', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 1 clockwise' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Export edited PDF' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
 
 		expect(fetch).toHaveBeenCalledWith(SRC);
 		await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -214,8 +347,8 @@ describe('PdfEditor', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
 
-		expect(screen.getByRole('button', { name: 'Export edited PDF' })).toBeDisabled();
-		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 0 of 0');
+		expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
+		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of –');
 	});
 
 	it('virtualizes a long page list instead of rendering every entry', async () => {
@@ -235,22 +368,49 @@ describe('PdfEditor', () => {
 		expect(screen.queryByTestId('pdf-editor-page-list')).not.toBeInTheDocument();
 	});
 
-	it('reflects parent-controlled dark mode and notifies on toggle', async () => {
-		const onIsDarkChange = vi.fn();
-		const { unmount } = render(PdfEditor, { src: SRC, isDark: false, onIsDarkChange });
+	it('downloads edits of a byte source without fetching', async () => {
+		const bytes = await sourcePdfBytes();
+		vi.stubGlobal('fetch', vi.fn());
+		Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:x'), writable: true });
+		Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true });
+		vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+		const onSave = vi.fn();
+
+		render(PdfEditor, { src: bytes, onSave });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 1' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+		await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+		expect(fetch).not.toHaveBeenCalled();
+		expect(onSave.mock.calls[0][0].fileName).toBe('document.pdf');
+		const exported = await PDFDocument.load(new Uint8Array(onSave.mock.calls[0][0].buffer));
+		expect(exported.getPageCount()).toBe(2);
+	});
+
+	it('reflects parent-controlled dark mode without its own toggle', async () => {
+		const { unmount } = render(PdfEditor, { src: SRC, isDark: false, onIsDarkChange: vi.fn() });
 
 		const editor = await screen.findByTestId('pdf-editor');
 		expect(editor).toHaveAttribute('data-dark', 'false');
 		expect(editor.classList.contains('dark')).toBe(false);
-
-		await fireEvent.click(screen.getByRole('switch', { name: 'Toggle dark mode' }));
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+		expect(screen.queryByRole('switch', { name: 'Toggle dark mode' })).not.toBeInTheDocument();
 		unmount();
 
 		render(PdfEditor, { src: SRC, isDark: true });
 		const darkEditor = await screen.findByTestId('pdf-editor');
 		expect(darkEditor).toHaveAttribute('data-dark', 'true');
 		expect(darkEditor.classList.contains('dark')).toBe(true);
+	});
+
+	it('accepts className as an alias of class', async () => {
+		render(PdfEditor, { src: SRC, class: 'from-class', className: 'from-classname' });
+
+		expect(await screen.findByTestId('pdf-editor')).toHaveClass('from-class', 'from-classname');
+	});
+
+	it('exports the upstream PDFEditor name as an alias', () => {
+		expect(barrel.PDFEditor).toBe(PdfEditor);
+		expect(barrel.PdfEditor).toBe(PdfEditor);
 	});
 });

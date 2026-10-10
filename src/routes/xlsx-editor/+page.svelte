@@ -42,6 +42,36 @@
 <h2>Empty state</h2>
 <XlsxEditor />
 
+<h2>Differences from upstream</h2>
+<p>Also exported as <code>XlsxEditorPreview</code>, the upstream name.</p>
+<ul data-testid="differences">
+	<li>
+		Formulas are kept from the file and shown in the formula bar. SUM, AVERAGE, MIN, MAX, COUNT,
+		PRODUCT, and arithmetic over same-sheet references recalculate locally; other formulas
+		(cross-sheet references, other functions) show the file's saved value and do not
+		recalculate.
+	</li>
+	<li>
+		Styling is limited to bold, horizontal alignment, and fill, and is not written on export
+		(the community SheetJS writer drops styles). Values, formulas, and cell addresses are kept.
+	</li>
+	<li>
+		Added props: <code>data</code>, <code>showToolbar</code>, <code>rowHeight</code>,
+		<code>height</code>, <code>overscan</code>, <code>onCellChange</code>,
+		<code>onExport</code>, plus an Export .xlsx button.
+	</li>
+	<li>
+		The dark-mode control is a toolbar switch instead of a workbook actions menu item. It only
+		calls <code>onIsDarkChange</code>.
+	</li>
+	<li>
+		Not ported: italic, underline, strikethrough, font family and size, text color, borders,
+		number formats, merge cells, wrap text, vertical alignment, undo/redo, add/remove sheet,
+		cell formatting from the file, frozen panes, column resize, zoom, the upload menu, and
+		read-only mode for files over 5 MB.
+	</li>
+</ul>
+
 <p><a href="/">Back to all components</a></p>
 
 <style>

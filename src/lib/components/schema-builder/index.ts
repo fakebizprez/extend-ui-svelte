@@ -3,12 +3,15 @@ import type { ComponentProps } from 'svelte';
 import type SchemaBuilder from './SchemaBuilder.svelte';
 
 export { default as SchemaBuilder } from './SchemaBuilder.svelte';
+/** Upstream React export name. */
+export { default as SchemaBuilderPanel } from './SchemaBuilder.svelte';
 export { default } from './SchemaBuilder.svelte';
 export {
 	createSchemaBuilderEnumValue,
 	createSchemaBuilderId,
 	createSchemaBuilderProperty,
 	normalizePropertyForType,
+	SAMPLE_SCHEMA,
 	SCHEMA_BUILDER_ARRAY_ITEM_TYPES,
 	SCHEMA_BUILDER_FIELD_TYPES,
 	serializeSchema
@@ -21,6 +24,7 @@ export type {
 	SchemaBuilderProperty,
 	SchemaBuilderScalarType,
 	SchemaBuilderSchema,
+	SchemaBuilderTheme,
 	SerializedSchema,
 	SerializedSchemaProperty
 } from './SchemaBuilder.svelte';

@@ -2,6 +2,19 @@
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 	FileSystem: file/folder tree browser with expand/collapse, selection,
 	keyboard navigation, and inline rename.
+	Ported from apps/v4/components/extend/file-system.tsx (FileSystem).
+
+	Deliberate changes vs the React version:
+	- One tree view instead of the icons/list/columns/gallery views, so
+	  defaultView/view/onViewChange, toolbar navigation (back/forward, search,
+	  sort, filters), thumbnails and the preview pager (previewImageUrl(s),
+	  loadPreviewImageUrl, renderFilePreview), lazy loadChildren, and the
+	  built-in viewer dialog are not ported. onFileOpen is called on file
+	  double-click (with the url from `url` or getFileUrl); without it nothing
+	  opens. `class` is accepted alongside the upstream `className`.
+	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
+	  switch, so onIsDarkChange is accepted and never called.
+	- Port additions: bind:selectedPath, onRename, renamable (inline F2 rename).
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -12,12 +25,14 @@
 		buildFileSystemIndex,
 		flattenVisibleEntries
 	} from './tree.js';
-	import type { FileSystemEntry, FileSystemItem } from './types.js';
+	import type { FileSystemEntry, FileSystemFileItem, FileSystemItem } from './types.js';
 
 	interface Props {
 		/** Flat manifest. Folders are optional; missing prefixes are inferred from file paths. */
-		items?: FileSystemItem[];
+		items: FileSystemItem[];
 		className?: string;
+		/** Alias of the upstream `className`. */
+		class?: string;
 		/** Label for the root folder. */
 		title?: string;
 		/** Folder prefix to open initially, e.g. `"invoices/"`. */
@@ -25,25 +40,32 @@
 		/** Path of the selected entry. Two-way bindable. */
 		selectedPath?: string | null;
 		onSelectionChange?: (item: FileSystemItem | null) => void;
+		/** Called when a file is double-clicked, with its `url` or the getFileUrl result. */
+		onFileOpen?: (file: FileSystemFileItem, url: string | null) => void;
+		/** Resolve a URL (e.g. presigned) for a file without one. */
+		getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>;
 		/** Called when an inline rename commits. The tree applies the new name locally. */
 		onRename?: (item: FileSystemItem, name: string) => void;
 		/** Whether inline rename (F2) is available. Defaults to `true`. */
 		renamable?: boolean;
 		isDark?: boolean;
+		/** Accepted for contract parity; the tree renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 	}
 
 	let {
-		items = [],
+		items,
 		className = '',
+		class: classProp = '',
 		title = 'Files',
 		defaultPath = '',
 		selectedPath = $bindable(null),
 		onSelectionChange,
+		onFileOpen,
+		getFileUrl,
 		onRename,
 		renamable = true,
-		isDark = false,
-		onIsDarkChange
+		isDark = false
 	}: Props = $props();
 
 	const expanded = new SvelteSet(ancestorFolderPaths(defaultPath));
@@ -83,6 +105,19 @@
 		if (entry.kind !== 'folder') return;
 		if (expanded.has(entry.path)) expanded.delete(entry.path);
 		else expanded.add(entry.path);
+	}
+
+	async function openFile(entry: FileSystemEntry): Promise<void> {
+		if (entry.kind !== 'file' || !onFileOpen) return;
+		let url: string | null = entry.url ?? null;
+		if (!url && getFileUrl) {
+			try {
+				url = await getFileUrl(entry);
+			} catch {
+				url = null;
+			}
+		}
+		onFileOpen(entry, url);
 	}
 
 	function startRename(entry: FileSystemEntry): void {
@@ -186,20 +221,12 @@
 
 <div
 	data-testid="file-system"
-	class={className ? `file-system ${className}` : 'file-system'}
+	class={['file-system', classProp, className].filter(Boolean).join(' ')}
 	class:dark
 	data-theme={dark ? 'dark' : 'light'}
 >
 	<div class="file-system-header">
 		<h2>{title}</h2>
-		<button
-			type="button"
-			aria-label="Toggle dark mode"
-			aria-pressed={dark}
-			onclick={() => onIsDarkChange?.(!dark)}
-		>
-			{dark ? 'Light' : 'Dark'}
-		</button>
 	</div>
 
 	{#if rows.length === 0}
@@ -221,7 +248,7 @@
 					class:selected={selectedPath === entry.path}
 					style={`--fs-depth: ${row.depth}`}
 					onclick={() => select(entry)}
-					ondblclick={() => toggle(entry)}
+					ondblclick={() => (entry.kind === 'folder' ? toggle(entry) : void openFile(entry))}
 					onfocus={() => {
 						focusPath = entry.path;
 					}}

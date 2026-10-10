@@ -216,3 +216,26 @@ describe('ColorPickerPanel', () => {
 		expect(onChange).toHaveBeenCalledWith('#00FFFF');
 	});
 });
+
+describe('ColorPicker className alias', () => {
+	it('merges className and class onto the input-variant root', () => {
+		render(ColorPicker, { value: '#FF0000', class: 'a', className: 'b' });
+		const root = screen.getByLabelText('Choose color value').closest('[data-slot="color-picker"]');
+		expect(root).toHaveClass('a');
+		expect(root).toHaveClass('b');
+	});
+
+	it('merges className onto the swatch trigger and the panel root', () => {
+		const swatch = render(ColorPicker, { color: '#FF0000', className: 'swatch-alias' });
+		expect(screen.getByRole('button', { name: 'Choose color' })).toHaveClass('swatch-alias');
+		swatch.unmount();
+
+		const { container } = render(ColorPickerPanel, {
+			color: '#FF0000',
+			label: 'Fill',
+			onChange: () => {},
+			className: 'panel-alias'
+		});
+		expect(container.firstElementChild).toHaveClass('panel-alias');
+	});
+});

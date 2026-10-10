@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { PDFDocument } from 'pdf-lib';
 import ESignature from './ESignature.svelte';
+import { ESignatureBlock } from './index.js';
 
 const sigMock = vi.hoisted(() => ({ instances: [] as MockPad[] }));
 
@@ -290,15 +291,36 @@ describe('ESignature', () => {
 		expect(darkViewer.classList.contains('dark')).toBe(true);
 	});
 
-	it('notifies the parent when the dark-mode toggle is clicked', async () => {
+	it('renders no theme toggle of its own, like upstream', async () => {
 		const onIsDarkChange = vi.fn();
 		render(ESignature, { src: SRC, isDark: false, onIsDarkChange });
 
-		const toggle = await screen.findByRole('switch', { name: 'Toggle dark mode' });
-		expect(toggle).toHaveAttribute('aria-checked', 'false');
-		await fireEvent.click(toggle);
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /dark mode/i })).not.toBeInTheDocument();
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('accepts the upstream file prop as the PDF source', async () => {
+		const onDocumentLoadSuccess = vi.fn();
+		render(ESignature, { file: SRC, onDocumentLoadSuccess });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		expect(onDocumentLoadSuccess).toHaveBeenCalledWith(3);
+		expect(vi.mocked(fetch)).toHaveBeenCalledWith(SRC);
+	});
+
+	it('accepts className as an alias of class on the root', async () => {
+		render(ESignature, { class: 'from-class', className: 'from-class-name' });
+
+		expect(await screen.findByTestId('e-signature')).toHaveClass(
+			'e-signature',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('is exported under the upstream name ESignatureBlock', () => {
+		expect(ESignatureBlock).toBe(ESignature);
 	});
 });

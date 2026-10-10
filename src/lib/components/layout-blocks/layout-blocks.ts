@@ -80,8 +80,6 @@ export type HighlightArea = {
 
 /** Default viewport height in pixels, matching the upstream h-[420px] panel. */
 export const DEFAULT_LAYOUT_BLOCKS_HEIGHT = 420;
-/** Default fixed row height in pixels. */
-export const DEFAULT_LAYOUT_BLOCK_ITEM_HEIGHT = 140;
 /** Default overscan rows above and below the viewport, matching upstream. */
 export const DEFAULT_LAYOUT_BLOCKS_OVERSCAN = 6;
 
@@ -98,6 +96,38 @@ export const OCR_BLOCK_TYPE_LABELS: Record<OcrBlockType, string> = {
 };
 
 const OCR_MARKDOWN_FIGURE_CAPTION_PATTERN = /<\/?caption>/gi;
+
+// Row-size estimate constants, matching upstream layout-blocks.tsx.
+const OCR_BLOCK_ROW_MIN_ESTIMATE = 92;
+const OCR_BLOCK_ROW_VERTICAL_CHROME = 62;
+const OCR_BLOCK_LINE_HEIGHT = 20;
+const OCR_BLOCK_ESTIMATED_CHARS_PER_LINE = 42;
+const OCR_BLOCK_ROW_GAP = 8;
+
+/**
+ * Estimated row height in pixels before the row is measured. Port of
+ * upstream getEstimatedOcrBlockRowHeight; the real height replaces it once
+ * the row renders.
+ */
+export function estimateOcrBlockRowHeight(block: OcrBlock): number {
+	const plainText = block.text
+		.replace(OCR_MARKDOWN_FIGURE_CAPTION_PATTERN, '')
+		.replace(/<[^>]*>/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	const explicitLineCount = block.text.split(/\n+/).filter(Boolean).length;
+	const wrappedLineCount = Math.max(
+		explicitLineCount,
+		Math.ceil(plainText.length / OCR_BLOCK_ESTIMATED_CHARS_PER_LINE)
+	);
+	const contentHeight = Math.max(1, wrappedLineCount) * OCR_BLOCK_LINE_HEIGHT;
+	const typeExtraHeight = block.type === 'figure' ? 44 : block.type === 'table' ? 28 : 0;
+
+	return Math.max(
+		OCR_BLOCK_ROW_MIN_ESTIMATE,
+		OCR_BLOCK_ROW_VERTICAL_CHROME + contentHeight + typeExtraHeight + OCR_BLOCK_ROW_GAP
+	);
+}
 
 /** Map a raw OCR block to a layout block type, or undefined to drop it. */
 function getBlockType(block: ParsedOcrBlock): OcrBlockType | undefined {

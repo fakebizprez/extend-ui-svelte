@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import FileThumbnail from './FileThumbnail.svelte';
+import { FileThumbnail as FileThumbnailExport } from './index.js';
 
 // A US Letter page (612x792 pt): portrait, so width/height is below 1.
 const LETTER = { width: 612, height: 792 };
@@ -171,6 +172,30 @@ describe('FileThumbnail', () => {
 
 		expect(container.querySelectorAll('button')).toHaveLength(0);
 		expect(screen.queryByText(/^(Dark|Light)$/)).not.toBeInTheDocument();
+	});
+
+	it('accepts class alongside the upstream className on the root', () => {
+		render(FileThumbnail, {
+			file: { name: 'report.pdf', type: 'application/pdf' },
+			class: 'from-class',
+			className: 'from-class-name'
+		});
+
+		expect(screen.getByTestId('file-thumbnail')).toHaveClass(
+			'file-thumbnail',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('is exported under the upstream name FileThumbnail', () => {
+		expect(FileThumbnailExport).toBe(FileThumbnail);
+	});
+
+	it('falls back to a blank muted surface, like upstream', () => {
+		render(FileThumbnail, { file: { name: 'notes.txt', type: 'text/plain' }, hasError: true });
+
+		expect(screen.getByTestId('file-thumbnail-fallback')).toBeEmptyDOMElement();
 	});
 
 	it('pdf mode sizes the preview to the page shape as width / height', async () => {

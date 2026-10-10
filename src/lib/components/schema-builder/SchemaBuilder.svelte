@@ -1,6 +1,18 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-	SchemaBuilder: visual JSON-schema field builder (rewrite of the React version).
+	SchemaBuilder: visual JSON-schema field builder (rewrite of the React version,
+	apps/v4/components/extend/schema-builder.tsx, SchemaBuilderPanel).
+
+	Deliberate changes vs the React version:
+	- Also exported as the upstream name SchemaBuilderPanel; `className` is an
+	  alias of `class`. defaultSchema defaults to SAMPLE_SCHEMA like upstream.
+	- Dark mode is parent-controlled (isDark); the upstream `theme` prop is
+	  accepted and wins when given. No app-theme lookup, and no theme switch,
+	  so onIsDarkChange is never called.
+	- Form and serialized JSON render side by side instead of in tabs.
+	- Native HTML5 drag-and-drop reorders top-level fields only; nested moves,
+	  enum reordering, and collapsible nested editors are not ported.
+	- Port additions: per-field `required`, onSerializedSchemaChange, bind:schema.
 -->
 <script module lang="ts">
 	export type SchemaBuilderScalarType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
@@ -32,6 +44,9 @@
 	export interface SchemaBuilderSchema {
 		properties: SchemaBuilderProperty[];
 	}
+
+	/** Upstream theme prop values. */
+	export type SchemaBuilderTheme = 'light' | 'dark';
 
 	export interface SerializedSchemaProperty {
 		type: string;
@@ -67,6 +82,99 @@
 		'object',
 		'enum'
 	];
+
+	/** Upstream's sample bank-statement schema; the default for defaultSchema. */
+	export const SAMPLE_SCHEMA: SchemaBuilderSchema = {
+		properties: [
+			{
+				id: 'statement-period',
+				key: 'statement_period',
+				type: 'string',
+				description: 'Date range covered by the bank statement.'
+			},
+			{
+				id: 'account-type',
+				key: 'account_type',
+				type: 'enum',
+				description: 'Account product shown on the statement.',
+				enumValues: [
+					{
+						id: 'account-type-checking',
+						value: 'checking',
+						description: 'Standard checking account.'
+					},
+					{
+						id: 'account-type-savings',
+						value: 'savings',
+						description: 'Savings or money market account.'
+					}
+				]
+			},
+			{
+				id: 'account-holder',
+				key: 'account_holder',
+				type: 'object',
+				description: 'Person or business that owns the account.',
+				properties: [
+					{
+						id: 'holder-name',
+						key: 'name',
+						type: 'string',
+						description: 'Full account holder name.'
+					},
+					{
+						id: 'holder-address',
+						key: 'address',
+						type: 'object',
+						description: 'Mailing address for the account holder.',
+						properties: [
+							{
+								id: 'holder-address-line-1',
+								key: 'line_1',
+								type: 'string',
+								description: 'Street address line.'
+							},
+							{
+								id: 'holder-address-city',
+								key: 'city',
+								type: 'string',
+								description: 'City from the mailing address.'
+							}
+						]
+					}
+				]
+			},
+			{
+				id: 'transactions',
+				key: 'transactions',
+				type: 'array',
+				description: 'Posted account activity during the statement period.',
+				items: {
+					type: 'object',
+					properties: [
+						{
+							id: 'transaction-date',
+							key: 'date',
+							type: 'string',
+							description: 'Posting date for the transaction.'
+						},
+						{
+							id: 'transaction-description',
+							key: 'description',
+							type: 'string',
+							description: 'Statement transaction description.'
+						},
+						{
+							id: 'transaction-amount',
+							key: 'amount',
+							type: 'number',
+							description: 'Signed transaction amount.'
+						}
+					]
+				}
+			}
+		]
+	};
 
 	let nextId = 0;
 
@@ -122,7 +230,8 @@
 				...base,
 				enumValues: undefined,
 				properties: undefined,
-				items: base.items ?? { type: 'string' }
+				// Like upstream: new arrays hold objects with one blank field.
+				items: base.items ?? { type: 'object', properties: [createSchemaBuilderProperty('string')] }
 			};
 		}
 		return { ...base, enumValues: undefined, properties: undefined, items: undefined };
@@ -214,22 +323,35 @@
 	import { untrack } from 'svelte';
 
 	interface Props {
+		/** Uncontrolled starting schema. Defaults to SAMPLE_SCHEMA, like upstream. */
 		defaultSchema?: SchemaBuilderSchema;
 		schema?: SchemaBuilderSchema;
 		onSchemaChange?: (schema: SchemaBuilderSchema) => void;
+		/** Port addition: called with the serialized JSON schema on every change. */
 		onSerializedSchemaChange?: (schema: SerializedSchema) => void;
+		/** Parent-controlled dark mode flag. */
 		isDark?: boolean;
+		/** Accepted for contract parity; the builder renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
+		/** Upstream theme prop; when given it wins over isDark. */
+		theme?: SchemaBuilderTheme;
+		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 	}
 
 	let {
-		defaultSchema = { properties: [] },
+		defaultSchema = SAMPLE_SCHEMA,
 		schema = $bindable(undefined),
 		onSchemaChange,
 		onSerializedSchemaChange,
-		isDark = $bindable(false),
-		onIsDarkChange
+		isDark = false,
+		theme,
+		class: classProp = '',
+		className = ''
 	}: Props = $props();
+
+	const dark = $derived(theme ? theme === 'dark' : isDark);
 
 	let uncontrolled = $state<SchemaBuilderSchema>(untrack(() => defaultSchema));
 	const current = $derived<SchemaBuilderSchema>(schema ?? uncontrolled);
@@ -390,11 +512,6 @@
 			})
 		);
 	}
-
-	function toggleDark(): void {
-		isDark = !isDark;
-		onIsDarkChange?.(isDark);
-	}
 </script>
 
 {#snippet enumEditor(
@@ -536,15 +653,11 @@
 
 <section
 	data-testid="schema-builder"
-	data-theme={isDark ? 'dark' : 'light'}
-	class="schema-builder"
-	class:dark={isDark}
+	data-theme={dark ? 'dark' : 'light'}
+	class={['schema-builder', dark && 'dark', classProp, className].filter(Boolean).join(' ')}
 >
 	<header class="schema-builder-header">
 		<h2>Schema Builder</h2>
-		<button type="button" onclick={toggleDark}>
-			{isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-		</button>
 	</header>
 
 	<div class="schema-builder-body">

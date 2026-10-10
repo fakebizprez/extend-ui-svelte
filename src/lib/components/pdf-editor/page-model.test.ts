@@ -5,6 +5,7 @@ import {
 	createEditState,
 	deleteEditPage,
 	exportEditedPdf,
+	getPdfFileName,
 	moveEditPage,
 	resetEditState,
 	rotateEditPage
@@ -142,5 +143,24 @@ describe('exportEditedPdf', () => {
 			{ width: 200, rotation: 0 },
 			{ width: 300, rotation: 0 }
 		]);
+	});
+});
+
+describe('getPdfFileName', () => {
+	// Matches the upstream editor's helper.
+	it('prefers the explicit file name and adds .pdf', () => {
+		expect(getPdfFileName(' report ', 'https://example.com/other.pdf')).toBe('report.pdf');
+	});
+
+	it('derives the name from a URL path', () => {
+		expect(getPdfFileName(undefined, 'https://example.com/files/bank%20statement.pdf?v=1')).toBe(
+			'bank statement.pdf'
+		);
+	});
+
+	it('falls back to document.pdf for blob and data URLs or no source', () => {
+		expect(getPdfFileName(undefined, 'blob:https://example.com/123')).toBe('document.pdf');
+		expect(getPdfFileName(undefined, 'data:application/pdf;base64,AAAA')).toBe('document.pdf');
+		expect(getPdfFileName(undefined)).toBe('document.pdf');
 	});
 });

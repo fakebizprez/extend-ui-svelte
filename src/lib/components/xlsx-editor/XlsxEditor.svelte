@@ -1,15 +1,26 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI xlsx-editor. Upstream: extend-hq/ui (MIT).
-	Built on the XLSX viewer/engine: workbook loading reuses the SheetJS engine
-	wrapper, rows render through the shared VirtualList, and dark mode follows
-	the parent-controlled isDark + onIsDarkChange contract.
-	Deliberate changes vs the React xlsx-editor:
-	- Formulas (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT plus arithmetic over A1
-	  references) are evaluated locally instead of through @extend-ai/react-xlsx.
-	- Cell styling (bold, alignment, fill) is editor state applied to the grid;
-	  the community SheetJS writer drops cell styles, so export preserves values
-	  and formulas but not fills or fonts.
-	- The grid is a virtualized native table; the header row is editable data.
+	Exported as XlsxEditor and under the upstream name XlsxEditorPreview.
+	Built on the XLSX engine: sheets load as A1-anchored grids (blank rows and
+	columns kept, so addresses match the file), formulas are kept and shown in
+	the formula bar, and export writes cells back at the same addresses.
+	Differences from upstream (keep in sync with the docs page,
+	src/routes/xlsx-editor/+page.svelte):
+	- Formulas (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT plus arithmetic over
+	  same-sheet A1 references) are evaluated locally instead of through
+	  @extend-ai/react-xlsx. Other formulas (cross-sheet, unsupported
+	  functions) show the file's saved value and do not recalculate.
+	- Styling is limited to bold, horizontal alignment, and fill, kept as editor
+	  state; the community SheetJS writer drops styles on export.
+	- Added props: data, showToolbar, rowHeight, height, overscan, onCellChange,
+	  onExport, plus an Export .xlsx button.
+	- The dark-mode control is a toolbar switch, not a workbook actions menu
+	  item; it only calls onIsDarkChange.
+	- Not ported: italic/underline/strikethrough, font family and size, text
+	  color, borders, number formats, merge cells, wrap text, vertical
+	  alignment, undo/redo, add/remove sheet, cell formatting from the file,
+	  frozen panes, column resize, zoom, upload menu, and the read-only mode for
+	  files over 5 MB.
 -->
 <script lang="ts" module>
 	import type { CellValue } from './formulas.js';
@@ -58,6 +69,8 @@
 		/** Extra rows rendered above/below the visible window. */
 		overscan?: number;
 		class?: string;
+		/** Alias of `class`, matching the React prop name. Both are applied. */
+		className?: string;
 		/** Called after a cell edit commits, with zero-based coordinates. */
 		onCellChange?: (change: XlsxCellChange) => void;
 		/** Called after export with the .xlsx bytes and file name. */
@@ -74,7 +87,8 @@
 		rowHeight = 34,
 		height = 480,
 		overscan = 5,
-		class: className = '',
+		class: classProp = '',
+		className = '',
 		onCellChange,
 		onExport
 	}: Props = $props();
@@ -90,6 +104,12 @@
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
 	let grids = $state.raw<Record<string, CellValue[][]>>({});
 	let styles = $state.raw<Record<string, Record<string, XlsxCellStyle>>>({});
+	// Values saved in the file for each loaded formula cell, keyed by sheet then
+	// `row:col`. Shown (and exported) when the local evaluator cannot compute a
+	// formula that is still unchanged, e.g. cross-sheet references.
+	let savedResults = $state.raw<Record<string, Record<string, { formula: string; value: CellValue }>>>(
+		{}
+	);
 	let revision = $state(0);
 	let loadingSheet = $state(false);
 	let exporting = $state(false);
@@ -138,8 +158,23 @@
 		return activeGrid[row]?.[col] ?? null;
 	}
 
+	function isFormulaError(value: CellValue): boolean {
+		return typeof value === 'string' && value.startsWith('#');
+	}
+
+	/** Saved file value for an unchanged formula cell, when local evaluation fails. */
+	function savedResultFor(sheet: string, row: number, col: number, evaluated: CellValue) {
+		const saved = savedResults[sheet]?.[styleKey(row, col)];
+		const raw = (grids[sheet] ?? [])[row]?.[col];
+		return saved && saved.formula === raw && isFormulaError(evaluated) ? saved : undefined;
+	}
+
 	function displayAt(row: number, col: number): string {
-		const evaluated = evaluateCell(rawAt(row, col), (r, c) => activeGrid[r]?.[c]);
+		let evaluated = evaluateCell(rawAt(row, col), (r, c) => activeGrid[r]?.[c]);
+		// ponytail: cross-sheet and unsupported functions show the saved value and
+		// do not recalculate; a full formula engine would be needed for that.
+		const saved = savedResultFor(activeSheetName, row, col, evaluated);
+		if (saved) evaluated = saved.value;
 		return evaluated === null || evaluated === undefined ? '' : String(evaluated);
 	}
 
@@ -295,10 +330,15 @@
 		exporting = true;
 		exportError = '';
 		try {
-			const sheets: EditableSheet[] = sheetNames.map((name) => ({
-				name,
-				grid: grids[name] ?? [[]]
-			}));
+			const sheets: EditableSheet[] = sheetNames.map((name) => {
+				const grid = grids[name] ?? [[]];
+				const results: Record<string, CellValue> = {};
+				for (const [key, saved] of Object.entries(savedResults[name] ?? {})) {
+					const [row, col] = key.split(':').map(Number) as [number, number];
+					if (grid[row]?.[col] === saved.formula) results[key] = saved.value;
+				}
+				return { name, grid, savedResults: results };
+			});
 			const bytes = await sheetsToXlsxBytes(sheets);
 			downloadXlsxBytes(bytes, exportFileName);
 			onExport?.(bytes, exportFileName);
@@ -319,6 +359,7 @@
 			activeSheetIndex = 0;
 			grids = {};
 			styles = {};
+			savedResults = {};
 			selected = null;
 			editing = false;
 			errorMessage = '';
@@ -372,24 +413,25 @@
 		loadingSheet = true;
 		(async () => {
 			try {
-				const XLSX = await import('xlsx');
+				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
 				const next: Record<string, CellValue[][]> = {};
+				const nextSaved: typeof savedResults = {};
 				for (const name of names) {
-					const worksheet = cached.workbook.Sheets?.[name];
-					if (!worksheet) {
-						next[name] = [];
-						continue;
+					// A1-anchored with blank rows kept, so addresses match the file.
+					const { values, formulas } = await engine.sheetToGrid(cached.workbook, name);
+					const grid = values.map((row) => row.map(normalizeCell));
+					const saved: Record<string, { formula: string; value: CellValue }> = {};
+					for (const [key, formula] of Object.entries(formulas)) {
+						const [row, col] = key.split(':').map(Number) as [number, number];
+						const gridRow = grid[row] as CellValue[];
+						saved[key] = { formula: `=${formula}`, value: gridRow[col] ?? null };
+						gridRow[col] = `=${formula}`;
 					}
-					const aoa = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-						header: 1,
-						defval: null,
-						blankrows: false
-					});
-					next[name] = (aoa as unknown[][]).map((row) =>
-						(Array.isArray(row) ? row : []).map(normalizeCell)
-					);
+					next[name] = grid;
+					nextSaved[name] = saved;
 				}
 				if (cancelled) return;
+				savedResults = nextSaved;
 				grids = next;
 				touch();
 			} catch (failure) {
@@ -409,7 +451,7 @@
 </script>
 
 <div
-	class={`xlsx-editor${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={['xlsx-editor', isDark ? 'dark' : '', classProp, className].filter(Boolean).join(' ')}
 	data-dark={String(isDark)}
 	data-testid="xlsx-editor"
 >

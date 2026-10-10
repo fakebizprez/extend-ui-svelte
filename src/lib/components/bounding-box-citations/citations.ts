@@ -65,11 +65,11 @@ export interface CitationBox {
 	location: ReviewLocation;
 }
 
-function isJsonObject(value: JsonValue): value is JsonObject {
+export function isJsonObject(value: JsonValue): value is JsonObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function getObjectValue(value: JsonValue, key: string): JsonValue {
+export function getObjectValue(value: JsonValue, key: string): JsonValue {
 	if (!isJsonObject(value)) return null;
 	return value[key] ?? null;
 }

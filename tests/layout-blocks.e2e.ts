@@ -19,6 +19,8 @@ test('layout-blocks sample panel renders blocks with markdown', async ({ page })
 
 test('layout-blocks reports the focused block to the parent', async ({ page }) => {
 	await page.goto('/layout-blocks');
+	// Pointer events before hydration are dropped on the dev server.
+	await page.waitForLoadState('networkidle');
 
 	const panel = page.getByTestId('sample-panel');
 	await panel.locator('[data-block-id="sample-table"]').click();
@@ -32,6 +34,8 @@ test('layout-blocks windows long documents instead of rendering every row', asyn
 	page
 }) => {
 	await page.goto('/layout-blocks');
+	// Scroll events before hydration are dropped on the dev server.
+	await page.waitForLoadState('networkidle');
 
 	const panel = page.getByTestId('long-panel');
 	const rows = panel.getByTestId('layout-block');
@@ -48,4 +52,63 @@ test('layout-blocks windows long documents instead of rendering every row', asyn
 
 	await expect(panel.locator('[data-block-id="long-block-199"]')).toBeVisible();
 	expect(await rows.count()).toBeLessThan(LONG_DOCUMENT_BLOCK_COUNT);
+});
+
+test('layout-blocks rows size to their content: tall blocks are not clipped, short ones are not padded', async ({
+	page
+}) => {
+	await page.goto('/layout-blocks');
+	await page.waitForLoadState('networkidle');
+	const panel = page.getByTestId('sample-panel');
+	const tall = panel.locator('[data-block-id="sample-long-paragraph"]');
+	const short = panel.locator('[data-block-id="sample-page-number"]');
+	await tall.scrollIntoViewIfNeeded();
+	await expect(tall).toBeVisible();
+
+	// Measurement settles after the first paint.
+	await expect
+		.poll(() =>
+			tall.evaluate((node) =>
+				[node, node.querySelector('.layout-block-body') as HTMLElement].every(
+					(element) => element.scrollHeight <= element.clientHeight
+				)
+			)
+		)
+		.toBe(true);
+	const tallHeight = await tall.evaluate((node) => node.getBoundingClientRect().height);
+	expect(tallHeight).toBeGreaterThan(140);
+
+	await short.scrollIntoViewIfNeeded();
+	const shortRowHeight = await short.evaluate(
+		(node) => (node.closest('[data-virtual-index]') as HTMLElement).getBoundingClientRect().height
+	);
+	expect(shortRowHeight).toBeLessThan(140);
+
+	// Rows never overlap once measured.
+	const rects = await panel
+		.locator('[data-virtual-index]')
+		.evaluateAll((rows) =>
+			rows
+				.map((row) => row.getBoundingClientRect())
+				.sort((a, b) => a.top - b.top)
+				.map((rect) => ({ top: rect.top, bottom: rect.bottom }))
+		);
+	for (let index = 1; index < rects.length; index += 1) {
+		expect(rects[index]!.top).toBeGreaterThanOrEqual(rects[index - 1]!.bottom - 0.5);
+	}
+});
+
+test('layout-blocks colors the active block ring by block type, like upstream', async ({ page }) => {
+	await page.goto('/layout-blocks');
+	await page.waitForLoadState('networkidle');
+	const panel = page.getByTestId('sample-panel');
+
+	const heading = panel.locator('[data-block-id="sample-heading"]');
+	await heading.click();
+	await expect(heading).toHaveAttribute('data-active', 'true');
+	await expect(heading).toHaveCSS('border-top-color', 'rgba(139, 92, 246, 0.6)');
+
+	const table = panel.locator('[data-block-id="sample-table"]');
+	await table.click();
+	await expect(table).toHaveCSS('border-top-color', 'rgba(245, 158, 11, 0.6)');
 });

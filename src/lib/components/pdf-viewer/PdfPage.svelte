@@ -15,7 +15,7 @@
 		pageNumber: number;
 		/** Render scale (zoom). */
 		scale: number;
-		/** Rotation in degrees. */
+		/** Rotation in degrees, added to the page's own rotation. */
 		rotation: number;
 		/** CSS width of the page in pixels. */
 		width: number;
@@ -31,7 +31,7 @@
 		$props();
 
 	let canvas: HTMLCanvasElement | null = $state(null);
-	let size: PdfPageSize | null = $state.raw(null);
+	let size = $state.raw<PdfPageSize | null>(null);
 	let renderError = $state('');
 
 	$effect(() => {
@@ -70,6 +70,7 @@
 <div
 	class={`pdf-page${pageClass ? ` ${pageClass}` : ''}`}
 	data-page-number={pageNumber}
+	data-rotation={rotation}
 	data-testid="pdf-page"
 	style={`width: ${width}px; height: ${height}px;`}
 >

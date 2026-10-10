@@ -21,11 +21,18 @@ function blankCanvasCount(page: Page): Promise<number> {
 	});
 }
 
-for (const route of ['/pdf-viewer', '/pdf-editor', '/bounding-box-citations']) {
+// The citations demo uses upstream's one-page bank statement; the others draw several pages.
+const ROUTES = [
+	{ route: '/pdf-viewer', minCanvases: 2 },
+	{ route: '/pdf-editor', minCanvases: 2 },
+	{ route: '/bounding-box-citations', minCanvases: 1 }
+];
+
+for (const { route, minCanvases } of ROUTES) {
 	test(`${route} draws every page without cancelling`, async ({ page }) => {
 		await page.goto(route);
 		await expect(page.locator('canvas').first()).toBeVisible({ timeout: 30000 });
-		expect(await page.locator('canvas').count()).toBeGreaterThan(1);
+		expect(await page.locator('canvas').count()).toBeGreaterThanOrEqual(minCanvases);
 
 		await expect.poll(() => blankCanvasCount(page), { timeout: 15000 }).toBe(0);
 		await expect(page.getByText(/rendering cancelled/i)).toHaveCount(0);

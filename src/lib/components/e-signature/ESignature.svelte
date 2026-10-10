@@ -4,6 +4,23 @@
 	preview through the shared PDF.js engine wrapper, download the result.
 	Browser-only libraries load on the client via dynamic import() in onMount.
 	Placement coordinates are PDF points from the bottom-left page corner.
+	Ported from apps/v4/registry/new-york-v4/blocks/e-signature.tsx (ESignatureBlock).
+
+	Deliberate changes vs the React block:
+	- Also exported as the upstream name ESignatureBlock. The upstream `file`
+	  prop is accepted; `src` is kept as an alias (file wins). `className` is an
+	  alias of `class`.
+	- One signature, placed by numeric position/size/scale controls instead of
+	  the draggable field overlay on the shared PDF viewer, and drawn on an
+	  inline pad instead of the signature dialog. The resizable two-pane shell,
+	  the field list panel, initials/date/checkbox/text fields, recipients,
+	  required-field validation, and signed/pending/declined states are not ported.
+	- The signed file is named "<name>-signed.pdf" (fileName or the source name)
+	  instead of upstream's fixed "signed-document.pdf".
+	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
+	  switch inside the block, so onIsDarkChange is accepted and never called.
+	- Port additions: fileName, page, position/size/scale bindables, penColor,
+	  backgroundColor, showDownload, and the on* event callbacks.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -24,7 +41,9 @@
 	} from './sign-pdf.js';
 
 	export interface ESignatureProps {
-		/** PDF URL to sign. Empty renders the no-document prompt. */
+		/** PDF URL to sign, matching the upstream prop. Empty renders the no-document prompt. */
+		file?: string;
+		/** Alias of `file`; `file` wins when both are given. */
 		src?: string;
 		/** Download base name; "-signed.pdf" is appended. */
 		fileName?: string;
@@ -48,7 +67,7 @@
 		showDownload?: boolean;
 		/** Parent-controlled dark mode flag. */
 		isDark?: boolean;
-		/** Called when the user toggles dark mode. */
+		/** Accepted for contract parity; the block renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 		/** Called when the pad gains or loses a signature. */
 		onSignatureChange?: (hasSignature: boolean) => void;
@@ -59,9 +78,12 @@
 		/** Called with the file name when the signed PDF downloads. */
 		onSignedDownload?: (fileName: string) => void;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 	}
 
 	let {
+		file,
 		src,
 		fileName,
 		page = 1,
@@ -74,13 +96,15 @@
 		backgroundColor = 'rgba(0,0,0,0)',
 		showDownload = true,
 		isDark = false,
-		onIsDarkChange,
 		onSignatureChange,
 		onDocumentLoadSuccess,
 		onPageChange,
 		onSignedDownload,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: ESignatureProps = $props();
+
+	const pdfUrl = $derived(file ?? src);
 
 	type SignaturePadInstance = {
 		isEmpty(): boolean;
@@ -99,8 +123,8 @@
 	let padReady = $state(false);
 	// svelte-ignore state_referenced_locally: `page` intentionally seeds the initial page only.
 	let activePage = $state(page);
-	// svelte-ignore state_referenced_locally: `src` intentionally seeds the initial status only.
-	let status: 'empty' | 'loading' | 'ready' | 'error' = $state(src ? 'loading' : 'empty');
+	// svelte-ignore state_referenced_locally: the source intentionally seeds the initial status only.
+	let status = $state<'empty' | 'loading' | 'ready' | 'error'>(file ?? src ? 'loading' : 'empty');
 	let loadError = $state('');
 	let placeError = $state('');
 	let numPages = $state(0);
@@ -170,7 +194,7 @@
 
 	// Client-only: $effect never runs on the server.
 	$effect(() => {
-		const source = src;
+		const source = pdfUrl;
 		const eng = engine;
 		if (!eng) return;
 		if (!source) {
@@ -288,7 +312,7 @@
 	function downloadSigned(): void {
 		const stamped = signedBytes;
 		if (!stamped) return;
-		const name = getSignedDownloadFileName(fileName, src ?? '');
+		const name = getSignedDownloadFileName(fileName, pdfUrl ?? '');
 		const bytes = new Uint8Array(stamped);
 		const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
 		const url = URL.createObjectURL(blob);
@@ -304,24 +328,14 @@
 </script>
 
 <div
-	class={`e-signature${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={['e-signature', isDark && 'dark', classProp, className].filter(Boolean).join(' ')}
 	data-dark={String(isDark)}
 	data-pdf-ready={String(pdfReady)}
 	data-signed={String(signedBytes !== null)}
 	data-testid="e-signature"
 >
-	<div role="toolbar" aria-label="E-signature toolbar" class="es-toolbar">
+	<div class="es-toolbar">
 		<span class="es-title">E-Signature</span>
-		<button
-			type="button"
-			class="es-button es-theme-toggle"
-			role="switch"
-			aria-checked={String(isDark)}
-			aria-label="Toggle dark mode"
-			onclick={() => onIsDarkChange?.(!isDark)}
-		>
-			{isDark ? 'Light' : 'Dark'}
-		</button>
 	</div>
 
 	<div class="es-panels">
@@ -356,11 +370,11 @@
 				<div class="es-state es-error" role="alert">
 					{loadError || 'Unable to load the PDF preview.'}
 				</div>
-			{:else if !src}
+			{:else if !pdfUrl}
 				<div class="es-state">
 					<p class="es-state-title">Choose a PDF to sign</p>
 					<p class="es-state-hint">
-						Pass a PDF URL with the <code>src</code> prop.
+						Pass a PDF URL with the <code>file</code> prop.
 					</p>
 				</div>
 			{:else}

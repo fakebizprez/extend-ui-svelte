@@ -31,6 +31,29 @@
 <h2>Empty state</h2>
 <XlsxViewer />
 
+<h2>Differences from upstream</h2>
+<p>Also exported as <code>XlsxViewerPreview</code>, the upstream name.</p>
+<ul data-testid="differences">
+	<li>
+		The grid is a virtualized native grid over SheetJS values, not
+		<code>@extend-ai/react-xlsx</code> (React-only). Like upstream it shows column letters and
+		row numbers from A1, with row 1 as data and blank rows kept.
+	</li>
+	<li>
+		Added props: <code>data</code> (workbook bytes), <code>rowHeight</code>,
+		<code>height</code>, <code>overscan</code>. The toolbar shows a row count.
+	</li>
+	<li>
+		The dark-mode control is a toolbar switch instead of an item in the workbook actions menu.
+		It only calls <code>onIsDarkChange</code>; the parent owns <code>isDark</code>.
+	</li>
+	<li>
+		Not ported: cell formatting (fonts, fills, borders, number formats, merged cells), frozen
+		panes, column resize, zoom, search, sheet thumbnails, and the upload/download menu
+		(<code>showDownload</code>, <code>showUpload</code>, <code>toolbarActions</code>).
+	</li>
+</ul>
+
 <p><a href="/">Back to all components</a></p>
 
 <style>

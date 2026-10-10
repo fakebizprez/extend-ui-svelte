@@ -4,7 +4,9 @@
 // tests/pptx-viewer.e2e.ts against the sample fixture.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import PptxViewer from './PptxViewer.svelte';
+import { PptxViewerPreview } from './index.js';
 
 const { mockLoadDeck } = vi.hoisted(() => ({ mockLoadDeck: vi.fn() }));
 
@@ -183,16 +185,109 @@ describe('PptxViewer', () => {
 		expect(darkViewer.classList.contains('dark')).toBe(true);
 	});
 
-	it('notifies the parent when the dark-mode toggle is clicked', async () => {
+	it('renders no theme toggle of its own, like upstream', async () => {
 		const onIsDarkChange = vi.fn();
 		render(PptxViewer, { src: '/sample.pptx', isDark: false, onIsDarkChange });
 
-		const toggle = await screen.findByRole('switch', { name: 'Toggle dark mode' });
-		expect(toggle).toHaveAttribute('aria-checked', 'false');
-		await fireEvent.click(toggle);
+		expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
+		expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /dark mode/i })).not.toBeInTheDocument();
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('accepts className as an alias of class on the root', async () => {
+		render(PptxViewer, { class: 'from-class', className: 'from-class-name' });
+
+		expect(await screen.findByTestId('pptx-viewer')).toHaveClass(
+			'pptx-viewer',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('is exported under the upstream name PptxViewerPreview', () => {
+		expect(PptxViewerPreview).toBe(PptxViewer);
+	});
+
+	it('renders upstream toolbarActions inside the toolbar', async () => {
+		const toolbarActions = createRawSnippet(() => ({
+			render: () => '<button type="button">Share deck</button>'
+		}));
+		render(PptxViewer, { src: '/sample.pptx', toolbarActions });
+
+		const toolbar = await screen.findByTestId('pptx-toolbar');
+		expect(toolbar).toContainElement(screen.getByRole('button', { name: 'Share deck' }));
+	});
+
+	it('downloads a URL source by fetching it as a blob, like upstream', async () => {
+		const blob = new Blob(['pptx']);
+		const fetchMock = vi.fn(async () => ({
+			ok: true,
+			status: 200,
+			arrayBuffer: async () => new ArrayBuffer(8),
+			blob: async () => blob
+		}));
+		vi.stubGlobal('fetch', fetchMock);
+		vi.stubGlobal(
+			'URL',
+			Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:pptx'), revokeObjectURL: vi.fn() })
+		);
+		const clicked: string[] = [];
+		const click = vi
+			.spyOn(HTMLAnchorElement.prototype, 'click')
+			.mockImplementation(function (this: HTMLAnchorElement) {
+				clicked.push(`${this.href}|${this.download}`);
+			});
+		try {
+			render(PptxViewer, { src: '/decks/quarterly' });
+			expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+			await vi.waitFor(() => expect(clicked).toEqual(['blob:pptx|quarterly.pptx']));
+			expect(fetchMock).toHaveBeenLastCalledWith('/decks/quarterly');
+		} finally {
+			click.mockRestore();
+		}
+	});
+
+	it('hides download and upload controls when disabled', async () => {
+		render(PptxViewer, { src: '/sample.pptx', showDownload: false, showUpload: false });
+
+		expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
+		expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Upload' })).not.toBeInTheDocument();
+		expect(screen.queryByTestId('pptx-file-input')).not.toBeInTheDocument();
+	});
+
+	it('loads an uploaded presentation in place of the src', async () => {
+		render(PptxViewer, { src: '/sample.pptx' });
+		expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
+		mockLoadDeck.mockResolvedValueOnce(fakeDeck(5));
+
+		const input = screen.getByTestId('pptx-file-input') as HTMLInputElement;
+		expect(input).toHaveAttribute('accept', expect.stringContaining('.pptx'));
+		const file = new File([new Uint8Array([1, 2, 3])], 'board.pptx');
+		await fireEvent.change(input, { target: { files: [file] } });
+
+		await vi.waitFor(() => expect(screen.getByTestId('slide-count')).toHaveTextContent('5'));
+		expect(screen.getByTestId('presentation-name')).toHaveTextContent('board.pptx');
+		expect(Array.from(mockLoadDeck.mock.lastCall?.[0] as Uint8Array)).toEqual([1, 2, 3]);
+	});
+
+	it('a new src replaces an uploaded presentation, like upstream', async () => {
+		const { rerender } = render(PptxViewer, { src: '/sample.pptx' });
+		expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
+		mockLoadDeck.mockResolvedValueOnce(fakeDeck(5));
+		const input = screen.getByTestId('pptx-file-input') as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'board.pptx')] } });
+		await vi.waitFor(() => expect(screen.getByTestId('slide-count')).toHaveTextContent('5'));
+
+		mockLoadDeck.mockResolvedValueOnce(fakeDeck(3));
+		await rerender({ src: '/other.pptx' });
+
+		await vi.waitFor(() => expect(screen.getByTestId('slide-count')).toHaveTextContent('3'));
+		expect(screen.getByTestId('presentation-name')).toHaveTextContent('other.pptx');
 	});
 
 	it('destroys the deck on unmount', async () => {

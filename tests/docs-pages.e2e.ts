@@ -38,3 +38,18 @@ for (const slug of SLUGS) {
 		await expect(page.locator('h1').first()).toBeVisible();
 	});
 }
+
+// Regression: the side menu took the width on phones and pages scrolled sideways.
+for (const slug of SLUGS) {
+	test(`${slug} page has no sideways scroll at phone width`, async ({ page }) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto(`/${slug}`);
+		await page.waitForLoadState('networkidle');
+		await expect(page.locator('h1').first()).toBeVisible();
+
+		const overflow = await page.evaluate(
+			() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+		);
+		expect(overflow).toBeLessThanOrEqual(0);
+	});
+}

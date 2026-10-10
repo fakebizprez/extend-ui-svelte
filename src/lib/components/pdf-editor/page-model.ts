@@ -1,5 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI pdf-editor. Upstream: extend-hq/ui (MIT).
 // Framework-free page-order model plus the pdf-lib export used by PdfEditor.
+import { ensurePdfExtension } from '#lib/components/pdf-viewer/zoom.js';
 
 /** One page in the edited document: which source page it came from and its rotation. */
 export interface EditedPdfPage {
@@ -88,4 +89,24 @@ export async function exportEditedPdf(
 		output.addPage(copied);
 	}
 	return await output.save();
+}
+
+/**
+ * Editor file name, matching the upstream helper: the explicit name wins,
+ * then the last URL path segment (not for blob: or data: URLs), then
+ * "document.pdf".
+ */
+export function getPdfFileName(fileName: string | undefined, src?: string): string {
+	if (fileName?.trim()) return ensurePdfExtension(fileName.trim());
+	if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
+		const rawName = (src.split(/[?#]/)[0] ?? '').split('/').pop() || '';
+		if (rawName) {
+			try {
+				return ensurePdfExtension(decodeURIComponent(rawName));
+			} catch {
+				return ensurePdfExtension(rawName);
+			}
+		}
+	}
+	return 'document.pdf';
 }

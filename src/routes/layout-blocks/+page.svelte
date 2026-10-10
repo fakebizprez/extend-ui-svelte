@@ -110,6 +110,17 @@
 						}
 					},
 					{
+						id: 'sample-long-paragraph',
+						type: 'text',
+						content:
+							'The Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers for both the encoder and decoder. The encoder is composed of a stack of N = 6 identical layers. Each layer has two sub-layers. The first is a multi-head self-attention mechanism, and the second is a simple, position-wise fully connected feed-forward network. We employ a residual connection around each of the two sub-layers, followed by layer normalization. The decoder is also composed of a stack of N = 6 identical layers, and inserts a third sub-layer which performs multi-head attention over the output of the encoder stack.',
+						metadata: {
+							page: { number: 3, width: 1275, height: 1651 },
+							layoutClass: 'Text',
+							avgOcrConfidence: 0.991
+						}
+					},
+					{
 						id: 'sample-page-number',
 						type: 'page_number',
 						content: '1',
@@ -145,8 +156,8 @@
 <h1>Layout Blocks</h1>
 <p>
 	Document layout blocks (headings, paragraphs, tables, figures) with virtualized
-	scrolling and markdown rendering. Dark mode is controlled by the parent through
-	<code>isDark</code> plus <code>onIsDarkChange</code>.
+	scrolling and markdown rendering. Rows size to their content. Dark mode is controlled by the
+	parent through <code>isDark</code>; the toggle below lives outside the component.
 </p>
 <p>
 	<label>
@@ -162,7 +173,6 @@
 		blocks={sampleBlocks}
 		height={700}
 		{isDark}
-		onIsDarkChange={(value: boolean) => (isDark = value)}
 		onBlockFocus={(block) => (focusedBlockId = block.id)}
 	/>
 </div>
@@ -171,5 +181,35 @@
 <div data-testid="long-panel" style:max-width="640px">
 	<LayoutBlocks blocks={longDocumentBlocks} {isDark} />
 </div>
+
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Exported as <code>LayoutBlocks</code> and the upstream name <code>OcrBlocksPanel</code>.
+			<code>className</code> and <code>class</code> are both accepted. The upstream
+			<code>OcrBlocks</code> demo (the panel preloaded with the bundled Attention sample) is not
+			ported.
+		</li>
+		<li>
+			Adds <code>height</code> (viewport height, default 420 like upstream) and
+			<code>overscan</code> (default 6 like upstream) props.
+		</li>
+		<li>
+			Virtualized with the shared virtual list in measured mode instead of
+			<code>@tanstack/react-virtual</code>; rows start from upstream's size estimate and then
+			size to their content.
+		</li>
+		<li>
+			Markdown renders with <code>marked</code> instead of <code>react-markdown</code>, and type
+			badges are text pills without Hugeicons glyphs.
+		</li>
+		<li>Click also focuses a block (upstream uses hover and focus only).</li>
+		<li>
+			Accepts <code>isDark</code> and <code>onIsDarkChange</code>; it reflects <code>isDark</code>
+			and never calls <code>onIsDarkChange</code> because it renders no theme control.
+		</li>
+	</ul>
+</section>
 
 <p><a href="/">Back to all components</a></p>

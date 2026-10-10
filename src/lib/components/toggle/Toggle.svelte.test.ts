@@ -131,7 +131,7 @@ describe('ToggleGroup', () => {
 
 	it('selects and deselects multiple items', async () => {
 		const onValueChange = vi.fn();
-		render(ToggleGroupHarness, { onValueChange });
+		render(ToggleGroupHarness, { multiple: true, onValueChange });
 
 		const bold = screen.getByRole('button', { name: 'Bold' });
 		const italic = screen.getByRole('button', { name: 'Italic' });
@@ -150,9 +150,9 @@ describe('ToggleGroup', () => {
 		expect(bold).toHaveAttribute('aria-pressed', 'false');
 	});
 
-	it('replaces the selection when multiple is false', async () => {
+	it('replaces the selection by default, like Base UI (multiple defaults to false)', async () => {
 		const onValueChange = vi.fn();
-		render(ToggleGroupHarness, { multiple: false, onValueChange });
+		render(ToggleGroupHarness, { onValueChange });
 
 		const bold = screen.getByRole('button', { name: 'Bold' });
 		const italic = screen.getByRole('button', { name: 'Italic' });
@@ -216,5 +216,99 @@ describe('ToggleGroup', () => {
 	it('re-exports the item component from the barrel', () => {
 		expect(ToggleGroupItem).toBeDefined();
 		expect(ToggleGroup).toBeDefined();
+	});
+});
+
+describe('ToggleGroup keyboard', () => {
+	it('moves focus between items with the arrow keys and loops at the ends', async () => {
+		render(ToggleGroupHarness);
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'ArrowLeft' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'Home' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'End' });
+		expect(italic).toHaveFocus();
+	});
+
+	it('uses up and down in a vertical group and stops at the ends without loopFocus', async () => {
+		render(ToggleGroupHarness, { orientation: 'vertical', loopFocus: false });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'ArrowDown' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'ArrowDown' });
+		expect(italic).toHaveFocus();
+	});
+});
+
+describe('Toggle className alias', () => {
+	it('merges className and class onto Toggle, ToggleGroup, and items', () => {
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', class: 'a', className: 'b' });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveClass('a');
+		expect(button).toHaveClass('b');
+	});
+
+	it('merges className onto the ToggleGroup root and its items', () => {
+		render(ToggleGroupHarness, { className: 'group-alias', itemClassName: 'item-alias' });
+		expect(screen.getByRole('group')).toHaveClass('group-alias');
+		expect(screen.getByRole('button', { name: 'Bold' })).toHaveClass('item-alias');
+	});
+});
+
+describe('ToggleGroup roving tab stop', () => {
+	const tabbable = () =>
+		screen.getAllByRole('button').filter((button) => button.getAttribute('tabindex') === '0');
+	const threeItems = (disabledFirst = false) => [
+		{ value: 'left', label: 'Left', disabled: disabledFirst },
+		{ value: 'center', label: 'Center' },
+		{ value: 'right', label: 'Right' }
+	];
+
+	it('gives the group one tab stop on the first enabled item when nothing is pressed', () => {
+		render(ToggleGroupHarness, { items: threeItems(true) });
+
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Center' })]);
+		expect(screen.getByRole('button', { name: 'Right' })).toHaveAttribute('tabindex', '-1');
+	});
+
+	it('puts the tab stop on the pressed item', () => {
+		render(ToggleGroupHarness, { items: threeItems(), defaultValue: ['right'] });
+
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Right' })]);
+	});
+
+	it('moves the tab stop with focus and skips disabled items', async () => {
+		render(ToggleGroupHarness, { items: threeItems(true), defaultValue: ['center'] });
+		const center = screen.getByRole('button', { name: 'Center' });
+		const right = screen.getByRole('button', { name: 'Right' });
+
+		center.focus();
+		await fireEvent.keyDown(center, { key: 'ArrowRight' });
+		expect(right).toHaveFocus();
+		expect(tabbable()).toEqual([right]);
+
+		// Looping skips the disabled first item.
+		await fireEvent.keyDown(right, { key: 'ArrowRight' });
+		expect(center).toHaveFocus();
+		expect(tabbable()).toEqual([center]);
+	});
+
+	it('leaves a standalone toggle in the normal tab order', () => {
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold' });
+
+		expect(screen.getByRole('button', { name: 'Bold' })).not.toHaveAttribute('tabindex');
 	});
 });

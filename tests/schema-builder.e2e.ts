@@ -62,3 +62,20 @@ test('array fields with enum items accept enum values that reach the emitted sch
 	await expect(output).toContainText('"urgent"');
 	await expect(page.getByTestId('schema-builder-docs-output')).toContainText('"urgent"');
 });
+
+test('has no theme toggle of its own; the page toggles dark mode from outside', async ({ page }) => {
+	await openBuilder(page);
+	const builder = page.getByTestId('schema-builder');
+
+	await expect(builder.getByRole('button', { name: /dark mode|light mode/i })).toHaveCount(0);
+	await page.getByLabel('Dark mode').check();
+	await expect(builder).toHaveAttribute('data-theme', 'dark');
+});
+
+test('docs page lists the differences from upstream', async ({ page }) => {
+	await openBuilder(page);
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('SchemaBuilderPanel');
+	await expect(differences).toContainText('theme');
+});

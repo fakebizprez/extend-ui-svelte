@@ -2,37 +2,90 @@
 // Pure helper tests (no DOM): run in the Vitest node project.
 import { describe, expect, it } from 'vitest';
 import {
+	anchorOffset,
 	clampZoom,
-	computeActivePage,
-	DEFAULT_ZOOM,
+	computeFitZoom,
+	computePageLayout,
 	ensurePdfExtension,
 	formatZoomPercent,
 	getPdfDownloadFileName,
 	getRotatedPdfDownloadFileName,
+	isZoomMode,
 	normalizeRotation,
-	resolveInitialZoom,
+	pageAnchorAt,
+	pageAtOffset,
+	pageWindow,
+	resolveZoom,
+	rotatedPageSize,
 	rotateClockwise,
 	rotateCounterClockwise,
+	zoomSelectOptions,
+	zoomSelectValue,
+	ZOOM_MODES,
 	ZOOM_OPTIONS,
+	zoomStepByRange,
 	zoomStepIn,
 	zoomStepOut
 } from './zoom.js';
 
-describe('resolveInitialZoom', () => {
-	it('uses the numeric default zoom', () => {
-		expect(resolveInitialZoom(1.5)).toBe(1.5);
+const LETTER = { width: 612, height: 792 };
+const LANDSCAPE = { width: 792, height: 612 };
+// Viewport 800x600 with the 24px gap upstream uses: 752x552 available.
+const VIEWPORT = { width: 800, height: 600, gap: 24 };
+
+describe('zoom modes', () => {
+	it('lists the upstream zoom modes in toolbar order', () => {
+		expect(ZOOM_MODES).toEqual([
+			{ value: 'fit-page', label: 'Fit page' },
+			{ value: 'fit-width', label: 'Fit width' },
+			{ value: 'automatic', label: 'Automatic' }
+		]);
+		expect(isZoomMode('fit-width')).toBe(true);
+		expect(isZoomMode('1')).toBe(false);
+		expect(isZoomMode(1)).toBe(false);
 	});
 
-	it('falls back to DEFAULT_ZOOM for fit modes and undefined', () => {
-		expect(resolveInitialZoom(undefined)).toBe(DEFAULT_ZOOM);
-		expect(resolveInitialZoom('fit-page')).toBe(DEFAULT_ZOOM);
-		expect(resolveInitialZoom('fit-width')).toBe(DEFAULT_ZOOM);
-		expect(resolveInitialZoom('automatic')).toBe(DEFAULT_ZOOM);
+	it('fits the widest page to the available width', () => {
+		expect(computeFitZoom('fit-width', VIEWPORT, [LETTER, LANDSCAPE])).toBeCloseTo(752 / 792);
 	});
 
-	it('clamps out-of-range numeric defaults', () => {
-		expect(resolveInitialZoom(99)).toBe(ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]);
-		expect(resolveInitialZoom(0.001)).toBe(ZOOM_OPTIONS[0]);
+	it('fits the whole page inside the available width and height', () => {
+		expect(computeFitZoom('fit-page', VIEWPORT, [LETTER])).toBeCloseTo(552 / 792);
+	});
+
+	it('uses fit width but never zooms past 100% in automatic mode', () => {
+		expect(computeFitZoom('automatic', VIEWPORT, [LETTER])).toBe(1);
+		expect(computeFitZoom('automatic', { width: 500, height: 600, gap: 24 }, [LETTER])).toBeCloseTo(
+			452 / 612
+		);
+	});
+
+	it('returns null before the viewport is measured or pages are known', () => {
+		expect(computeFitZoom('fit-width', { width: 0, height: 0, gap: 24 }, [LETTER])).toBeNull();
+		expect(computeFitZoom('fit-width', VIEWPORT, [])).toBeNull();
+		expect(computeFitZoom('fit-width', { width: 40, height: 600, gap: 24 }, [LETTER])).toBeNull();
+	});
+
+	it('resolves numeric and mode levels, clamped and floored to 3 decimals like upstream', () => {
+		expect(resolveZoom(1.5, VIEWPORT, [LETTER])).toBe(1.5);
+		expect(resolveZoom(99, VIEWPORT, [LETTER])).toBe(2);
+		expect(resolveZoom(0.001, VIEWPORT, [LETTER])).toBe(0.1);
+		expect(resolveZoom('fit-width', VIEWPORT, [LETTER])).toBe(1.228);
+		expect(resolveZoom('fit-width', VIEWPORT, [LETTER], 0.1, 8)).toBe(1.228);
+		expect(resolveZoom('fit-width', { width: 4000, height: 600, gap: 24 }, [LETTER], 0.1, 8)).toBe(
+			6.457
+		);
+	});
+
+	it('falls back to 100% for a mode before the viewport is measured', () => {
+		expect(resolveZoom('fit-page', { width: 0, height: 0, gap: 24 }, [LETTER])).toBe(1);
+	});
+
+	it('builds the zoom dropdown value and options like upstream', () => {
+		expect(zoomSelectValue('fit-width', 1.228)).toBe('fit-width');
+		expect(zoomSelectValue(1.25, 1.25)).toBe('1.25');
+		expect(zoomSelectOptions(1)).toEqual(ZOOM_OPTIONS);
+		expect(zoomSelectOptions(1.228)).toEqual([0.1, 0.25, 0.5, 0.75, 1, 1.23, 1.25, 1.5, 2]);
 	});
 });
 
@@ -59,6 +112,24 @@ describe('zoom stepping', () => {
 		expect(formatZoomPercent(1)).toBe('100%');
 		expect(formatZoomPercent(1.25)).toBe('125%');
 		expect(formatZoomPercent(0.1)).toBe('10%');
+	});
+});
+
+describe('zoomStepByRange', () => {
+	// EmbedPDF's default zoom ranges, used by the upstream editor's zoom buttons.
+	it('steps by the range the current zoom falls in', () => {
+		expect(zoomStepByRange(1, 1, 0.1, 8)).toBe(1.2);
+		expect(zoomStepByRange(1, -1, 0.1, 8)).toBe(0.8);
+		expect(zoomStepByRange(0.3, 1, 0.1, 8)).toBe(0.35);
+		expect(zoomStepByRange(0.6, -1, 0.1, 8)).toBe(0.5);
+		expect(zoomStepByRange(2, 1, 0.1, 8)).toBe(2.4);
+		expect(zoomStepByRange(5, 1, 0.1, 8)).toBe(5.8);
+	});
+
+	it('uses a 0.1 step below the smallest range and clamps to the limits', () => {
+		expect(zoomStepByRange(0.15, -1, 0.1, 8)).toBe(0.1);
+		expect(zoomStepByRange(0.1, -1, 0.1, 8)).toBe(0.1);
+		expect(zoomStepByRange(7.9, 1, 0.1, 8)).toBe(8);
 	});
 });
 
@@ -111,23 +182,57 @@ describe('download file names', () => {
 	});
 });
 
-describe('computeActivePage', () => {
-	it('returns the first page at the top', () => {
-		expect(computeActivePage(0, 800, 5)).toBe(1);
+describe('page layout', () => {
+	it('swaps width and height for quarter turns', () => {
+		expect(rotatedPageSize(LETTER, 0)).toEqual(LETTER);
+		expect(rotatedPageSize(LETTER, 90)).toEqual(LANDSCAPE);
+		expect(rotatedPageSize(LETTER, 180)).toEqual(LETTER);
+		expect(rotatedPageSize(LETTER, 270)).toEqual(LANDSCAPE);
 	});
 
-	it('advances the active page with scroll position', () => {
-		expect(computeActivePage(799, 800, 5)).toBe(1);
-		expect(computeActivePage(800, 800, 5)).toBe(2);
-		expect(computeActivePage(2400, 800, 5)).toBe(4);
+	it('stacks pages of different heights with a gap around and between them', () => {
+		const layout = computePageLayout([{ width: 100, height: 200 }, { width: 300, height: 50 }], 10);
+		expect(layout.tops).toEqual([10, 220]);
+		expect(layout.heights).toEqual([200, 50]);
+		expect(layout.totalHeight).toBe(280);
+		expect(layout.totalWidth).toBe(320);
 	});
 
-	it('clamps to the loaded page range', () => {
-		expect(computeActivePage(99999, 800, 5)).toBe(5);
-		expect(computeActivePage(-50, 800, 5)).toBe(1);
+	it('is empty without pages', () => {
+		expect(computePageLayout([], 24)).toEqual({ tops: [], heights: [], totalHeight: 0, totalWidth: 0 });
 	});
 
-	it('returns 0 when no document is loaded', () => {
-		expect(computeActivePage(0, 800, 0)).toBe(0);
+	it('finds the page at a scroll offset, 1-based', () => {
+		const layout = computePageLayout(
+			[{ width: 1, height: 100 }, { width: 1, height: 300 }, { width: 1, height: 100 }],
+			0
+		);
+		expect(pageAtOffset(layout, 0)).toBe(1);
+		expect(pageAtOffset(layout, 99)).toBe(1);
+		expect(pageAtOffset(layout, 100)).toBe(2);
+		expect(pageAtOffset(layout, 399)).toBe(2);
+		expect(pageAtOffset(layout, 400)).toBe(3);
+		expect(pageAtOffset(layout, 99999)).toBe(3);
+		expect(pageAtOffset(layout, -5)).toBe(1);
+		expect(pageAtOffset(computePageLayout([], 0), 0)).toBe(0);
+	});
+
+	it('anchors a scroll offset to a page and a fraction of its height', () => {
+		const before = computePageLayout([{ width: 1, height: 100 }, { width: 1, height: 200 }], 0);
+		const after = computePageLayout([{ width: 1, height: 200 }, { width: 1, height: 400 }], 0);
+		const anchor = pageAnchorAt(before, 150);
+		expect(anchor).toEqual({ index: 1, fraction: 0.25 });
+		// The same document point after zooming 2x: top of page 2 (200) + 25% of 400.
+		expect(anchorOffset(after, anchor!)).toBe(300);
+		expect(pageAnchorAt(computePageLayout([], 0), 0)).toBeNull();
+	});
+
+	it('windows only the pages in view plus overscan', () => {
+		const sizes = Array.from({ length: 100 }, () => ({ width: 1, height: 100 }));
+		const layout = computePageLayout(sizes, 0);
+		expect(pageWindow(layout, 0, 250, 1)).toEqual({ start: 0, end: 4 });
+		expect(pageWindow(layout, 5000, 250, 2)).toEqual({ start: 48, end: 55 });
+		expect(pageWindow(layout, 999999, 250, 1)).toEqual({ start: 96, end: 100 });
+		expect(pageWindow(computePageLayout([], 0), 0, 250, 1)).toEqual({ start: 0, end: 0 });
 	});
 });

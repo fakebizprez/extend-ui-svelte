@@ -19,4 +19,32 @@
 	onIsDarkChange={(value) => (isDark = value)}
 />
 
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Exported as both <code>DocxEditor</code> and the upstream name
+			<code>DocxEditorPreview</code>; <code>className</code> and <code>class</code> are both
+			accepted.
+		</li>
+		<li>
+			Editing is a native contenteditable surface instead of the
+			<code>@extend-ai/react-docx</code> editor (React-only). The toolbar is reduced to bold,
+			italic, headings, bulleted and numbered lists, zoom, upload, export, and the theme switch.
+			Undo/redo buttons, fonts, color, highlight, links, alignment, borders, images, tables,
+			tracked changes, comments, the read-only toggle, and the page thumbnail rail are not
+			ported.
+		</li>
+		<li>
+			Export is lossy: it rebuilds a minimal .docx from paragraphs, headings, lists, and
+			bold/italic runs. Tables, images, styles, headers, and footers from the source are
+			dropped.
+		</li>
+		<li>
+			Port additions: <code>showToolbar</code>, <code>readOnly</code>, and
+			<code>onExport</code> (called with the exported bytes).
+		</li>
+	</ul>
+</section>
+
 <p><a href="/">Back to all components</a></p>

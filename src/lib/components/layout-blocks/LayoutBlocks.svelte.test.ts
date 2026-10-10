@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import LayoutBlocks from './LayoutBlocks.svelte';
+import { OcrBlocksPanel } from './index.js';
 import type { OcrBlock } from './layout-blocks.js';
 
 function makeBlock(index: number, overrides: Partial<OcrBlock> = {}): OcrBlock {
@@ -42,7 +43,7 @@ const sampleBlocks: OcrBlock[] = [
 
 describe('LayoutBlocks', () => {
 	it('renders one row per block with type badges, confidence, and page pills', () => {
-		render(LayoutBlocks, { blocks: sampleBlocks, height: 800, itemHeight: 140 });
+		render(LayoutBlocks, { blocks: sampleBlocks, height: 800 });
 
 		expect(screen.getByTestId('layout-blocks')).toBeInTheDocument();
 		const rows = screen.getAllByTestId('layout-block');
@@ -58,7 +59,7 @@ describe('LayoutBlocks', () => {
 	});
 
 	it('renders block text as markdown', () => {
-		render(LayoutBlocks, { blocks: sampleBlocks, height: 800, itemHeight: 140 });
+		render(LayoutBlocks, { blocks: sampleBlocks, height: 800 });
 
 		expect(screen.getByRole('heading', { name: 'Attention Is All You Need' })).toBeInTheDocument();
 		expect(screen.getByText('Transformer', { selector: 'strong' })).toBeInTheDocument();
@@ -76,7 +77,7 @@ describe('LayoutBlocks', () => {
 
 	it('windows long documents so only the visible rows render', () => {
 		const blocks = Array.from({ length: 100 }, (_, index) => makeBlock(index));
-		render(LayoutBlocks, { blocks, height: 420, itemHeight: 140, overscan: 2 });
+		render(LayoutBlocks, { blocks, height: 420, overscan: 2 });
 
 		const rows = screen.getAllByTestId('layout-block');
 		expect(rows.length).toBeGreaterThan(0);
@@ -86,7 +87,7 @@ describe('LayoutBlocks', () => {
 	});
 
 	it('marks the first block active by default', () => {
-		render(LayoutBlocks, { blocks: sampleBlocks, height: 800, itemHeight: 140 });
+		render(LayoutBlocks, { blocks: sampleBlocks, height: 800 });
 
 		const rows = screen.getAllByTestId('layout-block');
 		expect(rows[0]).toHaveAttribute('data-active', 'true');
@@ -97,7 +98,6 @@ describe('LayoutBlocks', () => {
 		render(LayoutBlocks, {
 			blocks: sampleBlocks,
 			height: 800,
-			itemHeight: 140,
 			activeBlockId: 'table-1'
 		});
 
@@ -111,7 +111,6 @@ describe('LayoutBlocks', () => {
 		render(LayoutBlocks, {
 			blocks: sampleBlocks,
 			height: 800,
-			itemHeight: 140,
 			onBlockFocus
 		});
 
@@ -133,7 +132,6 @@ describe('LayoutBlocks', () => {
 		render(LayoutBlocks, {
 			blocks: sampleBlocks,
 			height: 800,
-			itemHeight: 140,
 			onBlockFocus
 		});
 
@@ -156,5 +154,40 @@ describe('LayoutBlocks', () => {
 		render(LayoutBlocks, { blocks: sampleBlocks, className: 'custom-panel' });
 
 		expect(screen.getByTestId('layout-blocks')).toHaveClass('custom-panel');
+	});
+
+	it('sizes rows to their content instead of a fixed row height', () => {
+		const { container } = render(LayoutBlocks, { blocks: sampleBlocks, height: 800 });
+
+		const rows = container.querySelectorAll<HTMLElement>('[data-virtual-index]');
+		expect(rows.length).toBe(sampleBlocks.length);
+		for (const row of rows) expect(row.style.height).toBe('');
+	});
+
+	it('marks each row with its block type so the active ring uses the type color', () => {
+		render(LayoutBlocks, { blocks: sampleBlocks, height: 800 });
+
+		const rows = screen.getAllByTestId('layout-block');
+		expect(rows[0]).toHaveAttribute('data-block-type', 'heading');
+		expect(rows[2]).toHaveAttribute('data-block-type', 'table');
+	});
+
+	it('merges class and className onto the root', () => {
+		render(LayoutBlocks, { blocks: sampleBlocks, class: 'from-class', className: 'from-classname' });
+
+		expect(screen.getByTestId('layout-blocks')).toHaveClass('from-class');
+		expect(screen.getByTestId('layout-blocks')).toHaveClass('from-classname');
+	});
+
+	it('never calls onIsDarkChange: the parent owns the theme', async () => {
+		const onIsDarkChange = vi.fn();
+		render(LayoutBlocks, { blocks: sampleBlocks, height: 800, isDark: true, onIsDarkChange });
+
+		await fireEvent.click(screen.getAllByTestId('layout-block')[1] as HTMLElement);
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
+
+	it('exports the upstream OcrBlocksPanel name', () => {
+		expect(OcrBlocksPanel).toBe(LayoutBlocks);
 	});
 });

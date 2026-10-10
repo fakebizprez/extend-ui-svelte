@@ -1,8 +1,15 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+// The dev server reloads the page once after load; clicks before the settled,
+// hydrated page are dropped, so wait for network idle first.
+async function openFileSystem(page: Page): Promise<void> {
+	await page.goto('/file-system');
+	await page.waitForLoadState('networkidle');
+}
 
 test('file-system expands a folder to reveal its children', async ({ page }) => {
-	await page.goto('/file-system');
+	await openFileSystem(page);
 
 	const tree = page.getByRole('tree', { name: 'Sample files' });
 	await expect(tree).toBeVisible();
@@ -16,7 +23,7 @@ test('file-system expands a folder to reveal its children', async ({ page }) => 
 });
 
 test('file-system selects an entry and reports it to the parent', async ({ page }) => {
-	await page.goto('/file-system');
+	await openFileSystem(page);
 
 	const row = page.getByRole('treeitem', { name: /readme\.txt/ });
 	await row.click();
@@ -26,7 +33,7 @@ test('file-system selects an entry and reports it to the parent', async ({ page 
 });
 
 test('file-system renames an entry inline with F2', async ({ page }) => {
-	await page.goto('/file-system');
+	await openFileSystem(page);
 
 	const row = page.getByRole('treeitem', { name: /readme\.txt/ });
 	await row.click();
@@ -39,4 +46,27 @@ test('file-system renames an entry inline with F2', async ({ page }) => {
 
 	await expect(page.getByRole('treeitem', { name: /notes\.txt/ })).toBeVisible();
 	await expect(page.getByTestId('file-system-rename')).toContainText('notes.txt');
+});
+
+test('file-system double-click opens a file through onFileOpen and getFileUrl', async ({
+	page
+}) => {
+	await openFileSystem(page);
+
+	await page.getByRole('treeitem', { name: /readme\.txt/ }).dblclick();
+
+	await expect(page.getByTestId('file-system-open')).toHaveText(
+		'Last opened: readme.txt -> /files/readme.txt'
+	);
+});
+
+test('file-system has no theme toggle of its own; docs list the differences', async ({ page }) => {
+	await openFileSystem(page);
+
+	await expect(page.getByTestId('file-system').getByRole('button', { name: /dark/i })).toHaveCount(
+		0
+	);
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('gallery');
+	await expect(differences).toContainText('onFileOpen');
 });

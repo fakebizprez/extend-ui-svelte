@@ -2,15 +2,21 @@
 	MIT License — Svelte 5 port of Extend UI pptx-viewer (PptxViewerPreview). Upstream: extend-hq/ui (MIT).
 	Deliberate changes vs the React PptxViewerPreview ({ className, defaultThumbnailSidebarOpen,
 	defaultZoom, fileName, initialSlide, showDownload, showToolbar, showUpload, src, toolbarActions }):
-	- Scope is the phase-6 port: a virtualized slide list. Zoom modes, the thumbnail
-	  sidebar, slide navigation, upload/download, and custom toolbar actions are out of scope.
+	- Also exported as the upstream name PptxViewerPreview; `className` is an alias of `class`.
+	- Scope is a virtualized slide list with upload, download, and toolbarActions (a Snippet).
+	  defaultZoom/zoom modes, the thumbnail sidebar (defaultThumbnailSidebarOpen), and slide
+	  navigation (initialSlide, jump to slide) are out of scope. Uploads accept .pptx only:
+	  the engine cannot read legacy .ppt.
+	- Port additions: height, slideHeight, slideWidth, overscan (fixed-row windowing).
 	- Rendering goes through the pptx-browser engine wrapper (#lib/engines/pptx) instead
 	  of @extend-ai/react-pptx, which is React-only.
 	- Virtualization uses the shared VirtualList instead of @tanstack/react-virtual.
-	- Dark mode is parent-controlled (isDark + onIsDarkChange) per project contract;
-	  upstream follows the app theme automatically.
+	- Dark mode is parent-controlled (isDark) per project contract; upstream follows the app
+	  theme automatically. Like upstream it renders no theme switch, so onIsDarkChange is
+	  accepted for contract parity and never called.
 -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { loadDeck, type PptxDeck } from '#lib/engines/pptx/index.js';
 	import { DEFAULT_OVERSCAN, VirtualList } from '#lib/virtual-list/index.js';
 	import PptxSlide from './PptxSlide.svelte';
@@ -20,8 +26,14 @@
 		src?: string;
 		/** Display name shown in the toolbar. Defaults to the src basename. */
 		fileName?: string;
-		/** Show the toolbar with the file name, slide count, and theme toggle. */
+		/** Show the toolbar with the file name, slide count, and actions. */
 		showToolbar?: boolean;
+		/** Show the download button. */
+		showDownload?: boolean;
+		/** Show the upload button and file input. */
+		showUpload?: boolean;
+		/** Extra toolbar content, matching the upstream `toolbarActions` prop. */
+		toolbarActions?: Snippet;
 		/** Viewport height in px. */
 		height?: number;
 		/** Fixed row height of one slide in px; required for windowing math. */
@@ -32,23 +44,31 @@
 		overscan?: number;
 		/** Parent-controlled dark mode flag. */
 		isDark?: boolean;
-		/** Called when the user toggles dark mode. */
+		/** Accepted for contract parity; the viewer renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 	}
 
 	let {
 		src,
 		fileName,
 		showToolbar = true,
+		showDownload = true,
+		showUpload = true,
+		toolbarActions,
 		height = 560,
 		slideHeight = 360,
 		slideWidth = 960,
 		overscan = DEFAULT_OVERSCAN,
 		isDark = false,
-		onIsDarkChange,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: Props = $props();
+
+	const PPTX_UPLOAD_ACCEPT =
+		'.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 	type Status = 'empty' | 'loading' | 'ready' | 'error';
 
@@ -57,11 +77,20 @@
 	// Raw state: the loaded deck is large and needs no deep reactivity.
 	let deck = $state.raw<PptxDeck | null>(null);
 	let error = $state('');
+	// Like upstream, an upload applies only while `src` is unchanged; a new src wins.
+	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
+	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
+	let fileInputEl = $state<HTMLInputElement | null>(null);
+	let preparingDownload = $state(false);
 
 	const slideCount = $derived(deck?.slideCount ?? 0);
 	const slideIndexes = $derived(Array.from({ length: slideCount }, (_, index) => index));
 	const displayName = $derived(
-		fileName?.trim() ? fileName : src ? basename(src) : 'presentation.pptx'
+		uploadedFile?.name ??
+			(fileName?.trim() ? fileName : src ? basename(src) : 'presentation.pptx')
+	);
+	const rootClass = $derived(
+		['pptx-viewer', isDark && 'dark', classProp, className].filter(Boolean).join(' ')
 	);
 
 	function basename(url: string): string {
@@ -78,7 +107,8 @@
 	// dynamic-imports the browser engine, so SSR renders the loading state.
 	$effect(() => {
 		const url = src;
-		if (!url) {
+		const file = uploadedFile;
+		if (!url && !file) {
 			status = 'empty';
 			error = '';
 			deck = null;
@@ -91,11 +121,18 @@
 		deck = null;
 		(async () => {
 			try {
-				const response = await fetch(url);
-				if (!response.ok) {
-					throw new Error(`Failed to load presentation (${response.status})`);
+				let bytes: ArrayBuffer;
+				if (file) {
+					bytes = await file.arrayBuffer();
+				} else {
+					const response = await fetch(url as string);
+					if (!response.ok) {
+						throw new Error(`Failed to load presentation (${response.status})`);
+					}
+					bytes = await response.arrayBuffer();
 				}
-				loaded = await loadDeck(new Uint8Array(await response.arrayBuffer()));
+				if (cancelled) return;
+				loaded = await loadDeck(new Uint8Array(bytes));
 				if (cancelled) {
 					loaded.destroy();
 					return;
@@ -113,29 +150,87 @@
 			loaded?.destroy();
 		};
 	});
+
+	function ensurePresentationExtension(name: string): string {
+		const lower = name.toLowerCase();
+		return lower.endsWith('.pptx') || lower.endsWith('.ppt') ? name : `${name}.pptx`;
+	}
+
+	function handleUpload(event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0] ?? null;
+		input.value = '';
+		if (file) upload = { file, sourceUrl: src };
+	}
+
+	function downloadBlob(blob: Blob, name: string): void {
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = name;
+		anchor.rel = 'noopener';
+		document.body.append(anchor);
+		anchor.click();
+		anchor.remove();
+		window.setTimeout(() => URL.revokeObjectURL(url), 0);
+	}
+
+	// Like upstream: a URL source is fetched and saved as a blob so the name holds cross-origin.
+	async function handleDownload(): Promise<void> {
+		const name = ensurePresentationExtension(displayName);
+		if (uploadedFile) {
+			downloadBlob(uploadedFile, name);
+			return;
+		}
+		if (!src || preparingDownload) return;
+		preparingDownload = true;
+		try {
+			const response = await fetch(src);
+			if (!response.ok) throw new Error(`Failed to download presentation (${response.status})`);
+			downloadBlob(await response.blob(), name);
+		} catch (failure) {
+			console.error(failure);
+		} finally {
+			preparingDownload = false;
+		}
+	}
 </script>
 
-<div
-	class={`pptx-viewer${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
-	data-dark={String(isDark)}
-	data-testid="pptx-viewer"
->
+<div class={rootClass} data-dark={String(isDark)} data-testid="pptx-viewer">
+	{#if showUpload}
+		<input
+			type="file"
+			data-testid="pptx-file-input"
+			accept={PPTX_UPLOAD_ACCEPT}
+			hidden
+			bind:this={fileInputEl}
+			onchange={handleUpload}
+		/>
+	{/if}
 	{#if showToolbar}
 		<div class="pptx-toolbar" data-testid="pptx-toolbar">
 			<span class="pptx-name" data-testid="presentation-name">{displayName}</span>
 			{#if status === 'ready'}
 				<span class="pptx-count">Slides: <span data-testid="slide-count">{slideCount}</span></span>
 			{/if}
-			<button
-				type="button"
-				class="pptx-theme-toggle"
-				role="switch"
-				aria-checked={isDark}
-				aria-label="Toggle dark mode"
-				onclick={() => onIsDarkChange?.(!isDark)}
-			>
-				{isDark ? 'Light' : 'Dark'}
-			</button>
+			{#if toolbarActions}
+				{@render toolbarActions()}
+			{/if}
+			{#if showUpload}
+				<button type="button" class="pptx-button" onclick={() => fileInputEl?.click()}>
+					Upload
+				</button>
+			{/if}
+			{#if showDownload}
+				<button
+					type="button"
+					class="pptx-button"
+					disabled={(!src && !uploadedFile) || preparingDownload}
+					onclick={handleDownload}
+				>
+					Download
+				</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -210,7 +305,7 @@
 		font-size: 12px;
 	}
 
-	.pptx-theme-toggle {
+	.pptx-button {
 		flex: none;
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--pptx-border);
@@ -219,6 +314,11 @@
 		color: var(--pptx-fg);
 		font: inherit;
 		cursor: pointer;
+	}
+
+	.pptx-button:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 
 	.pptx-state {

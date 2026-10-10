@@ -2,10 +2,12 @@
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 	Ported from apps/v4/components/ui/group.tsx (Group).
 	Deliberate API changes vs React:
-	- `class` instead of `className` (Svelte / shadcn-svelte convention).
+	- `class` and `className` are both accepted and merged onto the root.
 	- `children` is a Svelte snippet instead of ReactNode.
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
+	- Upstream's dark-mode hover/pressed separator tints and focus-ring
+	  separator shifts are not ported; edge joining and orientation are.
 -->
 <script lang="ts" module>
 	export type GroupOrientation = 'horizontal' | 'vertical';
@@ -40,6 +42,8 @@
 	export interface GroupProps extends DarkModeProps {
 		orientation?: GroupOrientation;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop name. Both are merged. */
+		className?: string;
 		children: Snippet;
 		[key: string]: unknown;
 	}
@@ -47,6 +51,7 @@
 	let {
 		orientation,
 		class: className = '',
+		className: classNameAlias = '',
 		children,
 		isDark = false,
 		// Accepted for shared-contract parity but intentionally unused: the
@@ -57,7 +62,7 @@
 </script>
 
 <div
-	class={cn(groupVariants({ orientation }), className, isDark && 'dark')}
+	class={cn(groupVariants({ orientation }), className, classNameAlias, isDark && 'dark')}
 	data-orientation={orientation}
 	data-slot="group"
 	role="group"

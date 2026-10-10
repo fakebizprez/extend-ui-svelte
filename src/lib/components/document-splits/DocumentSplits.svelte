@@ -9,11 +9,13 @@
 	- Every drag operation also has a button control (move up/down/left/right,
 	  move to previous/next split) so reordering works by keyboard and in
 	  automated tests where native drag events are impractical.
-	- Splits are `$bindable` and mutations are pure helpers in ./splits.js, so
-	  the component works controlled (`splits` + `onSplitsChange`, like
-	  upstream), uncontrolled, or with `bind:splits`.
+	- `class` is accepted alongside the upstream `className`. splits,
+	  activePage, onSelectPage, and onSplitsChange are required as in the
+	  upstream API table. Splits are also `$bindable` and mutations are pure
+	  helpers in ./splits.js, so `bind:splits` works too.
 	- New operations upstream inlines or lacks: rename via a title input,
-	  `Split <title> in two` (midpoint cut), and an `activePage` highlight.
+	  `Split <title> in two` (midpoint cut), and an `activePage` highlight
+	  (0 for none; upstream documents the prop but never renders it).
 	- Page thumbnails reuse FileThumbnail; pass `thumbnailImages` for cached
 	  data URLs exactly like upstream, or `pdfUrl` to render real PDF pages.
 	  Like upstream's lazy PDF page thumbnails, the document loads once per
@@ -52,32 +54,36 @@
 	} from './splits.js';
 
 	interface Props {
-		/** Controlled split groups. Defaults to the upstream demo splits. */
-		splits?: DocumentSplit[];
-		/** 1-based page number highlighted as active. */
-		activePage?: number | null;
+		/** Split groups. Required, like upstream; also `bind:splits`. */
+		splits: DocumentSplit[];
+		/** 1-based page number highlighted as active (0 for none). Required, like upstream's docs. */
+		activePage: number;
 		/** Cached page images by page id, e.g. `{ 'page-1': 'data:...' }`. */
-		thumbnailImages?: Record<string, string>;
+		thumbnailImages?: Record<DocumentSplitPageId, string>;
 		/** PDF URL rendered into each page thumbnail via FileThumbnail. */
 		pdfUrl?: string | null;
 		/** Whether the frame divider border is shown. Defaults to `true`. */
 		withFrameDivider?: boolean;
 		className?: string;
-		/** Called with the 1-based page number when a page is selected. */
-		onSelectPage?: (pageNumber: number) => void;
-		/** Called with the next splits after every mutation. */
-		onSplitsChange?: (splits: DocumentSplit[]) => void;
+		/** Alias of the upstream `className`. */
+		class?: string;
+		/** Called with the 1-based page number when a page is selected. Required, like upstream. */
+		onSelectPage: (pageNumber: number) => void;
+		/** Called with the next splits after every mutation. Required, like upstream. */
+		onSplitsChange: (splits: DocumentSplit[]) => void;
 		isDark?: boolean;
+		/** Accepted for contract parity; the component renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 	}
 
 	let {
 		splits = $bindable(INITIAL_SPLITS),
-		activePage = null,
+		activePage,
 		thumbnailImages = {},
 		pdfUrl = null,
 		withFrameDivider = true,
 		className,
+		class: classProp,
 		onSelectPage,
 		onSplitsChange,
 		isDark = false
@@ -350,7 +356,7 @@
 	data-testid="document-splits"
 	data-dark={dark ? 'true' : 'false'}
 	data-frame-divider={withFrameDivider ? 'true' : 'false'}
-	class="document-splits {className ?? ''}"
+	class={['document-splits', classProp, className]}
 	class:dark
 	class:with-frame-divider={withFrameDivider}
 >

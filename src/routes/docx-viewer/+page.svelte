@@ -18,4 +18,32 @@
 	onIsDarkChange={(value) => (isDark = value)}
 />
 
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Exported as both <code>DocxViewer</code> and the upstream name
+			<code>DocxViewerPreview</code>; <code>className</code> and <code>class</code> are both
+			accepted.
+		</li>
+		<li>
+			Pages render with docx-preview instead of <code>@extend-ai/react-docx</code> (React-only):
+			comments, tracked changes, and the outline/section anchors are not shown.
+		</li>
+		<li>
+			The thumbnail sidebar lists page numbers with text excerpts instead of canvas page
+			images, and stays inline instead of collapsing into an overlay on narrow widths.
+		</li>
+		<li>
+			<code>defaultZoom</code> takes the same values (default 50). The fit modes are resolved
+			from the first page; <code>"automatic"</code> fits the width but never enlarges past 100%.
+		</li>
+		<li><code>toolbarActions</code> is a Svelte snippet instead of a React node.</li>
+		<li>
+			Legacy <code>.doc</code> files are accepted by the upload input, but docx-preview cannot
+			render them; convert them to DOCX.
+		</li>
+	</ul>
+</section>
+
 <p><a href="/">Back to all components</a></p>

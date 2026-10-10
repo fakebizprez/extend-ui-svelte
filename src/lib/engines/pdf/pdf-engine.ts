@@ -19,7 +19,7 @@ export type PdfPageChangeHandler = (page: number) => void;
 export interface PdfRenderOptions {
 	/** Render scale. Defaults to 1. */
 	scale?: number;
-	/** Rotation in degrees. Defaults to 0. */
+	/** Extra rotation in degrees, added to the page's own rotation. Defaults to 0. */
 	rotation?: number;
 }
 
@@ -35,6 +35,11 @@ export interface PdfEngine {
 	readonly currentPage: number;
 	/** Load a document from a URL or raw bytes. Resolves with the page count. */
 	load(source: PdfSource): Promise<number>;
+	/**
+	 * Size of every page at scale 1, in CSS pixels, with each page's own
+	 * rotation applied. Used to lay out pages before they render.
+	 */
+	getPageSizes(): Promise<PdfPageSize[]>;
 	/** Render a page (1-based) into a canvas. Resolves with the page size in CSS pixels. */
 	renderPage(pageNumber: number, canvas: HTMLCanvasElement, options?: PdfRenderOptions): Promise<PdfPageSize>;
 	/** Set the current page, clamped to [1, pageCount]; notifies page-change listeners. */
@@ -146,6 +151,20 @@ export function createPdfEngine(): PdfEngine {
 			return pageCount;
 		},
 
+		async getPageSizes(): Promise<PdfPageSize[]> {
+			const loaded = doc;
+			if (!loaded) {
+				throw new Error('PdfEngine.getPageSizes: no document loaded.');
+			}
+			const pages = await Promise.all(
+				Array.from({ length: loaded.numPages }, (_, index) => loaded.getPage(index + 1))
+			);
+			return pages.map((page) => {
+				const { width, height } = page.getViewport({ scale: 1 });
+				return { width, height };
+			});
+		},
+
 		async renderPage(
 			pageNumber: number,
 			canvas: HTMLCanvasElement,
@@ -164,9 +183,10 @@ export function createPdfEngine(): PdfEngine {
 				throw new Error('PdfEngine.renderPage: canvas 2d context unavailable.');
 			}
 			const page: PDFPageProxy = await doc.getPage(pageNumber);
+			// PDF.js replaces the page's own /Rotate when `rotation` is passed, so add it back.
 			const viewport = page.getViewport({
 				scale: options.scale ?? 1,
-				rotation: options.rotation ?? 0
+				rotation: (((page.rotate + (options.rotation ?? 0)) % 360) + 360) % 360
 			});
 			// Stop the canvas's previous render before resizing it under that render.
 			renderTasks.get(canvas)?.cancel();

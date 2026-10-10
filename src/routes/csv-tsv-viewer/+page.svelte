@@ -20,6 +20,12 @@ A-9002\tCapacitor set\t85\tAustin
 A-9003\tBreadboard\t200\tReno
 A-9004\tJumper wires\t340\tAustin`;
 
+	// 2,000 rows: only the visible window renders, and search scrolls to matches.
+	const LONG_CSV = [
+		'Load,Lane,Pallets',
+		...Array.from({ length: 2000 }, (_, i) => `L-${i + 1},Lane ${(i % 40) + 1},${(i % 9) + 1}`)
+	].join('\n');
+
 	let isDark = $state(false);
 	let tsvDark = $state(true);
 </script>
@@ -28,6 +34,14 @@ A-9004\tJumper wires\t340\tAustin`;
 <p>Svelte 5 port of the Extend UI csv-viewer. Parsing runs on the client with papaparse.</p>
 
 <h2>CSV with search</h2>
+<p>
+	Open the search button, type a value, then use next/previous (or Enter / Shift+Enter) to step
+	through matches.
+</p>
+<!-- The theme toggle lives in the parent; the viewer only reflects isDark. -->
+<button type="button" data-testid="page-dark-toggle" onclick={() => (isDark = !isDark)}>
+	{isDark ? 'Use light mode' : 'Use dark mode'}
+</button>
 <CsvTsvViewer
 	data={SAMPLE_CSV}
 	search
@@ -44,8 +58,32 @@ A-9004\tJumper wires\t340\tAustin`;
 	onIsDarkChange={(value) => (tsvDark = value)}
 />
 
+<h2>Long CSV (2,000 rows)</h2>
+<CsvTsvViewer data={LONG_CSV} search height={320} />
+
 <h2>Empty input</h2>
 <CsvTsvViewer data="" />
+
+<h2>Differences from upstream</h2>
+<p>Also exported as <code>CsvViewer</code>, the upstream name.</p>
+<ul data-testid="differences">
+	<li>
+		Dark mode is controlled by the parent through <code>isDark</code>
+		(<code>onIsDarkChange</code> is accepted but never called). Upstream reads the
+		<code>.dark</code> class from the document.
+	</li>
+	<li>
+		The grid is a native table windowed locally instead of glide-data-grid. Search works like
+		upstream: a find popover that highlights matches, steps through them, and scrolls the
+		active match into view.
+	</li>
+	<li>
+		Added props: <code>delimiter</code>, <code>isDark</code>, <code>onIsDarkChange</code>,
+		<code>rowHeight</code>, <code>height</code>, <code>overscan</code>. The toolbar shows a
+		row count.
+	</li>
+	<li>Not ported: zoom, upload, download, cell selection, and column resize.</li>
+</ul>
 
 <p><a href="/">Back to all components</a></p>
 

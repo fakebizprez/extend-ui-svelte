@@ -2,12 +2,14 @@
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 	Ported from apps/v4/components/ui/color-picker.tsx (ColorPicker).
 	Deliberate API changes vs React:
-	- `class` instead of `className` (Svelte / shadcn-svelte convention).
+	- `class` and `className` are both accepted and merged onto the root.
 	- `icon` is a Svelte snippet instead of a React component type.
 	- The format picker is a native `select` (no Select primitive ported yet).
 	- The popover is an inline disclosure panel (no Popover/floating port yet);
 	  it toggles from the trigger and closes on Escape.
 	- Copy buttons, focus-reselect, and alpha scrub-dragging are omitted.
+	- The panel wraps its fields column under the plane when its container is
+	  narrower than the panel (upstream keeps one row and overflows).
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 -->
@@ -16,6 +18,16 @@
 
 	export type ColorPickerVariant = 'input' | 'swatch' | 'panel';
 	export type { ColorFormat } from './color-utils.js';
+
+	// Upstream renders the swatch trigger (and the eyedropper) as <Button size="icon-sm"> with the
+	// outline variant (ghost when an icon or rainbow trigger is shown). These
+	// are the layout, size, and variant classes of that Button; `p-0` stands in
+	// for the preflight reset so native button padding never shrinks it.
+	const SWATCH_TRIGGER_BASE =
+		'relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border p-0 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 sm:size-7';
+	const SWATCH_TRIGGER_OUTLINE =
+		'border-input bg-popover text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/64';
+	const SWATCH_TRIGGER_GHOST = 'border-transparent bg-transparent text-foreground hover:bg-accent';
 
 	const OK_HUE_TRACK = `linear-gradient(to bottom, ${Array.from(
 		{ length: 25 },
@@ -60,6 +72,8 @@
 		defaultFormat?: ColorFormat;
 		variant?: ColorPickerVariant;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop name. Both are merged. */
+		className?: string;
 		icon?: Snippet;
 		rainbowTrigger?: boolean;
 		onTriggerMouseDown?: (event: MouseEvent) => void;
@@ -101,6 +115,7 @@
 		defaultFormat = 'hex',
 		variant,
 		class: className = '',
+		className: classNameAlias = '',
 		icon,
 		rainbowTrigger = false,
 		onTriggerMouseDown,
@@ -430,7 +445,9 @@
 {/snippet}
 
 {#snippet panel()}
-	<div class="flex items-stretch gap-3">
+	<!-- flex-wrap: in containers narrower than the panel (phones) the fields
+	     column drops under the plane instead of overflowing. Upstream never wraps. -->
+	<div class="flex flex-wrap items-stretch gap-3">
 		<button
 			type="button"
 			aria-label="Chroma and lightness"
@@ -517,11 +534,28 @@
 				<button
 					type="button"
 					aria-label="Pick color from screen"
-					class="size-8 shrink-0"
+					title="Pick color from screen"
+					class={cn(SWATCH_TRIGGER_BASE, SWATCH_TRIGGER_OUTLINE, 'size-8! shrink-0')}
 					{disabled}
 					onclick={handleEyeDropper}
 				>
-					Pick
+					<!-- Lucide "pipette", the upstream IconPlaceholder default. -->
+					<svg
+						aria-hidden="true"
+						class="size-4"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="m2 22 1-1h3l9-9" />
+						<path d="M3 21v-3l9-9" />
+						<path
+							d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"
+						/>
+					</svg>
 				</button>
 			{/if}
 		</div>
@@ -576,7 +610,7 @@
 {/snippet}
 
 {#if resolvedVariant === 'panel'}
-	<div class={cn('flex items-stretch gap-3', className, isDark && 'dark')} {...rest}>
+	<div class={cn('flex items-stretch gap-3', className, classNameAlias, isDark && 'dark')} {...rest}>
 		{@render panel()}
 	</div>
 {:else}
@@ -587,7 +621,12 @@
 				aria-label={label}
 				disabled={disabled}
 				data-color-picker-trigger=""
-				class={cn('relative shrink-0', className)}
+				class={cn(
+					SWATCH_TRIGGER_BASE,
+					icon || rainbowTrigger ? SWATCH_TRIGGER_GHOST : SWATCH_TRIGGER_OUTLINE,
+					className,
+					classNameAlias
+				)}
 				onclick={toggleOpen}
 				onmousedown={(event) => onTriggerMouseDown?.(event)}
 				onpointerdown={(event) => onTriggerPointerDown?.(event)}
@@ -606,9 +645,21 @@
 						style="background-color: {currentColor};"
 					></span>
 				{:else}
-					<span class="relative size-4 shrink-0 overflow-hidden rounded-[4px]">
+					<span
+						data-slot="color-picker-swatch"
+						class="relative size-4 shrink-0 overflow-hidden rounded-[4px]"
+					>
 						{@render checkerboard(4)}
-						<span aria-hidden="true" class="absolute inset-0" style="background-color: {currentColor};"></span>
+						<span
+							aria-hidden="true"
+							data-slot="color-picker-swatch-fill"
+							class="absolute inset-0"
+							style="background-color: {currentColor};"
+						></span>
+						<span
+							aria-hidden="true"
+							class="absolute inset-0 rounded-[inherit] ring-1 ring-black/12 ring-inset dark:ring-white/16"
+						></span>
 					</span>
 				{/if}
 			</button>
@@ -618,7 +669,8 @@
 				data-slot="color-picker"
 				class={cn(
 					'relative flex h-10 w-full min-w-0 items-center rounded-md border border-input bg-popover text-base',
-					className
+					className,
+					classNameAlias
 				)}
 			>
 				<button

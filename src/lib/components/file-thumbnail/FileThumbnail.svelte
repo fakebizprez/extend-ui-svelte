@@ -3,7 +3,9 @@
 	Ported from apps/v4/components/extend/file-thumbnail.tsx.
 
 	Deliberate changes from the React version:
-	- previewContent is a Svelte Snippet instead of React.ReactNode.
+	- previewContent is a Svelte Snippet instead of React.ReactNode. `class`
+	  is accepted alongside the upstream `className`. The loading overlay is
+	  inlined instead of exported as FileThumbnailLoadingOverlay.
 	- PDF rendering is built in: pass pdfUrl (or pdfFile) plus pageNumber and
 	  width and the requested page renders onto a canvas through the shared PDF
 	  engine wrapper (dynamically imported on the client). Upstream renders
@@ -35,8 +37,11 @@
 	} from './pdf-thumbnail.js';
 
 	interface Props {
-		file?: ThumbnailFile | File;
+		/** The file being previewed. Required, like upstream. */
+		file: ThumbnailFile | File;
 		className?: string;
+		/** Alias of the upstream `className`. */
+		class?: string;
 		previewAspectRatio?: number;
 		previewClassName?: string;
 		previewContent?: Snippet;
@@ -56,8 +61,8 @@
 	}
 
 	let {
-		file,
 		className,
+		class: classProp,
 		previewAspectRatio,
 		previewClassName,
 		previewContent,
@@ -107,9 +112,6 @@
 	);
 	// CSS aspect-ratio is width / height.
 	const aspectRatio = $derived(previewAspectRatio ?? (pdfActive ? (pdfAspect ?? 1) : 1));
-	const fallbackGlyph = $derived(
-		file?.name.split('.').pop()?.toUpperCase().slice(0, 4) || 'FILE'
-	);
 
 	function cancelImageReveal(): void {
 		if (revealFrame === null) return;
@@ -209,7 +211,7 @@
 	});
 </script>
 
-<div class={['file-thumbnail', className]} class:dark={isDark} data-testid="file-thumbnail">
+<div class={['file-thumbnail', classProp, className]} class:dark={isDark} data-testid="file-thumbnail">
 	<div
 		class={['preview', previewClassName]}
 		class:preview-loading={showLoading}
@@ -255,9 +257,7 @@
 			</div>
 		{/if}
 		{#if showFallback}
-			<div class="fallback" aria-hidden="true" data-testid="file-thumbnail-fallback">
-				{fallbackGlyph}
-			</div>
+			<div class="fallback" aria-hidden="true" data-testid="file-thumbnail-fallback"></div>
 		{/if}
 	</div>
 </div>
@@ -267,7 +267,6 @@
 		--ft-bg: #ffffff;
 		--ft-fg: #111827;
 		--ft-muted: #f3f4f6;
-		--ft-muted-fg: #6b7280;
 		--ft-border: rgba(17, 24, 39, 0.12);
 		position: relative;
 		overflow: hidden;
@@ -281,7 +280,6 @@
 		--ft-bg: #111827;
 		--ft-fg: #f3f4f6;
 		--ft-muted: #1f2937;
-		--ft-muted-fg: #9ca3af;
 		--ft-border: rgba(243, 244, 246, 0.16);
 	}
 
@@ -361,12 +359,6 @@
 	.fallback {
 		position: absolute;
 		inset: 0;
-		display: grid;
-		place-items: center;
 		background: var(--ft-muted);
-		color: var(--ft-muted-fg);
-		font-size: 0.875rem;
-		font-weight: 700;
-		letter-spacing: 0.06em;
 	}
 </style>

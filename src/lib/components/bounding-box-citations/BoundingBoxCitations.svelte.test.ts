@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import BoundingBoxCitations from './BoundingBoxCitations.svelte';
 import type { ReviewField } from './citations.js';
+import { REVIEW_FIELDS } from './review.js';
 
 vi.mock('#lib/engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
@@ -42,191 +43,185 @@ vi.mock('#lib/engines/pdf/index.js', () => ({
 
 const SRC = 'https://example.com/files/statement.pdf';
 
-const FIELDS: ReviewField[] = [
-	{
-		key: 'statement_period',
-		schema: { type: 'string', title: 'Statement period' },
-		actual: 'Jan 1-31, 2026',
-		expected: 'January 1-31, 2026',
-		location: { page: 1, area: { left: 31, top: 30, width: 40, height: 5.8 } }
-	},
-	{
-		key: 'ending_balance',
-		schema: { type: 'number', title: 'Ending balance' },
-		actual: 12840.18,
-		expected: 12858.18,
-		location: { page: 2, area: { left: 13.5, top: 66, width: 73.5, height: 7.5 } }
-	},
-	{
-		key: 'account_details',
-		schema: { type: 'object', title: 'Account details' },
-		actual: { holder: 'Jordan Lee' },
-		expected: { holder: 'Jordan Lee' }
-	}
-];
-
-function boxes(container: HTMLElement): NodeListOf<HTMLElement> {
-	return container.querySelectorAll('[data-testid="citation-box"]');
+function card(key: string): HTMLElement {
+	const element = document.querySelector<HTMLElement>(`[data-review-field="${key}"]`);
+	if (!element) throw new Error(`no card for ${key}`);
+	return element;
 }
 
-describe('BoundingBoxCitations', () => {
-	it('renders the citation list with titles, values, and page badges', async () => {
-		render(BoundingBoxCitations, { src: SRC, fields: FIELDS });
+async function highlight(): Promise<HTMLElement> {
+	return screen.findByTestId('citation-highlight');
+}
 
-		const list = await screen.findByTestId('citation-list');
-		expect(within(list).getByText('Statement period')).toBeVisible();
-		expect(within(list).getByText('Ending balance')).toBeVisible();
-		expect(within(list).getByText('Account details')).toBeVisible();
-		expect(within(list).getByText('January 1-31, 2026')).toBeVisible();
-		expect(within(list).getByText('p. 1')).toBeVisible();
-		expect(within(list).getByText('p. 2')).toBeVisible();
-	});
+function areaOf(element: HTMLElement) {
+	return [element.style.left, element.style.top, element.style.width, element.style.height];
+}
 
-	it('renders overlay boxes on the matching page canvases', async () => {
-		const { container } = render(BoundingBoxCitations, { src: SRC, fields: FIELDS });
+describe('BoundingBoxCitations (HumanReviewBlock)', () => {
+	it('pairs the PDF viewer with the review panel using the upstream sample fields', async () => {
+		render(BoundingBoxCitations, { src: SRC });
 
 		await screen.findByText('Page 1 of 3');
-		const rendered = await screen.findAllByTestId('citation-box');
-		expect(rendered.length).toBeGreaterThanOrEqual(1);
+		expect(screen.getByTestId('citations-viewer-pane')).toBeInTheDocument();
+		expect(screen.getByTestId('human-review-panel')).toBeInTheDocument();
+		for (const field of REVIEW_FIELDS) expect(card(field.key)).toBeInTheDocument();
+	});
 
-		const pageOne = container.querySelector('[data-page-number="1"]');
-		const box = within(pageOne as HTMLElement).getByTestId('citation-box');
-		expect(box).toHaveAttribute('data-field-key', 'statement_period');
-		expect(box.style.left).toBe('31%');
-		expect(box.style.top).toBe('30%');
-		expect(box.style.width).toBe('40%');
-		expect(box.style.height).toBe('5.8%');
-		expect(boxes(container).length).toBeLessThanOrEqual(FIELDS.length);
+	it('highlights the first field on its page by default', async () => {
+		const { container } = render(BoundingBoxCitations, { src: SRC });
+
+		await screen.findByText('Page 1 of 3');
+		const box = await highlight();
+		expect(container.querySelector('[data-page-number="1"]')?.contains(box)).toBe(true);
+		expect(areaOf(box)).toEqual(['31%', '30%', '40%', '5.8%']);
+		expect(card('statement_period')).toHaveAttribute('data-active', 'true');
 	});
 
 	it('preselects the field passed through activeFieldKey', async () => {
 		const { container } = render(BoundingBoxCitations, {
 			src: SRC,
-			fields: FIELDS,
-			activeFieldKey: 'ending_balance'
+			activeFieldKey: 'overdraft_protection_enabled'
 		});
 
 		await screen.findByText('Page 1 of 3');
-		const list = screen.getByTestId('citation-list');
-		const active = within(list).getByRole('button', { name: /Ending balance/ });
-		expect(active).toHaveAttribute('aria-current', 'true');
-		const box = container.querySelector('[data-field-key="ending_balance"]');
-		expect(box?.getAttribute('data-active')).toBe('true');
+		const box = await highlight();
+		expect(container.querySelector('[data-page-number="2"]')?.contains(box)).toBe(true);
+		expect(card('overdraft_protection_enabled')).toHaveAttribute('data-active', 'true');
+		expect(card('statement_period')).toHaveAttribute('data-active', 'false');
 	});
 
-	it('activates a citation from the list and notifies the parent', async () => {
+	it('focusing a field moves the highlight to its box and notifies the parent', async () => {
 		const onFieldFocus = vi.fn();
 		const onActiveFieldChange = vi.fn();
-		render(BoundingBoxCitations, {
+		const { container } = render(BoundingBoxCitations, {
 			src: SRC,
-			fields: FIELDS,
 			onFieldFocus,
 			onActiveFieldChange
 		});
 
-		const list = await screen.findByTestId('citation-list');
 		await screen.findByText('Page 1 of 3');
-		await fireEvent.click(within(list).getByRole('button', { name: /Ending balance/ }));
+		await fireEvent.focusIn(card('overdraft_protection_enabled'));
 
-		expect(onFieldFocus).toHaveBeenCalledTimes(1);
 		expect(onFieldFocus).toHaveBeenCalledWith(
-			expect.objectContaining({ key: 'ending_balance' })
+			expect.objectContaining({ key: 'overdraft_protection_enabled' })
 		);
-		expect(onActiveFieldChange).toHaveBeenCalledTimes(1);
-		expect(onActiveFieldChange).toHaveBeenCalledWith('ending_balance');
+		expect(onActiveFieldChange).toHaveBeenLastCalledWith('overdraft_protection_enabled');
+		expect(card('overdraft_protection_enabled')).toHaveAttribute('data-active', 'true');
+		const box = await highlight();
+		expect(container.querySelector('[data-page-number="2"]')?.contains(box)).toBe(true);
 		expect(
-			within(list).getByRole('button', { name: /Ending balance/ })
-		).toHaveAttribute('aria-current', 'true');
+			container.querySelector('[data-testid="citation-box"][data-field-key="overdraft_protection_enabled"]')
+		).toHaveAttribute('data-active', 'true');
 	});
 
-	it('activates a citation from the overlay box (both directions sync)', async () => {
-		const onActiveFieldChange = vi.fn();
-		const { container } = render(BoundingBoxCitations, {
-			src: SRC,
-			fields: FIELDS,
-			onActiveFieldChange
-		});
+	it('clicking a citation box focuses its field in the panel', async () => {
+		const onFieldFocus = vi.fn();
+		const { container } = render(BoundingBoxCitations, { src: SRC, onFieldFocus });
 
 		await screen.findByText('Page 1 of 3');
-		const rendered = await screen.findAllByTestId('citation-box');
-		expect(rendered.length).toBeGreaterThan(0);
+		const box = container.querySelector<HTMLElement>(
+			'[data-testid="citation-box"][data-field-key="overdraft_protection_enabled"]'
+		);
+		expect(box).not.toBeNull();
+		await fireEvent.click(box!);
 
-		const pageOne = container.querySelector('[data-page-number="1"]');
-		await fireEvent.click(within(pageOne as HTMLElement).getByTestId('citation-box'));
-
-		expect(onActiveFieldChange).toHaveBeenCalledWith('statement_period');
-		const list = screen.getByTestId('citation-list');
-		expect(
-			within(list).getByRole('button', { name: /Statement period/ })
-		).toHaveAttribute('aria-current', 'true');
+		expect(onFieldFocus).toHaveBeenCalledWith(
+			expect.objectContaining({ key: 'overdraft_protection_enabled' })
+		);
+		expect(card('overdraft_protection_enabled')).toHaveAttribute('data-active', 'true');
+		expect(box).toHaveAttribute('data-active', 'true');
 	});
 
-	it('notifies hover through onLocationHover', async () => {
+	it('shows the hovered location and falls back to the active field on leave', async () => {
 		const onLocationHover = vi.fn();
-		render(BoundingBoxCitations, {
-			src: SRC,
-			fields: FIELDS,
-			onLocationHover
-		});
+		render(BoundingBoxCitations, { src: SRC, onLocationHover });
 
-		const list = await screen.findByTestId('citation-list');
-		const item = within(list).getByRole('button', { name: /Statement period/ });
-		await fireEvent.mouseEnter(item);
-		expect(onLocationHover).toHaveBeenCalledWith(
-			expect.objectContaining({ page: 1 })
-		);
-		await fireEvent.mouseLeave(item);
+		await screen.findByText('Page 1 of 3');
+		await fireEvent.mouseEnter(card('ending_balance'));
+		expect(areaOf(await highlight())).toEqual(['13.5%', '66%', '73.5%', '7.5%']);
+		expect(onLocationHover).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }));
+
+		await fireEvent.mouseLeave(card('ending_balance'));
 		expect(onLocationHover).toHaveBeenLastCalledWith(undefined);
 	});
 
-	it('selects fields without a location but renders no box for them', async () => {
-		const onActiveFieldChange = vi.fn();
-		const { container } = render(BoundingBoxCitations, {
-			src: SRC,
-			fields: FIELDS,
-			onActiveFieldChange
-		});
-
-		const list = await screen.findByTestId('citation-list');
-		await screen.findByText('Page 1 of 3');
-		await fireEvent.click(
-			within(list).getByRole('button', { name: /Account details/ })
-		);
-
-		expect(onActiveFieldChange).toHaveBeenCalledWith('account_details');
-		expect(container.querySelector('[data-field-key="account_details"]')).toBeNull();
-	});
-
-	it('reflects the parent-controlled dark mode', async () => {
-		const { unmount } = render(BoundingBoxCitations, {
-			src: SRC,
-			fields: FIELDS,
-			isDark: false
-		});
-
-		const root = await screen.findByTestId('bounding-box-citations');
-		expect(root).toHaveAttribute('data-dark', 'false');
-		expect(root.classList.contains('dark')).toBe(false);
-		unmount();
-
-		render(BoundingBoxCitations, { src: SRC, fields: FIELDS, isDark: true });
-		const darkRoot = await screen.findByTestId('bounding-box-citations');
-		expect(darkRoot).toHaveAttribute('data-dark', 'true');
-		expect(darkRoot.classList.contains('dark')).toBe(true);
-	});
-
-	it('forwards the viewer dark-mode toggle to the parent', async () => {
-		const onIsDarkChange = vi.fn();
+	it('resolves locations from citation metadata', async () => {
+		const fields: ReviewField[] = [
+			{
+				key: 'total',
+				schema: { type: 'number', title: 'Total' },
+				actual: 1,
+				expected: 2
+			}
+		];
 		render(BoundingBoxCitations, {
 			src: SRC,
-			fields: FIELDS,
-			isDark: false,
-			onIsDarkChange
+			fields,
+			metadata: {
+				total: {
+					citations: [
+						{
+							page: 3,
+							pageWidth: 200,
+							pageHeight: 100,
+							polygon: [
+								{ x: 20, y: 10 },
+								{ x: 60, y: 10 },
+								{ x: 60, y: 30 },
+								{ x: 20, y: 30 }
+							]
+						}
+					]
+				}
+			}
 		});
 
-		const toggle = await screen.findByRole('switch', { name: 'Toggle dark mode' });
-		await fireEvent.click(toggle);
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+		await screen.findByText('Page 1 of 3');
+		const box = await highlight();
+		expect(box).toHaveAttribute('data-page', '3');
+		expect(areaOf(box)).toEqual(['10%', '10%', '20%', '20%']);
+	});
+
+	it('accepts the upstream `file` prop and merges class with className', async () => {
+		render(BoundingBoxCitations, { file: SRC, class: 'one', className: 'two' });
+
+		await screen.findByText('Page 1 of 3');
+		const root = screen.getByTestId('bounding-box-citations');
+		expect(root).toHaveClass('one', 'two');
+	});
+
+	it('reflects the parent-controlled dark mode in the viewer and panel', async () => {
+		render(BoundingBoxCitations, { src: SRC, isDark: true });
+
+		const root = await screen.findByTestId('bounding-box-citations');
+		expect(root).toHaveAttribute('data-dark', 'true');
+		expect(root).toHaveClass('dark');
+		expect(screen.getByTestId('human-review-panel')).toHaveClass('dark');
+	});
+
+	it('resizes the review pane from the keyboard and remembers the size', async () => {
+		const store = new Map<string, string>();
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value)
+		});
+		render(BoundingBoxCitations, { src: SRC });
+
+		const handle = screen.getByRole('separator', { name: 'Resize review panel' });
+		expect(handle).toHaveAttribute('aria-valuenow', '42');
+		await fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+		expect(handle).toHaveAttribute('aria-valuenow', '44');
+		expect(store.get('pdf-block-bounding-box-citations')).toBe('44');
+		await fireEvent.keyDown(handle, { key: 'End' });
+		expect(handle).toHaveAttribute('aria-valuenow', '60');
+		vi.unstubAllGlobals();
+	});
+
+	it('restores a remembered pane size', async () => {
+		vi.stubGlobal('localStorage', { getItem: () => '55', setItem: () => {} });
+		render(BoundingBoxCitations, { src: SRC });
+		const handle = screen.getByRole('separator', { name: 'Resize review panel' });
+		await vi.waitFor(() => expect(handle).toHaveAttribute('aria-valuenow', '55'));
+		vi.unstubAllGlobals();
 	});
 });
