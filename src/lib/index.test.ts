@@ -5,7 +5,14 @@ import { describe, expect, it } from 'vitest';
 import * as root from './index';
 
 const COMPONENTS: Record<string, string[]> = {
-	'bounding-box-citations': ['BoundingBoxCitations', 'HumanReviewBlock', 'HumanReviewPanel'],
+	'bounding-box-citations': [
+		'BoundingBoxCitations',
+		'HumanReviewBlock',
+		'HumanReviewPanel',
+		'HumanReviewHighlight',
+		'JsonDiffView',
+		'JsonCodeView'
+	],
 	'color-picker': ['ColorPicker', 'ColorPickerPanel'],
 	'csv-tsv-viewer': ['CsvTsvViewer', 'CsvViewer'],
 	'document-splits': ['DocumentSplits'],

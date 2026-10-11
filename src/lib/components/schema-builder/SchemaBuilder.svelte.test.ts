@@ -1,5 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 import { describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import SchemaBuilder, {
 	SAMPLE_SCHEMA,
@@ -375,6 +376,13 @@ describe('SchemaBuilder round-2 fixes', () => {
 		});
 		expect(screen.getByTestId('schema-builder-output')).toHaveTextContent('"controlled"');
 		expect(screen.getByTestId('schema-builder-output')).not.toHaveTextContent('"rejected"');
+		// Like a React controlled input, the field itself shows the schema again.
+		await tick();
+		expect(within(getFieldRows()[0]).getByLabelText('Field key')).toHaveValue('controlled');
+		const required = within(getFieldRows()[0]).getByLabelText('Required') as HTMLInputElement;
+		await fireEvent.click(required);
+		await tick();
+		expect(required.checked).toBe(false);
 
 		// The parent accepts the change: it renders.
 		await rerender({ schema: onSchemaChange.mock.calls[0][0] as SchemaBuilderSchema });

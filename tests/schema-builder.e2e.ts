@@ -119,3 +119,21 @@ test('array-of-object items accept new properties', async ({ page }) => {
 		.poll(async () => Object.keys((await emitted(page)).properties?.lines?.items?.properties ?? {}))
 		.toContain('sku');
 });
+
+test('a controlled builder shows the schema again after the parent rejects an edit', async ({
+	page
+}) => {
+	await page.goto('/schema-builder/controlled');
+	await page.waitForLoadState('networkidle');
+	const row = page.getByTestId('schema-builder-field').first();
+	const key = row.getByLabel('Field key');
+	await expect(key).toHaveValue('vendor');
+
+	await key.fill('changed');
+	await expect(page.getByTestId('rejected-count')).not.toHaveText('Rejected edits: 0');
+	await expect(key).toHaveValue('vendor');
+
+	const required = row.getByLabel('Required');
+	await required.click();
+	await expect(required).not.toBeChecked();
+});

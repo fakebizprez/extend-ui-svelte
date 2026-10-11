@@ -2,10 +2,9 @@
 // Ported from apps/v4/components/extend/layout-blocks.tsx.
 //
 // Deliberate changes from the React version:
-// - Markdown renders with marked (already a dependency) instead of
-//   react-markdown + rehype-sanitize. Raw HTML in block text is sanitized with
-//   a small built-in scrubber (script/style tags and event-handler attributes
-//   are removed) since no HTML sanitizer dependency is available.
+// - Markdown renders with marked instead of react-markdown. The HTML it
+//   produces is sanitized with hast-util-sanitize (the library under upstream's
+//   rehype-sanitize) using upstream's OCR_MARKDOWN_SCHEMA.
 // - blockToArea returns a CSS declaration string for Svelte `style`
 //   attributes instead of a React.CSSProperties object.
 import { fromHtml } from 'hast-util-from-html';

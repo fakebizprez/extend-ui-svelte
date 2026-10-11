@@ -224,9 +224,13 @@
 	let status = $state<Status>('idle');
 	let errorMessage = $state('');
 	let exporting = $state(false);
-	// Like upstream's remount on key={src}: an upload applies only while src is unchanged.
+	// Like upstream's remount on key={src}: an upload applies only while src is
+	// unchanged, and a src change discards it for good.
 	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
 	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
+	$effect.pre(() => {
+		if (upload && upload.sourceUrl !== src) upload = null;
+	});
 	let blockStyle = $state('p');
 	let zoomScale = $state(untrack(() => normalizeZoomScale(defaultZoomScale)));
 	// Like upstream, zoom returns to defaultZoomScale when it or src changes.

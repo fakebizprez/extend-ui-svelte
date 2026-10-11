@@ -55,7 +55,10 @@ export {
 export {
 	BoundingBoxCitations,
 	HumanReviewBlock,
+	HumanReviewHighlight,
 	HumanReviewPanel,
+	JsonCodeView,
+	JsonDiffView,
 	type BoundingBoxCitationsProps,
 	type HumanReviewPanelProps
 } from './components/bounding-box-citations/index.js';

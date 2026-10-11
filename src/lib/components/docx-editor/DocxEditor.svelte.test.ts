@@ -94,6 +94,11 @@ describe('DocxEditor', () => {
 
 		await vi.waitFor(() => expect(content()).toHaveTextContent('TEXT OF https://example.com/b.docx'));
 		expect(content()).not.toHaveTextContent('UPLOADED TEXT');
+
+		// Upstream remounts on src, so returning to the first src does not bring the upload back.
+		await rerender({ ...DARK, src: 'https://example.com/a.docx' });
+		await vi.waitFor(() => expect(content()).toHaveTextContent('TEXT OF https://example.com/a.docx'));
+		expect(content()).not.toHaveTextContent('UPLOADED TEXT');
 	});
 
 	it('resets zoom when defaultZoomScale or src changes, like upstream', async () => {

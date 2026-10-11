@@ -260,6 +260,20 @@ describe('FileSystem', () => {
 		expect(screen.queryByRole('treeitem', { selected: true })).not.toBeInTheDocument();
 	});
 
+	it('keeps a parent-set selection while items are still loading', async () => {
+		const onSelectionChange = vi.fn();
+		const { rerender } = render(FileSystem, {
+			items: [],
+			selectedPath: 'readme.txt',
+			onSelectionChange
+		});
+
+		await rerender({ items: ITEMS, selectedPath: 'readme.txt' });
+
+		expect(onSelectionChange).not.toHaveBeenCalled();
+		expect(screen.getByRole('treeitem', { selected: true })).toHaveTextContent('readme.txt');
+	});
+
 	it('type-ahead focuses the next visible entry by name prefix, like upstream', async () => {
 		vi.useFakeTimers();
 		try {

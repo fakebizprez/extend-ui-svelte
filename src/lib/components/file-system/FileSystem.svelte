@@ -105,10 +105,18 @@
 		onSelectionChange?.(entry);
 	}
 
-	// Like upstream, a selected entry that disappears clears the selection.
+	// Like upstream, a selected entry that disappears clears the selection. A
+	// parent-set path that has not appeared yet (items still loading) is kept.
+	let presentPath: string | null = null;
 	$effect(() => {
 		const path = selectedPath;
-		if (path === null || index.files.has(path) || index.folders.has(path)) return;
+		if (path === null) return;
+		if (index.files.has(path) || index.folders.has(path)) {
+			presentPath = path;
+			return;
+		}
+		if (presentPath !== path) return;
+		presentPath = null;
 		selectedPath = null;
 		onSelectionChange?.(null);
 	});

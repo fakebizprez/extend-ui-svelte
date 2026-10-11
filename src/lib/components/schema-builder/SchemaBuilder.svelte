@@ -323,7 +323,7 @@
 </script>
 
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 
 	interface Props {
 		/** Uncontrolled starting schema. Defaults to SAMPLE_SCHEMA, like upstream. */
@@ -371,11 +371,34 @@
 		}
 	});
 
+	// Like a React controlled input: after an edit in controlled mode, each field
+	// shows what the schema says, so an edit the parent rejected does not linger.
+	const controlledFields = new Map<HTMLInputElement | HTMLSelectElement, () => string | boolean>();
+	function syncField(read: () => string | boolean) {
+		return (node: HTMLInputElement | HTMLSelectElement) => {
+			controlledFields.set(node, read);
+			return () => controlledFields.delete(node);
+		};
+	}
+
+	function resyncFields(): void {
+		for (const [node, read] of controlledFields) {
+			const value = read();
+			if (typeof value === 'boolean') {
+				if (node instanceof HTMLInputElement && node.checked !== value) node.checked = value;
+			} else if (node.value !== value) {
+				node.value = value;
+			}
+		}
+	}
+
 	// Like upstream: controlled mode only reports the edit; the parent decides.
 	function commit(next: SchemaBuilderSchema): void {
 		const plain = $state.snapshot(next) as SchemaBuilderSchema;
 		if (schema === undefined) uncontrolled = plain;
 		onSchemaChange?.(plain);
+		// Runs after the parent's update (if any) has rendered.
+		if (schema !== undefined) void tick().then(resyncFields);
 	}
 
 	function updateProperties(
@@ -542,6 +565,7 @@
 					aria-label="Enum value"
 					placeholder="Value"
 					value={enumValue.value}
+					{@attach syncField(() => enumValue.value)}
 					oninput={(event) =>
 						onChange(
 							values.map((value) =>
@@ -554,6 +578,7 @@
 					aria-label="Enum description"
 					placeholder="Description (optional)"
 					value={enumValue.description}
+					{@attach syncField(() => enumValue.description)}
 					oninput={(event) =>
 						onChange(
 							values.map((value) =>
@@ -598,11 +623,13 @@
 				aria-label="Field key"
 				placeholder="Field name"
 				value={property.key}
+				{@attach syncField(() => property.key)}
 				oninput={(event) => patchProperty(property.id, { key: event.currentTarget.value })}
 			/>
 			<select
 				aria-label="Field type"
 				value={property.type}
+				{@attach syncField(() => property.type)}
 				onchange={(event) =>
 					setPropertyType(property.id, event.currentTarget.value as SchemaBuilderFieldType)}
 			>
@@ -615,6 +642,7 @@
 					type="checkbox"
 					aria-label="Required"
 					checked={property.required ?? false}
+					{@attach syncField(() => property.required ?? false)}
 					onchange={(event) => patchProperty(property.id, { required: event.currentTarget.checked })}
 				/>
 				Required
@@ -624,6 +652,7 @@
 				aria-label="Description"
 				placeholder="Description (optional)"
 				value={property.description}
+				{@attach syncField(() => property.description)}
 				oninput={(event) => patchProperty(property.id, { description: event.currentTarget.value })}
 			/>
 			<button type="button" onclick={() => removeProperty(property.id)}>Remove field</button>
@@ -643,6 +672,7 @@
 						<select
 							aria-label="Array item type"
 							value={property.items?.type ?? 'string'}
+							{@attach syncField(() => property.items?.type ?? 'string')}
 							onchange={(event) =>
 								setArrayItemType(
 									property.id,
