@@ -122,6 +122,7 @@
 	// svelte-ignore state_referenced_locally: `src` intentionally seeds the initial status only.
 	let status = $state<'empty' | 'loading' | 'ready' | 'error'>(src ? 'loading' : 'empty');
 	let numPages = $state(0);
+	let engineFailed = $state(false);
 	let pageSizes: PdfPageSize[] = $state.raw([]);
 	/** Rotation added per page index, in degrees; pages without an entry are unrotated. */
 	let pageRotations: ReadonlyMap<number, number> = $state.raw(new Map());
@@ -225,7 +226,12 @@
 				onActivePageChange?.(page);
 			});
 			engine = created;
-		})();
+		})().catch(() => {
+			// Like upstream, a failed engine load is an error state, not an endless spinner.
+			if (cancelled) return;
+			engineFailed = true;
+			status = 'error';
+		});
 		return () => {
 			cancelled = true;
 			unsubscribe?.();
@@ -541,7 +547,7 @@
 		<div class="pdf-state" role="status">Loading PDF…</div>
 	{:else if status === 'error'}
 		<div class="pdf-state pdf-error" role="alert">
-			Unable to load the PDF preview.
+			{engineFailed ? 'Unable to load the PDF engine.' : 'Unable to load the PDF preview.'}
 		</div>
 	{:else if !effectiveSrc}
 		<div class="pdf-state">

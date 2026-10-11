@@ -1,11 +1,14 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI WorkbookSheetTabs (xlsx-viewer). Upstream: extend-hq/ui (MIT).
 	The sheet tab strip shared by XlsxViewer and XlsxEditor. Like upstream it
-	renders nothing for a single-sheet workbook and behaves like Radix Tabs:
-	only the active tab is in the tab order, and the arrow keys, Home, and End
-	switch sheets. Differences from upstream: it takes the sheet names and the
-	active index as props (upstream reads them from the react-xlsx context and
-	takes only workbookIdentity), and has no hover thumbnail previews.
+	renders nothing for a single-sheet workbook and behaves like Base UI Tabs
+	with its defaults (upstream sets no activateOnFocus): the arrow keys, Home,
+	and End move focus only, looping at the ends; Enter or Space activates the
+	focused tab; clicking the active tab does nothing. Only the focused tab is
+	in the tab order, and it returns to the active tab when focus leaves.
+	Differences from upstream: it takes the sheet names and the active index as
+	props (upstream reads them from the react-xlsx context and takes only
+	workbookIdentity), and has no hover thumbnail previews.
 	Colors come from the host's --xlsx-* custom properties.
 -->
 <script lang="ts">
@@ -21,18 +24,27 @@
 	let { sheets, activeSheetIndex, onActiveSheetIndexChange }: Props = $props();
 
 	let tabs: HTMLButtonElement[] = $state([]);
+	let list: HTMLDivElement | null = $state(null);
+	// The tab in the tab order: follows keyboard focus, else the active tab.
+	let highlighted = $state(0);
+
+	// Keep the highlight on the active tab unless focus is inside the list.
+	$effect(() => {
+		const active = activeSheetIndex;
+		if (!list?.contains(document.activeElement)) highlighted = active;
+	});
 
 	function handleKeydown(event: KeyboardEvent): void {
 		const last = sheets.length - 1;
 		const next =
 			event.key === 'ArrowRight'
-				? activeSheetIndex >= last
+				? highlighted >= last
 					? 0
-					: activeSheetIndex + 1
+					: highlighted + 1
 				: event.key === 'ArrowLeft'
-					? activeSheetIndex <= 0
+					? highlighted <= 0
 						? last
-						: activeSheetIndex - 1
+						: highlighted - 1
 					: event.key === 'Home'
 						? 0
 						: event.key === 'End'
@@ -40,23 +52,39 @@
 							: null;
 		if (next === null) return;
 		event.preventDefault();
-		onActiveSheetIndexChange(next);
+		highlighted = next;
 		tabs[next]?.focus();
+	}
+
+	// Enter and Space reach here as native button clicks.
+	function activate(index: number): void {
+		highlighted = index;
+		if (index !== activeSheetIndex) onActiveSheetIndexChange(index);
+	}
+
+	function handleFocusout(event: FocusEvent): void {
+		if (!list?.contains(event.relatedTarget as Node | null)) highlighted = activeSheetIndex;
 	}
 </script>
 
 {#if sheets.length > 1}
-	<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
+	<div
+		class="xlsx-tabs"
+		role="tablist"
+		aria-label="Sheets"
+		bind:this={list}
+		onfocusout={handleFocusout}
+	>
 		{#each sheets as name, i (name)}
 			<button
 				type="button"
 				role="tab"
 				data-testid="sheet-tab"
 				aria-selected={i === activeSheetIndex}
-				tabindex={i === activeSheetIndex ? 0 : -1}
+				tabindex={i === highlighted ? 0 : -1}
 				class:active={i === activeSheetIndex}
 				bind:this={tabs[i]}
-				onclick={() => onActiveSheetIndexChange(i)}
+				onclick={() => activate(i)}
 				onkeydown={handleKeydown}
 			>
 				{name}

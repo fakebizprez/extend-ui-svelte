@@ -249,3 +249,60 @@ test('hyperlinks with javascript:, data:, or vbscript: targets never run when cl
 		HOSTILE_LINKS['SAFE LINK']
 	);
 });
+
+// A 4x4 opaque red PNG.
+const RED_PNG = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEklEQVR4nGP4z8CAB+GTG8HSALfKY52fTcuYAAAAAElFTkSuQmCC',
+	'base64'
+);
+
+/** The fixture rebuilt around a legacy VML picture (w:pict / v:imagedata) of RED_PNG. */
+async function vmlPictureDocx(): Promise<Buffer> {
+	const zip = await JSZip.loadAsync(readFileSync('tests/fixtures/sample.docx'));
+	const types = await zip.file('[Content_Types].xml')!.async('string');
+	zip.file(
+		'[Content_Types].xml',
+		types.replace('<Default Extension="xml"', '<Default Extension="png" ContentType="image/png"/><Default Extension="xml"')
+	);
+	zip.file('word/media/red.png', RED_PNG);
+	zip.file(
+		'word/_rels/document.xml.rels',
+		'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			'<Relationship Id="rIdVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/red.png"/>' +
+			'</Relationships>'
+	);
+	zip.file(
+		'word/document.xml',
+		'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml">' +
+			'<w:body><w:p><w:r><w:t>VML PICTURE</w:t></w:r></w:p><w:p><w:r><w:pict>' +
+			'<v:shape id="pic" style="width:120pt;height:60pt"><v:imagedata r:id="rIdVml"/></v:shape>' +
+			'</w:pict></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>'
+	);
+	return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+test('legacy VML pictures keep their embedded data:image source and render', async ({ page }) => {
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	await expect(page.getByTestId('docx-container')).toContainText(EXPECTED_TEXT, {
+		timeout: 20000
+	});
+
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'vml.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await vmlPictureDocx()
+	});
+	const documentEl = page.getByTestId('docx-container');
+	await expect(documentEl).toContainText('VML PICTURE', { timeout: 20000 });
+
+	const image = documentEl.locator('svg image');
+	await expect(image).toHaveCount(1);
+	await expect(image).toHaveAttribute('href', /^data:image\/png;base64,/);
+	// The picture actually paints: it has a non-zero on-screen box.
+	const box = await image.boundingBox();
+	expect(box?.width ?? 0).toBeGreaterThan(0);
+	expect(box?.height ?? 0).toBeGreaterThan(0);
+});

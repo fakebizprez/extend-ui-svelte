@@ -184,3 +184,17 @@ test('the signature pad stays white in dark mode, like upstream', async ({
 	await expect(darkPad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });
 	await expect(darkPad).toHaveCSS('background-color', 'rgb(255, 255, 255)');
 });
+
+test('several instances on the page add no duplicate landmarks (axe landmark-unique)', async ({
+	page
+}) => {
+	await page.goto('/e-signature');
+	await expect(page.getByTestId('e-signature')).toHaveCount(3);
+
+	const names = await page.evaluate(() =>
+		[...document.querySelectorAll('section[aria-label], aside, nav, main, [role="region"]')]
+			.filter((element) => element.closest('[data-testid="e-signature"]'))
+			.map((element) => element.getAttribute('aria-label'))
+	);
+	expect(names).toEqual([]);
+});

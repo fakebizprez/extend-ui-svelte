@@ -119,6 +119,16 @@ const THEME = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </a:themeElements>
 </a:theme>`;
 
+/**
+ * @param {number} id
+ * @param {string} name
+ * @param {number} x
+ * @param {number} y
+ * @param {number} cx
+ * @param {number} cy
+ * @param {string} text
+ * @param {number} sizePt
+ */
 function textBox(id, name, x, y, cx, cy, text, sizePt) {
 	return `<p:sp>
       <p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
@@ -127,6 +137,7 @@ function textBox(id, name, x, y, cx, cy, text, sizePt) {
     </p:sp>`;
 }
 
+/** @param {string} shapes */
 function slideXml(shapes) {
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">

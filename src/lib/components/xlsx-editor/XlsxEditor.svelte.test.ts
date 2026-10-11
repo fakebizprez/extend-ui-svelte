@@ -412,10 +412,28 @@ describe('XlsxEditor', () => {
 	it('keeps focus on the sheet tab when switching sheets from the keyboard', async () => {
 		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
+		const inventory = screen.getByRole('tab', { name: 'Inventory' });
+		inventory.focus();
 
-		await fireEvent.keyDown(screen.getByRole('tab', { name: 'Inventory' }), { key: 'ArrowRight' });
+		await fireEvent.keyDown(inventory, { key: 'ArrowRight' });
+		const summary = screen.getByRole('tab', { name: 'Summary' });
+		await fireEvent.click(summary);
 		expect(await screen.findByRole('gridcell', { name: 'Total SKUs' })).toBeVisible();
-		expect(screen.getByRole('tab', { name: 'Summary' })).toHaveFocus();
+		expect(summary).toHaveFocus();
+	});
+
+	it('keeps the selected cell when the active sheet tab is clicked again', async () => {
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
+		await gridLoaded();
+		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('B2');
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Inventory' }));
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('B2');
+		expect(screen.getByRole('gridcell', { name: 'Resistor kit' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
 	});
 
 	it('accepts className as an alias of class and exports the upstream name', async () => {

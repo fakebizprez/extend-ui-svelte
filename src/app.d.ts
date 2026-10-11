@@ -9,6 +9,13 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		/** Test hook set by the /engines/docx harness page for Playwright. */
+		__docxHarness?: {
+			render: (bytes: number[]) => Promise<import('$lib/engines/docx/index.js').DocxRenderResult>;
+		};
+	}
 }
 
 export {};

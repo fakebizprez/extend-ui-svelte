@@ -9,7 +9,7 @@
 	import ToggleGroupItem, { type ToggleGroupItemProps } from './ToggleGroupItem.svelte';
 
 	interface HarnessItem {
-		value: string;
+		value?: string;
 		label: string;
 		disabled?: boolean;
 	}
@@ -32,7 +32,7 @@
 </script>
 
 <ToggleGroup {...rest}>
-	{#each items as item (item.value)}
+	{#each items as item (item.label)}
 		<ToggleGroupItem value={item.value} disabled={item.disabled} className={itemClassName}
 			onclick={itemOnclick}
 			onPressedChange={itemOnPressedChange}

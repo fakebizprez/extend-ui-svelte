@@ -94,7 +94,16 @@ describe('renderDocx link and markup sanitizing', () => {
 		'<iframe src="https://example.com"></iframe>',
 		'<object data="x.swf"></object>',
 		'<embed src="x.swf">',
-		'<svg><a id="svg-link" xlink:href="javascript:alert(1)"><text>svg</text></a></svg>'
+		'<svg><a id="svg-link" xlink:href="javascript:alert(1)"><text>svg</text></a></svg>',
+		'<a id="data-image-link" href="data:image/png;base64,AAAA">image link</a>',
+		// docx-preview renders VML pictures (older Word files) as SVG <image href="data:...">.
+		'<svg><image id="vml-image" href="data:image/png;base64,VMLA" width="100%"></image></svg>',
+		'<svg><image id="vml-xlink" xlink:href="data:image/png;base64,VMLB"></image></svg>',
+		'<img id="blob-image" src="blob:https://example.com/0f1e">',
+		'<svg><image id="js-image" href="javascript:alert(1)"></image></svg>',
+		'<svg><image id="html-image" href="data:text/html,<script>alert(1)</script>"></image></svg>',
+		'<img id="js-img" src="javascript:alert(1)">',
+		'<img id="vb-img" src=" VBScript:msgbox(1)">'
 	].join('');
 
 	async function renderHostile(): Promise<HTMLElement> {
@@ -119,6 +128,22 @@ describe('renderDocx link and markup sanitizing', () => {
 		expect(href('mail')).toBe('mailto:legal@example.com');
 		expect(href('tel')).toBe('tel:+15550100');
 		expect(href('anchor')).toBe('#section-2');
+	});
+
+	it('keeps data:image and blob: image sources (VML pictures) but drops script sources', async () => {
+		const container = await renderHostile();
+		const attr = (id: string, name: string) =>
+			container.querySelector(`#${id}`)?.getAttribute(name) ?? null;
+
+		expect(attr('vml-image', 'href')).toBe('data:image/png;base64,VMLA');
+		expect(attr('vml-xlink', 'xlink:href')).toBe('data:image/png;base64,VMLB');
+		expect(attr('blob-image', 'src')).toBe('blob:https://example.com/0f1e');
+		expect(attr('js-image', 'href')).toBeNull();
+		expect(attr('html-image', 'href')).toBeNull();
+		expect(attr('js-img', 'src')).toBeNull();
+		expect(attr('vb-img', 'src')).toBeNull();
+		// A data: URL is still not a safe link target, even for an image.
+		expect(attr('data-image-link', 'href')).toBeNull();
 	});
 
 	it('strips event-handler attributes and script, iframe, object, and embed elements', async () => {

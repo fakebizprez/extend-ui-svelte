@@ -34,7 +34,8 @@ describe('loadDeck', () => {
 
 	it('accepts an ArrayBuffer as well as a Uint8Array', async () => {
 		const bytes = fixtureBytes();
-		const deck = await loadDeck(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+		const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+		const deck = await loadDeck(buffer);
 
 		expect(deck.slideCount).toBe(2);
 		deck.destroy();

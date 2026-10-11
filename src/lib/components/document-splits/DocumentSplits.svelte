@@ -411,8 +411,8 @@
 						<div class="split-range">{createPageRangeLabel(group.pages)}</div>
 					</div>
 					<div class="split-group-actions">
-						<span class="split-count" aria-label={`${group.pages.length} pages`}>
-							{group.pages.length}
+						<span class="split-count">
+							{group.pages.length}<span class="visually-hidden">{' pages'}</span>
 						</span>
 						<button
 							type="button"

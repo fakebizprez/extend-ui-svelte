@@ -108,7 +108,7 @@ test('toggle dark mode follows the parent toggle outside the component', async (
 	for (const toggle of await toggles.all()) await expect(toggle).toHaveClass(/\bdark\b/);
 });
 
-test('each toggle group is one Tab stop that lands on the pressed item and follows focus', async ({
+test('each toggle group is one Tab stop that starts on its first item and follows focus', async ({
 	page
 }) => {
 	const alignment = page.getByRole('group', { name: 'Text alignment' });
@@ -151,4 +151,32 @@ test('a consumer onclick or onkeydown runs and the built-in behavior still runs'
 	await page.keyboard.press('ArrowRight');
 	await expect(page.getByTestId('font-size-key')).toHaveText('Last key: ArrowRight');
 	await expect(large).toBeFocused();
+});
+
+test('Tab enters a group on its first item even when a later item is pressed', async ({ page }) => {
+	const vertical = page.getByRole('group', { name: 'View mode' });
+	await expect(vertical.getByRole('button', { name: 'Grid view' })).toHaveAttribute('aria-pressed', 'true');
+
+	await page.getByRole('group', { name: 'Text formatting' }).getByRole('button', { name: 'Bold' }).focus();
+	await page.keyboard.press('Tab');
+	await expect(vertical.getByRole('button', { name: 'List view' })).toBeFocused();
+});
+
+test('an item added at the front of a group takes the Tab stop', async ({ page }) => {
+	const add = page.getByRole('button', { name: 'Add XS at the front' });
+	await add.click();
+	const sizes = page.getByRole('group', { name: 'Sizes' });
+	await expect(sizes.getByRole('button')).toHaveText(['XS', 'S', 'M', 'L']);
+
+	await add.focus();
+	await page.keyboard.press('Tab');
+	await expect(sizes.getByRole('button', { name: 'XS' })).toBeFocused();
+});
+
+test('a group item without a value still toggles, like Base UI', async ({ page }) => {
+	const group = page.getByRole('group', { name: 'Font size' });
+	const auto = group.getByRole('button', { name: 'Auto size' });
+	await auto.click();
+	await expect(auto).toHaveAttribute('aria-pressed', 'true');
+	await expect(group.getByRole('button', { name: 'Small text' })).toHaveAttribute('aria-pressed', 'false');
 });

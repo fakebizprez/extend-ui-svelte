@@ -22,6 +22,7 @@
 	let consumerClicks = $state(0);
 	let lastKey = $state('none');
 	let largePressed = $state('not reported');
+	let sizes = $state(['s', 'm', 'l']);
 </script>
 
 <h1>Toggle</h1>
@@ -102,7 +103,8 @@
 </p>
 
 <h2>Vertical</h2>
-<ToggleGroup aria-label="View mode" orientation="vertical" defaultValue={['list']} {isDark}>
+<p>Grid starts pressed, but Tab enters the group on its first item, like Base UI.</p>
+<ToggleGroup aria-label="View mode" orientation="vertical" defaultValue={['grid']} {isDark}>
 	<ToggleGroupItem value="list" aria-label="List view" {isDark}>List</ToggleGroupItem>
 	<ToggleGroupItem value="grid" aria-label="Grid view" {isDark}>Grid</ToggleGroupItem>
 </ToggleGroup>
@@ -138,9 +140,21 @@
 	>
 		Large
 	</ToggleGroupItem>
+	<!-- No value: the item gets a generated id, like Base UI. -->
+	<ToggleGroupItem aria-label="Auto size" {isDark}>Auto</ToggleGroupItem>
 </ToggleGroup>
 <p data-testid="font-size-key">Last key: {lastKey}</p>
 <p data-testid="large-pressed">Large pressed: {largePressed}</p>
+
+<h2>Items added later</h2>
+<button type="button" onclick={() => (sizes = ['xs', ...sizes])} disabled={sizes[0] === 'xs'}>
+	Add XS at the front
+</button>
+<ToggleGroup aria-label="Sizes" {isDark}>
+	{#each sizes as size (size)}
+		<ToggleGroupItem value={size} {isDark}>{size.toUpperCase()}</ToggleGroupItem>
+	{/each}
+</ToggleGroup>
 
 <h2>Disabled group</h2>
 <ToggleGroup aria-label="Disabled group" disabled defaultValue={['a']} {isDark}>
@@ -165,6 +179,12 @@
 			handler, like Base UI. To skip the built-in behavior, call
 			<code>event.preventDefault()</code>; Base UI's <code>event.preventBaseUIHandler()</code>
 			does not exist on DOM events.
+		</li>
+		<li>
+			The Tab stop starts on the first item in DOM order and then follows focus, like Base UI
+			1.4.1. Two deliberate changes: when the first item is disabled the stop moves to the next
+			enabled item (Base UI leaves the group with no Tab stop), and the remembered stop follows
+			the focused item rather than its position when items are added or removed.
 		</li>
 		<li>
 			<code>className</code> and <code>class</code> are both accepted; <code>children</code> is

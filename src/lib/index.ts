@@ -1,7 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 
 // Reexport your entry components here
-export { default as Placeholder } from './Placeholder.svelte';
 export {
 	CsvTsvViewer,
 	CsvViewer,

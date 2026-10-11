@@ -35,6 +35,16 @@ describe('published package', () => {
 		expect(extensionless).toEqual([]);
 	});
 
+	it('keeps test-only harness components out of the published files', () => {
+		expect(packageJson.files).toContain('!dist/**/*Harness.svelte');
+		expect(packageJson.files).toContain('!dist/**/*Harness.svelte.d.ts');
+	});
+
+	it('does not ship the scaffold Placeholder component', async () => {
+		const root = await import('./index');
+		expect('Placeholder' in root).toBe(false);
+	});
+
 	it('exposes each component folder as a package subpath', () => {
 		const exports = packageJson.exports as Record<string, unknown>;
 		expect(exports['./components/*']).toEqual({

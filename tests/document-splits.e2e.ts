@@ -152,3 +152,16 @@ test('docs do not list upstream\'s Remove button as a port addition', async ({ p
 	await expect(differences).toContainText('rename a split');
 	await expect(differences).not.toContainText('remove a split');
 });
+
+test('no aria-label sits on a role-less span or div (axe aria-prohibited-attr)', async ({ page }) => {
+	await gotoLoadedSplits(page);
+
+	const offenders = await page
+		.getByTestId('document-splits')
+		.evaluate((root) =>
+			[...root.querySelectorAll('span[aria-label], div[aria-label]')]
+				.filter((element) => !element.getAttribute('role'))
+				.map((element) => element.outerHTML)
+		);
+	expect(offenders).toEqual([]);
+});

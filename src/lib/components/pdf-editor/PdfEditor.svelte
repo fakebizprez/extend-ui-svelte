@@ -223,7 +223,12 @@
 			const { createPdfEngine } = await import('../../engines/pdf/index.js');
 			if (cancelled) return;
 			engine = createPdfEngine();
-		})();
+		})().catch(() => {
+			// Upstream shows this as an error state; onDocumentLoadError is only for documents.
+			if (cancelled) return;
+			status = 'error';
+			loadError = 'The PDF engine could not be loaded.';
+		});
 		return () => {
 			cancelled = true;
 			const created = engine;

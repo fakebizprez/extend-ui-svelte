@@ -87,22 +87,33 @@ test('xlsx-viewer shows error and boolean cells as text', async ({ page }) => {
 	]);
 });
 
-test('xlsx-viewer sheet tabs switch from the keyboard, like upstream Radix tabs', async ({ page }) => {
+test('xlsx-viewer sheet tabs: arrows move focus, Enter and Space activate, like upstream', async ({
+	page
+}) => {
 	await page.goto('/xlsx-viewer');
 	const viewer = page.getByTestId('xlsx-viewer').first();
-	const inventory = viewer.getByRole('tab', { name: 'Inventory' });
-	await expect(inventory).toHaveAttribute('tabindex', '0');
-	await expect(viewer.getByRole('tab', { name: 'Summary' })).toHaveAttribute('tabindex', '-1');
+	const tab = (name: string) => viewer.getByRole('tab', { name });
+	await expect(tab('Inventory')).toHaveAttribute('tabindex', '0');
+	await expect(tab('Summary')).toHaveAttribute('tabindex', '-1');
 
-	await inventory.focus();
+	await tab('Inventory').focus();
 	await page.keyboard.press('ArrowRight');
-	const summary = viewer.getByRole('tab', { name: 'Summary' });
-	await expect(summary).toBeFocused();
-	await expect(summary).toHaveAttribute('aria-selected', 'true');
+	await expect(tab('Summary')).toBeFocused();
+	await expect(tab('Summary')).toHaveAttribute('tabindex', '0');
+	// Focus alone does not switch the sheet (upstream sets no activateOnFocus).
+	await expect(tab('Inventory')).toHaveAttribute('aria-selected', 'true');
+	await expect(viewer.getByRole('cell', { name: 'Resistor kit' })).toBeVisible();
+
+	await page.keyboard.press('Enter');
+	await expect(tab('Summary')).toHaveAttribute('aria-selected', 'true');
 	await expect(viewer.getByRole('cell', { name: 'Total SKUs' })).toBeVisible();
+	await expect(tab('Summary')).toBeFocused();
 
 	await page.keyboard.press('End');
-	await expect(viewer.getByRole('tab', { name: 'Checks' })).toHaveAttribute('aria-selected', 'true');
-	await page.keyboard.press('Home');
-	await expect(inventory).toHaveAttribute('aria-selected', 'true');
+	await expect(tab('Checks')).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(tab('Inventory')).toBeFocused();
+	await page.keyboard.press('Space');
+	await expect(tab('Inventory')).toHaveAttribute('aria-selected', 'true');
+	await expect(viewer.getByRole('cell', { name: 'Resistor kit' })).toBeVisible();
 });

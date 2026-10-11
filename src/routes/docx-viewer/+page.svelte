@@ -51,8 +51,9 @@
 		<li>
 			Hyperlinks keep only <code>http</code>, <code>https</code>, <code>mailto</code>,
 			<code>tel</code>, and <code>#</code> targets; any other target is removed, so the link
-			shows as plain text. Scripts, frames, embedded objects, and event-handler attributes in
-			the rendered document are stripped.
+			shows as plain text. Picture sources keep only embedded <code>data:image</code> and
+			<code>blob:</code> URLs. Scripts, frames, embedded objects, and event-handler attributes
+			in the rendered document are stripped.
 		</li>
 		<li><code>toolbarActions</code> is a Svelte snippet instead of a React node.</li>
 		<li>

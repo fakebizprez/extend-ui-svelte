@@ -245,4 +245,24 @@ describe('LayoutBlocks', () => {
 		expect(onBlockFocus).toHaveBeenCalledTimes(2);
 		expect(onBlockFocus).toHaveBeenLastCalledWith(replaced[1]);
 	});
+
+	it('keeps the earlier controlled block active after the parent clears activeBlockId, like upstream', async () => {
+		const onBlockFocus = vi.fn();
+		const view = render(LayoutBlocks, {
+			blocks: sampleBlocks,
+			height: 800,
+			activeBlockId: 'table-1',
+			onBlockFocus
+		});
+		expect(screen.getAllByTestId('layout-block')[2]).toHaveAttribute('data-active', 'true');
+
+		await view.rerender({ blocks: sampleBlocks, height: 800, activeBlockId: undefined, onBlockFocus });
+
+		const rows = screen.getAllByTestId('layout-block');
+		expect(rows[2]).toHaveAttribute('data-active', 'true');
+		expect(rows[0]).toHaveAttribute('data-active', 'false');
+		// Still focused locally, so hovering it again does not fire.
+		await fireEvent.mouseEnter(rows[2] as HTMLElement);
+		expect(onBlockFocus).not.toHaveBeenCalled();
+	});
 });

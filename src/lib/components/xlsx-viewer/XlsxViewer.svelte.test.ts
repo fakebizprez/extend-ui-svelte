@@ -150,10 +150,15 @@ describe('XlsxViewer', () => {
 	it('switches sheets from the keyboard', async () => {
 		render(XlsxViewer, { ...DARK, data: inventoryBytes() });
 		const inventory = await screen.findByRole('tab', { name: 'Inventory' });
+		inventory.focus();
 
+		// Arrow keys move focus; pressing the tab (Enter/Space) activates it.
 		await fireEvent.keyDown(inventory, { key: 'ArrowRight' });
-		expect(await screen.findByRole('cell', { name: 'Total SKUs' })).toBeVisible();
 		const summary = screen.getByRole('tab', { name: 'Summary' });
+		expect(summary).toHaveFocus();
+		expect(summary).toHaveAttribute('aria-selected', 'false');
+		await fireEvent.click(summary);
+		expect(await screen.findByRole('cell', { name: 'Total SKUs' })).toBeVisible();
 		expect(summary).toHaveAttribute('aria-selected', 'true');
 		// The tab strip stays mounted while the sheet loads, so focus stays put.
 		expect(summary).toHaveFocus();

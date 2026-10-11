@@ -19,7 +19,9 @@
 	"files": [
 		"dist",
 		"!dist/**/*.test.*",
-		"!dist/**/*.spec.*"
+		"!dist/**/*.spec.*",
+		"!dist/**/*Harness.svelte",
+		"!dist/**/*Harness.svelte.d.ts"
 	],
 	"sideEffects": [
 		"**/*.css"
@@ -49,6 +51,7 @@
 		"@tailwindcss/vite": "4.3.3",
 		"@testing-library/jest-dom": "^7.0.1",
 		"@testing-library/svelte": "^5.4.2",
+		"@types/jsdom": "30.0.0",
 		"@types/papaparse": "^5.5.2",
 		"jsdom": "^30.1.2",
 		"playwright": "^1.60.0",

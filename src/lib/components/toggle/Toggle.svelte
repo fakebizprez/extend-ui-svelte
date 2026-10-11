@@ -96,24 +96,24 @@
 	}: ToggleProps = $props();
 
 	const group = getToggleGroupContext();
-	const inGroup = $derived(group !== undefined && value !== undefined);
+	// Like Base UI's useBaseUiId(value || undefined): a missing or empty value
+	// gets a generated id, so every grouped item has one.
+	const generatedId = $props.id();
+	const itemValue = $derived(value || generatedId);
+	let buttonEl = $state<HTMLButtonElement | undefined>(undefined);
 
 	// Initial capture is intended: uncontrolled state starts from the default.
 	let internalPressed = $state(defaultPressed);
-	const pressed = $derived(
-		inGroup && group ? group.isSelected(value as string) : (pressedProp ?? internalPressed)
-	);
+	const pressed = $derived(group ? group.isSelected(itemValue) : (pressedProp ?? internalPressed));
 	const isDisabled = $derived(disabled || (group?.isDisabled() ?? false));
 
 	// Register at init (not in an effect) so server-rendered HTML already has
 	// the right tab stop. Initial capture of `value` is intended.
-	if (group && value !== undefined) onDestroy(group.register(value, () => disabled));
-	const tabindex = $derived(
-		inGroup && group ? (group.isTabStop(value as string) ? 0 : -1) : undefined
-	);
+	if (group) onDestroy(group.register(value || generatedId, () => disabled, () => buttonEl));
+	const tabindex = $derived(group ? (group.isTabStop(itemValue) ? 0 : -1) : undefined);
 
 	function handleFocus(event: FocusEvent) {
-		if (inGroup && group) group.setFocused(value as string);
+		if (group) group.setFocused(itemValue);
 		(onfocus as ((event: FocusEvent) => void) | undefined)?.(event);
 	}
 
@@ -126,15 +126,15 @@
 			event.preventDefault();
 			return;
 		}
-		// Like Base UI: report first, then update unless the consumer canceled.
+		// Like Base UI 1.4.1: a grouped toggle commits to the group first (its
+		// onValueChange may cancel), then reports with the same details, so the
+		// item's cancel() cannot block the group. A standalone toggle reports
+		// first and skips its own update when canceled.
 		const next = !pressed;
 		const details = createChangeEventDetails(event);
+		if (group) group.toggleValue(itemValue, details);
 		onPressedChange?.(next, details);
-		if (details.isCanceled) return;
-		if (inGroup && group) {
-			group.toggleValue(value as string, details);
-			return;
-		}
+		if (group || details.isCanceled) return;
 		if (pressedProp === undefined) internalPressed = next;
 	}
 </script>
@@ -147,6 +147,7 @@
 	data-pressed={pressed || undefined}
 	disabled={isDisabled}
 	{tabindex}
+	bind:this={buttonEl}
 	onclick={handleClick}
 	onfocus={handleFocus}
 	{...rest}

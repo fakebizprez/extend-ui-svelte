@@ -63,7 +63,10 @@
 		isDark = false
 	}: Props = $props();
 
-	let localActiveBlockId = $state<string | undefined>(undefined);
+	// Upstream: useState(activeBlockId ?? blocks[0]?.id). Initial capture is
+	// intended, so a controlled block stays active if the parent clears it.
+	// svelte-ignore state_referenced_locally
+	let localActiveBlockId = $state<string | undefined>(activeBlockId ?? blocks[0]?.id);
 
 	const firstBlock = $derived(blocks[0]);
 	const focusedBlockId = $derived(activeBlockId ?? localActiveBlockId ?? firstBlock?.id);

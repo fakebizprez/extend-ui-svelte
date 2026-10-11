@@ -284,10 +284,18 @@ describe('ToggleGroup roving tab stop', () => {
 		expect(screen.getByRole('button', { name: 'Right' })).toHaveAttribute('tabindex', '-1');
 	});
 
-	it('puts the tab stop on the pressed item', () => {
+	it('starts the tab stop on the first item even when a later one is pressed, like Base UI 1.4.1', () => {
 		render(ToggleGroupHarness, { items: threeItems(), defaultValue: ['right'] });
 
-		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Right' })]);
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Left' })]);
+	});
+
+	it('orders the tab stop by DOM position when an item is added at the front', async () => {
+		const view = render(ToggleGroupHarness, { items: threeItems().slice(1) });
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Center' })]);
+
+		await view.rerender({ items: threeItems() });
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Left' })]);
 	});
 
 	it('moves the tab stop with focus and skips disabled items', async () => {
@@ -379,7 +387,9 @@ describe('consumer event handlers', () => {
 });
 
 // Base UI 1.4.1 calls onPressedChange(pressed, eventDetails) for every toggle,
-// grouped or not, and skips the state change when eventDetails.cancel() is called.
+// grouped or not. A standalone toggle skips its state change on cancel(); in a
+// group the group commits first (its onValueChange can cancel), then the item's
+// onPressedChange runs with the same details and cannot block the group.
 describe('change event details', () => {
 	it('passes Base UI-style event details to onPressedChange', async () => {
 		const onPressedChange = vi.fn();
@@ -421,26 +431,57 @@ describe('change event details', () => {
 		expect(itemOnPressedChange).toHaveBeenLastCalledWith(false, expect.anything());
 	});
 
-	it('skips the group change when the item onPressedChange cancels', async () => {
-		const onValueChange = vi.fn();
+	it('commits the group before the item onPressedChange, which cannot block it', async () => {
+		const calls: string[] = [];
 		render(ToggleGroupHarness, {
-			itemOnPressedChange: (_pressed: boolean, details: { cancel: () => void }) => details.cancel(),
-			onValueChange
+			itemOnPressedChange: (_pressed: boolean, details: { cancel: () => void }) => {
+				calls.push('item');
+				details.cancel();
+			},
+			onValueChange: (value: string[]) => calls.push(`group:${value.join(',')}`)
 		});
 		const bold = screen.getByRole('button', { name: 'Bold' });
 
 		await fireEvent.click(bold);
-		expect(onValueChange).not.toHaveBeenCalled();
-		expect(bold).toHaveAttribute('aria-pressed', 'false');
+		expect(calls).toEqual(['group:bold', 'item']);
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
 	});
 
-	it('keeps the group selection when onValueChange cancels', async () => {
+	it('keeps the group selection when onValueChange cancels and tells the item', async () => {
+		// Record isCanceled at call time; the details object is shared and mutable.
+		const seen: boolean[] = [];
 		render(ToggleGroupHarness, {
+			itemOnPressedChange: (_pressed: boolean, details: { isCanceled: boolean }) =>
+				seen.push(details.isCanceled),
 			onValueChange: (_value: string[], details: { cancel: () => void }) => details.cancel()
 		});
 		const bold = screen.getByRole('button', { name: 'Bold' });
 
 		await fireEvent.click(bold);
 		expect(bold).toHaveAttribute('aria-pressed', 'false');
+		expect(seen).toEqual([true]);
+	});
+});
+
+describe('ToggleGroupItem value', () => {
+	it('is optional and falls back to a generated id, like Base UI', async () => {
+		const onValueChange = vi.fn();
+		render(ToggleGroupHarness, {
+			items: [{ label: 'Auto' }, { value: 'bold', label: 'Bold' }],
+			onValueChange
+		});
+		const auto = screen.getByRole('button', { name: 'Auto' });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(auto);
+		const [value] = onValueChange.mock.calls[0]!;
+		expect(value).toHaveLength(1);
+		expect(value[0]).toEqual(expect.any(String));
+		expect(value[0]).not.toBe('');
+		expect(auto).toHaveAttribute('aria-pressed', 'true');
+
+		await fireEvent.click(bold);
+		expect(auto).toHaveAttribute('aria-pressed', 'false');
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
 	});
 });

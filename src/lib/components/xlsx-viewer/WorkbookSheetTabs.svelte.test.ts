@@ -18,7 +18,7 @@ describe('WorkbookSheetTabs', () => {
 		expect(screen.getByRole('tablist', { name: 'Sheets' })).toBeVisible();
 		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(SHEETS);
 		expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
-		// Roving focus, like Radix Tabs: only the active tab is in the tab order.
+		// Roving focus, like Base UI Tabs: only one tab is in the tab order.
 		expect(tabs.map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '0', '-1']);
 	});
 
@@ -30,20 +30,58 @@ describe('WorkbookSheetTabs', () => {
 		expect(onActiveSheetIndexChange).toHaveBeenCalledWith(2);
 	});
 
-	it('moves between sheets with the arrow, Home, and End keys', async () => {
+	it('moves focus only with the arrow, Home, and End keys, like upstream (no activateOnFocus)', async () => {
 		const onActiveSheetIndexChange = vi.fn();
 		render(WorkbookSheetTabs, { sheets: SHEETS, activeSheetIndex: 0, onActiveSheetIndexChange });
-		const first = screen.getByRole('tab', { name: 'Inventory' });
+		const [inventory, summary, notes] = screen.getAllByRole('tab') as HTMLElement[];
+		inventory?.focus();
 
-		await fireEvent.keyDown(first, { key: 'ArrowRight' });
-		expect(onActiveSheetIndexChange).toHaveBeenLastCalledWith(1);
-		expect(screen.getByRole('tab', { name: 'Summary' })).toHaveFocus();
-		await fireEvent.keyDown(first, { key: 'ArrowLeft' });
-		expect(onActiveSheetIndexChange).toHaveBeenLastCalledWith(2);
-		await fireEvent.keyDown(first, { key: 'End' });
-		expect(onActiveSheetIndexChange).toHaveBeenLastCalledWith(2);
-		await fireEvent.keyDown(first, { key: 'Home' });
-		expect(onActiveSheetIndexChange).toHaveBeenLastCalledWith(0);
+		await fireEvent.keyDown(inventory as HTMLElement, { key: 'ArrowRight' });
+		expect(summary).toHaveFocus();
+		// The focused tab joins the tab order; the selection does not move.
+		expect(summary).toHaveAttribute('tabindex', '0');
+		expect(inventory).toHaveAttribute('tabindex', '-1');
+		expect(inventory).toHaveAttribute('aria-selected', 'true');
+		await fireEvent.keyDown(summary as HTMLElement, { key: 'ArrowRight' });
+		expect(notes).toHaveFocus();
+		// Focus loops at the ends.
+		await fireEvent.keyDown(notes as HTMLElement, { key: 'ArrowRight' });
+		expect(inventory).toHaveFocus();
+		await fireEvent.keyDown(inventory as HTMLElement, { key: 'ArrowLeft' });
+		expect(notes).toHaveFocus();
+		await fireEvent.keyDown(notes as HTMLElement, { key: 'Home' });
+		expect(inventory).toHaveFocus();
+		await fireEvent.keyDown(inventory as HTMLElement, { key: 'End' });
+		expect(notes).toHaveFocus();
+		expect(onActiveSheetIndexChange).not.toHaveBeenCalled();
+
+		// Enter/Space press the focused tab (a native button click) to activate it.
+		await fireEvent.click(notes as HTMLElement);
+		expect(onActiveSheetIndexChange).toHaveBeenCalledExactlyOnceWith(2);
+	});
+
+	it('returns the tab order to the active tab when focus leaves the list', async () => {
+		render(WorkbookSheetTabs, {
+			sheets: SHEETS,
+			activeSheetIndex: 0,
+			onActiveSheetIndexChange: () => {}
+		});
+		const [inventory, summary] = screen.getAllByRole('tab') as HTMLElement[];
+		inventory?.focus();
+		await fireEvent.keyDown(inventory as HTMLElement, { key: 'ArrowRight' });
+		expect(summary).toHaveAttribute('tabindex', '0');
+
+		await fireEvent.focusOut(summary as HTMLElement, { relatedTarget: document.body });
+		expect(inventory).toHaveAttribute('tabindex', '0');
+		expect(summary).toHaveAttribute('tabindex', '-1');
+	});
+
+	it('ignores a click on the tab that is already active, like upstream', async () => {
+		const onActiveSheetIndexChange = vi.fn();
+		render(WorkbookSheetTabs, { sheets: SHEETS, activeSheetIndex: 1, onActiveSheetIndexChange });
+
+		await fireEvent.click(screen.getByRole('tab', { name: 'Summary' }));
+		expect(onActiveSheetIndexChange).not.toHaveBeenCalled();
 	});
 
 	it('renders nothing for a single-sheet workbook, like upstream', () => {

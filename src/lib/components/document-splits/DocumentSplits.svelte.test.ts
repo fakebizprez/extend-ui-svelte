@@ -368,6 +368,18 @@ describe('DocumentSplits', () => {
 		);
 	});
 
+	it('puts aria-label only on elements whose role allows it (axe aria-prohibited-attr)', () => {
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS });
+
+		const root = screen.getByTestId('document-splits');
+		for (const element of root.querySelectorAll('span[aria-label], div[aria-label]')) {
+			expect(element.getAttribute('role'), element.outerHTML).toBeTruthy();
+		}
+		// The page count still reads as "<n> pages".
+		const counts = [...root.querySelectorAll('.split-count')].map((count) => count.textContent);
+		expect(counts.map((text) => text?.replace(/\s+/g, ' ').trim())).toEqual(['2 pages', '3 pages']);
+	});
+
 	it('is exported under the upstream name DocumentSplits', () => {
 		expect(DocumentSplitsExport).toBe(DocumentSplits);
 	});

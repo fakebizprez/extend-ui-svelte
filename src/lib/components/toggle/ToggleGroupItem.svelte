@@ -14,8 +14,8 @@
 			ToggleProps,
 			'onPressedChange' | 'disabled' | 'variant' | 'size' | 'class' | 'className' | 'isDark' | 'onIsDarkChange'
 		> {
-		/** Item value tracked in the group selection. */
-		value: string;
+		/** Item value tracked in the group selection. Defaults to a generated id, like Base UI. */
+		value?: string;
 		children?: Snippet;
 		[key: string]: unknown;
 	}

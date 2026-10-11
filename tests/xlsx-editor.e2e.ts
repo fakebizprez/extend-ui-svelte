@@ -249,3 +249,17 @@ test('xlsx-editor drops styles and edits when the parent loads another file', as
 	await expect(editor.getByRole('gridcell', { name: 'Elko' })).toHaveCount(0);
 	await expect(editor.getByTestId('active-cell-address')).toHaveText('—');
 });
+
+test('xlsx-editor keeps the selected cell when the active sheet tab is clicked', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	const cell = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
+	await expect(cell).toBeVisible();
+	await cell.click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('B2');
+
+	await editor.getByRole('tab', { name: 'Inventory' }).click();
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('B2');
+	await expect(cell).toHaveAttribute('aria-selected', 'true');
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('Resistor kit');
+});

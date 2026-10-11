@@ -361,7 +361,9 @@
 	</div>
 
 	<div class="es-panels">
-		<section aria-label="Draw your signature" class="es-panel">
+		<!-- Groups, not landmarks: upstream's block has no labelled landmarks, and
+			several instances on one page must not repeat them. -->
+		<div role="group" aria-label="Draw your signature" class="es-panel">
 			<canvas
 				bind:this={padCanvas}
 				class="es-pad"
@@ -381,9 +383,9 @@
 					Clear signature
 				</button>
 			</div>
-		</section>
+		</div>
 
-		<section aria-label="Place the signature on the PDF" class="es-panel">
+		<div role="group" aria-label="Place the signature on the PDF" class="es-panel">
 			{#if status === 'loading'}
 				<div class="es-state" role="status">Loading PDF…</div>
 			{:else if status === 'error'}
@@ -481,7 +483,7 @@
 					{/if}
 				</div>
 			{/if}
-		</section>
+		</div>
 	</div>
 </div>
 

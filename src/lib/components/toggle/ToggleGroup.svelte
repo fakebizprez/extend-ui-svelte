@@ -7,8 +7,9 @@
 	Deliberate API changes vs React: `class` and `className` are both
 	accepted, snippet `children`, shared dark-mode contract (parent owns the
 	theme), and no `ToggleGroupPrimitive` re-export (Base UI is React-only).
-	Like Base UI, the group is one Tab stop (the focused, pressed, or first
-	enabled item) and arrow keys, Home, and End move focus inside it.
+	Like Base UI 1.4.1, the group is one Tab stop (the last focused item, else
+	the first in DOM order; a disabled first item passes it on) and arrow
+	keys, Home, and End move focus inside it.
 	`onPressedChange` and `onValueChange` get Base UI-style event details
 	(`cancel()` skips the change). A consumer `onkeydown` runs before
 	the built-in navigation; `event.preventDefault()` stands in for Base UI's
@@ -138,14 +139,14 @@
 	// once, on the stop, and arrow keys move focus (and the stop) inside it.
 	let items = $state.raw<RegisteredItem[]>([]);
 	let focusedValue = $state<string | undefined>(undefined);
-	const tabStop = $derived(findTabStop(items, current, focusedValue));
+	const tabStop = $derived(findTabStop(items, focusedValue));
 
 	setToggleGroupContext({
 		isSelected: (itemValue) => current.includes(itemValue),
 		toggleValue,
 		isDisabled: () => disabled,
-		register: (itemValue, isDisabled) => {
-			const item = { value: itemValue, isDisabled };
+		register: (itemValue, isDisabled, element) => {
+			const item = { value: itemValue, isDisabled, element };
 			items = [...items, item];
 			return () => {
 				items = items.filter((entry) => entry !== item);

@@ -63,7 +63,7 @@ describe('VirtualList', () => {
 
 	it('renders snippet content for the visible rows', () => {
 		const items = ['a', 'b', 'c'];
-		const children = createRawSnippet<[string, number]>((getItem, getIndex) => {
+		const children = createRawSnippet<[unknown, number]>((getItem, getIndex) => {
 			return { render: () => `<span>row-${getIndex()}-${getItem()}</span>` };
 		});
 		const { container } = render(VirtualList, {

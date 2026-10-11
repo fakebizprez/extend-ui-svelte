@@ -440,6 +440,21 @@ describe('ESignature', () => {
 		expect(lastPad()?.options).toMatchObject({ penColor: '#000000' });
 	});
 
+	it('adds no duplicate landmarks when several instances share a page (axe landmark-unique)', async () => {
+		render(ESignature, { src: SRC });
+		render(ESignature, { src: SRC });
+
+		const roots = await screen.findAllByTestId('e-signature');
+		expect(roots).toHaveLength(2);
+		const landmarks = roots.flatMap((root) => [
+			...root.querySelectorAll('section[aria-label], section[aria-labelledby], aside, nav, main, [role="region"]')
+		]);
+		expect(landmarks).toHaveLength(0);
+		// The two panels keep their accessible names as groups.
+		expect(screen.getAllByRole('group', { name: 'Draw your signature' })).toHaveLength(2);
+		expect(screen.getAllByRole('group', { name: 'Place the signature on the PDF' })).toHaveLength(2);
+	});
+
 	it('is exported under the upstream name ESignatureBlock', () => {
 		expect(ESignatureBlock).toBe(ESignature);
 	});

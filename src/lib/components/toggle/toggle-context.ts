@@ -32,8 +32,12 @@ export interface ToggleGroupContext {
 	isSelected: (itemValue: string) => boolean;
 	toggleValue: (itemValue: string, details: ToggleChangeEventDetails) => void;
 	isDisabled: () => boolean;
-	/** Registers an item in DOM order; returns the unregister function. */
-	register: (itemValue: string, isDisabled: () => boolean) => () => void;
+	/** Registers an item; returns the unregister function. */
+	register: (
+		itemValue: string,
+		isDisabled: () => boolean,
+		element: () => HTMLElement | undefined
+	) => () => void;
 	/** Whether this item is the group's single Tab stop. */
 	isTabStop: (itemValue: string) => boolean;
 	/** Moves the Tab stop to the focused item. */
@@ -43,20 +47,26 @@ export interface ToggleGroupContext {
 export interface RegisteredItem {
 	value: string;
 	isDisabled: () => boolean;
+	/** The mounted button; undefined during SSR and before mount. */
+	element: () => HTMLElement | undefined;
 }
 
 /**
- * The group's single Tab stop: the last focused enabled item, else the first
- * pressed enabled item, else the first enabled item.
+ * The group's single Tab stop, like Base UI 1.4.1's composite root: the last
+ * focused item, else the first item in DOM order. Pressed state plays no part.
+ * Unlike Base UI, a disabled first item passes the stop to the next enabled one.
  */
-export function findTabStop(
-	items: RegisteredItem[],
-	selected: string[],
-	focused: string | undefined
-): string | undefined {
-	const enabled = items.filter((item) => !item.isDisabled());
+export function findTabStop(items: RegisteredItem[], focused: string | undefined): string | undefined {
+	const elements = items.map((item) => item.element());
+	// Before mount (and on the server) registration order is the DOM order.
+	const ordered = elements.every(Boolean)
+		? [...items].sort((a, b) =>
+				a.element()!.compareDocumentPosition(b.element()!) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+			)
+		: items;
+	const enabled = ordered.filter((item) => !item.isDisabled());
 	if (focused !== undefined && enabled.some((item) => item.value === focused)) return focused;
-	return (enabled.find((item) => selected.includes(item.value)) ?? enabled[0])?.value;
+	return enabled[0]?.value;
 }
 
 const TOGGLE_GROUP_KEY = Symbol('extend-ui-toggle-group');
