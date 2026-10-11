@@ -779,11 +779,14 @@
 	.split-page-actions {
 		display: flex;
 		justify-content: center;
+		flex-wrap: wrap;
 		gap: 0.125rem;
 		margin-top: 0.25rem;
 	}
 
 	.page-move {
+		min-width: 24px;
+		min-height: 24px;
 		border: 1px solid transparent;
 		border-radius: 0.25rem;
 		background: transparent;

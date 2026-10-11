@@ -188,7 +188,7 @@
 		--hr-muted-half: rgb(245 245 245 / 0.5);
 		--hr-muted-third: rgb(245 245 245 / 0.3);
 		--hr-muted-quarter: rgb(245 245 245 / 0.25);
-		--hr-muted-fg: #737373;
+		--hr-muted-fg: #666666;
 		--hr-border: #e5e5e5;
 		--hr-input: #e5e5e5;
 		--hr-input-bg: #ffffff;

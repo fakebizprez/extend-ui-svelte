@@ -4,6 +4,7 @@
 	import { docsTheme } from './theme.svelte.js';
 
 	let theme = $state<'light' | 'dark'>('light');
+	let ready = $state(false);
 
 	function apply(next: 'light' | 'dark') {
 		theme = next;
@@ -31,10 +32,11 @@
 					? 'dark'
 					: 'light'
 		);
+		ready = true;
 	});
 </script>
 
-<button type="button" aria-label="Toggle theme" onclick={() => apply(theme === 'dark' ? 'light' : 'dark')}>
+<button type="button" aria-label="Toggle theme" disabled={!ready} onclick={() => apply(theme === 'dark' ? 'light' : 'dark')}>
 	<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 		{#if theme === 'dark'}
 			<circle cx="12" cy="12" r="4" />

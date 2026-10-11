@@ -27,6 +27,10 @@
 	});
 </script>
 
+<svelte:head>
+	<title>{current ? `${current.title} | Extend UI Svelte` : 'Extend UI Svelte'}</title>
+</svelte:head>
+
 <Header bind:menuOpen />
 <MobileMenu bind:open={menuOpen} groups={NAV_GROUPS} currentSlug={slug} />
 

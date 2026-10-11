@@ -1,7 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 import { expect, test, type Page } from '@playwright/test';
 
-const WIDE = { width: 1280, height: 900 };
+const WIDE = { width: 1600, height: 900 };
 const NARROW = { width: 700, height: 900 };
 
 // The viewer width is measured on the client, so "inline" at a wide viewport

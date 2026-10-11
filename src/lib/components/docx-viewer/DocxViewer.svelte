@@ -687,7 +687,7 @@
 						onkeydown={handleThumbnailKeydown}
 						onmousedown={(event) => event.currentTarget.focus({ preventScroll: true })}
 					>
-						<VirtualList items={pages} itemHeight={THUMBNAIL_ITEM_HEIGHT} height={THUMBNAIL_RAIL_HEIGHT}>
+						<VirtualList tabindex={null} items={pages} itemHeight={THUMBNAIL_ITEM_HEIGHT} height={THUMBNAIL_RAIL_HEIGHT}>
 							{#snippet children(page, index)}
 								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
 								<div
@@ -713,9 +713,13 @@
 			</aside>
 		{/if}
 
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable regions need a keyboard focus target.) -->
 		<div
 			class="docx-viewport"
 			data-testid="docx-viewport"
+			role="group"
+			aria-label="Document pages"
+			tabindex="0"
 			bind:this={viewportEl}
 			onscroll={handleViewportScroll}
 		>
@@ -957,5 +961,10 @@
 		background: #171717 !important;
 		color: #e5e5e5 !important;
 		box-shadow: 0 0 10px rgba(0, 0, 0, 0.8) !important;
+	}
+
+	[data-testid="docx-viewport"]:focus-visible {
+		outline: 2px solid currentColor;
+		outline-offset: -2px;
 	}
 </style>

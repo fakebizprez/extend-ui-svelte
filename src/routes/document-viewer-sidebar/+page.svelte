@@ -93,7 +93,8 @@
 					</div>
 				</div>
 			</DocumentViewerThumbnailSidebar>
-			<div class="content" data-testid="viewer-content">
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (the document scroll area needs keyboard scrolling) -->
+			<div class="content" data-testid="viewer-content" tabindex="0">
 				<div class="document">
 					<div class="page">
 						<div class="bar page-kicker"></div>

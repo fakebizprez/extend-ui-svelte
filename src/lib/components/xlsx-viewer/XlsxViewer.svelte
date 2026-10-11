@@ -318,7 +318,7 @@
 					{/each}
 				</div>
 				{#key activeSheetName}
-					<VirtualList items={rows} itemHeight={rowHeight} {height} {overscan}>
+					<VirtualList tabindex={null} items={rows} itemHeight={rowHeight} {height} {overscan}>
 						{#snippet children(row, index)}
 							<div
 								role="row"

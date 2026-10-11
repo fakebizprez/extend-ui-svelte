@@ -754,7 +754,7 @@
 					onkeydown={handleListKeyDown}
 					onmousedown={(event) => event.currentTarget.focus({ preventScroll: true })}
 				>
-					<VirtualList items={editState.pages} itemHeight={ROW_HEIGHT} height={height - ACTIONS_HEIGHT}>
+					<VirtualList tabindex={null} items={editState.pages} itemHeight={ROW_HEIGHT} height={height - ACTIONS_HEIGHT}>
 						{#snippet children(page, index)}
 							{@const thumbScale = thumbnailScale(page)}
 							{@const thumbSize = editedSize(page)}
@@ -794,7 +794,8 @@
 					</VirtualList>
 				</div>
 			</div>
-			<div class="pdf-editor-preview" data-testid="pdf-editor-preview" bind:this={preview}>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable regions need a keyboard focus target.) -->
+			<div class="pdf-editor-preview" data-testid="pdf-editor-preview" role="group" aria-label="PDF page preview" tabindex="0" bind:this={preview}>
 				{#if selectedPage && engine}
 					{@const size = editedSize(selectedPage)}
 					<PdfPage
@@ -1191,7 +1192,8 @@
 		color: var(--pdf-editor-fg);
 	}
 
-	.pdf-editor-zoom-select:disabled + .pdf-editor-zoom-value {
-		opacity: 0.45;
+	.pdf-editor-preview:focus-visible {
+		outline: 2px solid var(--pdf-editor-accent);
+		outline-offset: -2px;
 	}
 </style>

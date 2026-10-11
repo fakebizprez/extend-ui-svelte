@@ -126,6 +126,7 @@ test('xlsx-viewer selects cells and navigates by keyboard, read-only like upstre
 	const grid = viewer.getByRole('grid');
 	const kit = viewer.getByRole('gridcell', { name: 'Resistor kit' });
 	await expect(kit).toBeVisible();
+	await expect(grid.getByTestId('virtual-viewport')).not.toHaveAttribute('tabindex');
 	await expect(grid).toHaveAttribute('tabindex', '0');
 
 	await kit.click();

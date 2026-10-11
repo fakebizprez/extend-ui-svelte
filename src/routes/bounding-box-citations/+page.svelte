@@ -116,7 +116,7 @@
 
 <style>
 	.lead {
-		color: #525252;
+		color: var(--lh-muted);
 		font-size: 1.05rem;
 	}
 

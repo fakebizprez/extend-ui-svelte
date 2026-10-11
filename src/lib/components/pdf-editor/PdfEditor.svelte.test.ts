@@ -598,3 +598,8 @@ describe('pdf-editor docs', () => {
 		expect(missing).toEqual([]);
 	});
 });
+
+it('lets keyboard users focus the page preview scroll viewport', async () => {
+	render(PdfEditor, { src: SRC });
+	expect(await screen.findByTestId('pdf-editor-preview')).toHaveAttribute('tabindex', '0');
+});

@@ -130,6 +130,7 @@ test('xlsx-editor grid keyboard: one Tab stop, navigation, type to edit, Delete'
 	const address = editor.getByTestId('active-cell-address');
 	const kit = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
 	await expect(kit).toBeVisible();
+	await expect(grid.getByTestId('virtual-viewport')).not.toHaveAttribute('tabindex');
 
 	// Only the grid is focusable inside it.
 	expect(

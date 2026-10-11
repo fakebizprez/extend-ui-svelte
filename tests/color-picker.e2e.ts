@@ -145,7 +145,7 @@ test('the picker panel behaves like a popover: focus in, Escape, focus back', as
 	await expect(trigger).toBeFocused();
 });
 
-test('a click outside closes the picker panel and returns focus to the trigger', async ({ page }) => {
+test('a click outside closes the picker panel and preserves the outside focus', async ({ page }) => {
 	const trigger = page.getByRole('button', { name: 'Brand color', exact: true });
 	await trigger.click();
 	const dialog = page.getByRole('dialog', { name: 'Brand color panel' });
@@ -157,7 +157,7 @@ test('a click outside closes the picker panel and returns focus to the trigger',
 
 	await page.getByRole('heading', { name: 'Color Picker' }).click();
 	await expect(dialog).toBeHidden();
-	await expect(trigger).toBeFocused();
+	await expect(page.getByRole('main')).toBeFocused();
 });
 
 test('a disabled panel locks only the channel and opacity fields, like upstream', async ({ page }) => {

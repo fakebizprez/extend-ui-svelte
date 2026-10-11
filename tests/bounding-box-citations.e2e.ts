@@ -172,5 +172,7 @@ test('block: focusing a field on page 3 centers its box in the viewer', async ({
 			{ timeout: 10000 }
 		)
 		.toBeLessThan(4);
+	// The responsive docs layout stacks the viewer above the focused review panel.
+	await viewport.scrollIntoViewIfNeeded();
 	await expect(highlight).toBeInViewport();
 });

@@ -567,3 +567,8 @@ describe('pdf-viewer docs', () => {
 		expect(missing).toEqual([]);
 	});
 });
+
+it('lets keyboard users focus the document scroll viewport', async () => {
+	render(PdfViewer, { src: SRC, isDark: false, onIsDarkChange: () => {} });
+	expect(await screen.findByTestId('pdf-viewport')).toHaveAttribute('tabindex', '0');
+});

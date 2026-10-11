@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+test('document title identifies the home page and updates after navigation', async ({ page }) => {
+	await page.goto('/');
+	await expect(page).toHaveTitle('Extend UI Svelte');
+	await page.getByRole('navigation', { name: 'Components' }).getByRole('link', { name: 'Toggle', exact: true }).click();
+	await expect(page).toHaveTitle('Toggle | Extend UI Svelte');
+});
+
 test('active navigation text meets AA contrast in both themes', async ({ page }) => {
 	await page.goto('/toggle');
 	for (const theme of ['light', 'dark']) {

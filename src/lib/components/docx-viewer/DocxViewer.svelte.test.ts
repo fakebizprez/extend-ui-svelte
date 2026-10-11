@@ -645,3 +645,8 @@ describe('findMostVisiblePage', () => {
 		expect(findMostVisiblePage(0, 600, [{ pageNumber: 4, top: 700, bottom: 900 }])).toBeNull();
 	});
 });
+
+it('lets keyboard users focus the document scroll viewport', () => {
+	render(DocxViewer, { src: '/test.docx', ...DARK });
+	expect(screen.getByTestId('docx-viewport')).toHaveAttribute('tabindex', '0');
+});

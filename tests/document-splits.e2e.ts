@@ -104,6 +104,7 @@ test('docs page lists the differences from upstream', async ({ page }) => {
 });
 
 test('dropping a split on another split\'s page thumbnail reorders the splits', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 1400 });
 	await gotoLoadedSplits(page);
 	const before = await splitTitles(page);
 
@@ -115,7 +116,12 @@ test('dropping a split on another split\'s page thumbnail reorders the splits', 
 });
 
 test('dropping a split on another split\'s dropzone reorders the splits', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 1400 });
 	await gotoLoadedSplits(page);
+	// Keep both ends of the reverse drag inside the fixed-height demo scroller.
+	await page.locator('.preview-frame').evaluate((node) => {
+		(node as HTMLElement).style.height = '52rem';
+	});
 	const before = await splitTitles(page);
 
 	const handle = page.getByTestId('split-group').nth(2).getByRole('button', { name: /^Reorder / });

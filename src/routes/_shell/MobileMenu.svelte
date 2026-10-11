@@ -20,8 +20,12 @@
 		oncancel={() => (open = false)}
 		onclose={() => (open = false)}
 		{@attach (dialog) => {
+			const trigger = document.activeElement;
 			dialog.showModal();
-			return () => dialog.close();
+			return () => {
+				dialog.close();
+				if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+			};
 		}}
 	>
 		<button class="close" type="button" onclick={() => (open = false)}>Close menu</button>

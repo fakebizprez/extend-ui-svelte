@@ -1,8 +1,11 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 
 	let { menuOpen = $bindable(false) }: { menuOpen?: boolean } = $props();
+	let ready = $state(false);
+	onMount(() => { ready = true; });
 </script>
 
 <header>
@@ -12,6 +15,7 @@
 		class="menu"
 		aria-label="Menu"
 		aria-expanded={menuOpen}
+		disabled={!ready}
 		onclick={() => (menuOpen = !menuOpen)}
 	>
 		<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">

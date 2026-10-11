@@ -291,3 +291,8 @@ describe('VirtualList measured rows after items are reassigned', () => {
 		expect(spacer(view.container)).toBe('140px');
 	});
 });
+
+it('lets keyboard users focus the virtual scroll viewport', () => {
+	const { container } = render(VirtualList, { items: [1, 2], itemHeight: 30, height: 30 });
+	expect(viewportOf(container)).toHaveAttribute('tabindex', '0');
+});

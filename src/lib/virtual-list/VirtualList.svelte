@@ -33,6 +33,8 @@
 		height: number;
 		/** Extra rows rendered above and below the visible range. */
 		overscan?: number;
+		/** Omit the extra Tab stop when the parent owns keyboard navigation. */
+		tabindex?: number | null;
 		/** Row content, called with the item and its index. */
 		children?: Snippet<[T, number]>;
 	}
@@ -43,7 +45,8 @@
 		estimateSize,
 		height,
 		overscan = DEFAULT_OVERSCAN,
-		children
+		children,
+		tabindex = 0
 	}: Props = $props();
 
 	let scrollTop = $state(0);
@@ -137,9 +140,11 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable regions need a keyboard focus target.) -->
 <div
 	bind:this={viewport}
 	data-testid="virtual-viewport"
+	{tabindex}
 	onscroll={handleScroll}
 	style="height: {height}px; overflow-y: auto; position: relative;"
 >
@@ -165,3 +170,10 @@
 		{/each}
 	</div>
 </div>
+
+<style>
+	[data-testid="virtual-viewport"]:focus-visible {
+		outline: 2px solid currentColor;
+		outline-offset: -2px;
+	}
+</style>

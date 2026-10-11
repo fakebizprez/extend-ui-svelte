@@ -27,7 +27,9 @@
 </script>
 
 {#key scrollResetKey}
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex (overflowing JSON must support keyboard scrolling) -->
 	<pre
+		tabindex="0"
 		class={['schema-json-view', theme === 'dark' && 'dark', classProp].filter(Boolean).join(' ')}
 		data-theme={theme}
 		data-testid="schema-builder-output">{json}</pre>

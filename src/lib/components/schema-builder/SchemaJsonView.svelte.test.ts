@@ -17,6 +17,11 @@ describe('SchemaJsonView', () => {
 		);
 	});
 
+	it('allows keyboard scrolling of long JSON', () => {
+		render(SchemaJsonView, { schema: SCHEMA });
+		expect(screen.getByTestId('schema-builder-output')).toHaveAttribute('tabindex', '0');
+	});
+
 	it('follows the upstream theme prop', () => {
 		render(SchemaJsonView, { schema: SCHEMA, theme: 'dark' });
 

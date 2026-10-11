@@ -742,7 +742,7 @@
 					{/each}
 				</div>
 				{#key activeSheetName}
-					<VirtualList items={activeGrid} itemHeight={rowHeight} {height} {overscan}>
+					<VirtualList tabindex={null} items={activeGrid} itemHeight={rowHeight} {height} {overscan}>
 						{#snippet children(_row, index)}
 							<div
 								role="row"

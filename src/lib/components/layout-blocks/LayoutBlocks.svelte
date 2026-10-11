@@ -160,7 +160,7 @@
 		--lb-bg: #ffffff;
 		--lb-fg: #111827;
 		--lb-muted: #f3f4f6;
-		--lb-muted-fg: #6b7280;
+		--lb-muted-fg: #4b5563;
 		--lb-border: rgba(17, 24, 39, 0.12);
 		--lb-row: #ffffff;
 		--lb-row-hover: rgba(17, 24, 39, 0.04);
@@ -287,7 +287,7 @@
 
 	.layout-block-badge[data-block-type='list'] {
 		background: rgba(16, 185, 129, 0.12);
-		color: #059669;
+		color: #047857;
 	}
 
 	.layout-block-badge[data-block-type='table'] {
@@ -297,12 +297,12 @@
 
 	.layout-block-badge[data-block-type='figure'] {
 		background: rgba(244, 63, 94, 0.12);
-		color: #e11d48;
+		color: #be123c;
 	}
 
 	.layout-block-badge[data-block-type='header'] {
 		background: rgba(6, 182, 212, 0.12);
-		color: #0891b2;
+		color: #0e7490;
 	}
 
 	.layout-block-badge[data-block-type='footer'] {
@@ -313,6 +313,10 @@
 	.layout-block-badge[data-block-type='page_number'] {
 		background: rgba(113, 113, 122, 0.14);
 		color: #52525b;
+	}
+
+	.layout-blocks.dark .layout-block-badge {
+		color: var(--lb-fg);
 	}
 
 	.layout-block-confidence {

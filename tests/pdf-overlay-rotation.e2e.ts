@@ -70,6 +70,7 @@ test('citation boxes still cover their text after rotating the page', async ({ p
 		.getByLabel('Expected statement_period')
 		.focus();
 	const highlight = block.getByTestId('citation-highlight');
+	await block.getByTestId('pdf-viewport').scrollIntoViewIfNeeded();
 	await expect(highlight).toBeInViewport({ ratio: 0.9 });
 	await expect.poll(() => inkUnder(highlight), { timeout: 10000 }).toBeGreaterThan(0.02);
 });

@@ -555,9 +555,13 @@
 			<p class="pdf-state-hint">Pass a PDF URL with the <code>src</code> prop or use the upload control.</p>
 		</div>
 	{:else}
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable regions need a keyboard focus target.) -->
 		<div
 			class="pdf-viewport"
 			data-testid="pdf-viewport"
+			role="group"
+			aria-label="PDF pages"
+			tabindex="0"
 			style={`height: ${height}px;`}
 			bind:this={viewport}
 			onscroll={handleScroll}
@@ -710,10 +714,6 @@
 		color: var(--pdf-fg);
 	}
 
-	.pdf-zoom-select:disabled + .pdf-zoom-value {
-		opacity: 0.45;
-	}
-
 	.pdf-state {
 		display: grid;
 		place-items: center;
@@ -760,5 +760,10 @@
 		right: 0;
 		display: flex;
 		justify-content: center;
+	}
+
+	[data-testid="pdf-viewport"]:focus-visible {
+		outline: 2px solid currentColor;
+		outline-offset: -2px;
 	}
 </style>
