@@ -553,3 +553,17 @@ describe('PdfViewer', () => {
 		expect(screen.queryByRole('switch', { name: 'Toggle dark mode' })).not.toBeInTheDocument();
 	});
 });
+
+describe('pdf-viewer docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/pdf-viewer/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		// Runtime exports of upstream components/extend/pdf-viewer.tsx.
+		const upstream = new Set(['default', 'PDFViewer']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
+	});
+});

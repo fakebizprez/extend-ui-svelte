@@ -108,3 +108,24 @@ test('idle drop area shows upstream dashed border; the beam appears only while d
 	await expect(beam).toHaveCSS('background-image', /conic-gradient/);
 	await expect(dropzone).toHaveCSS('border-top-style', 'dashed');
 });
+
+test('dropping two identical files lists both, like upstream', async ({ page }) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto('/file-upload');
+	await page.waitForLoadState('networkidle');
+
+	const upload = page.locator('.file-upload').first();
+	const dataTransfer = await page.evaluateHandle(() => {
+		const transfer = new DataTransfer();
+		for (let i = 0; i < 2; i += 1) {
+			transfer.items.add(new File(['x'], 'a.pdf', { type: 'application/pdf', lastModified: 1 }));
+		}
+		return transfer;
+	});
+	await upload.locator('.dropzone').dispatchEvent('drop', { dataTransfer });
+
+	await expect(upload.locator('.file-row')).toHaveCount(2);
+	await expect(upload.locator('.file-name')).toHaveText(['a.pdf', 'a.pdf']);
+	expect(errors).toEqual([]);
+});

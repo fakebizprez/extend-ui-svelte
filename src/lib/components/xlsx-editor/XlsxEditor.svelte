@@ -58,6 +58,7 @@
 		isPrintableKey,
 		navigateGrid,
 		scrollCellIntoView,
+		usedRange,
 		type GridPosition
 	} from '../xlsx-viewer/grid-navigation.js';
 	import { XlsxCellError, type WorkBook } from '../../engines/xlsx/index.js';
@@ -353,7 +354,8 @@
 			rowCount: activeGrid.length,
 			colCount: columnCount,
 			pageRows: Math.max(1, Math.floor(height / rowHeight)),
-			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH))
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH)),
+			used: usedRange(activeGrid, Object.keys(formulas[activeSheetName] ?? {}))
 		};
 	}
 
@@ -422,8 +424,15 @@
 		editing = false;
 	}
 
-	/** Matches upstream: the edit input takes focus with the caret at the end. */
-	function focusAtEnd(input: HTMLInputElement): void {
+	/**
+	 * Mounts the cell editor as an overlay in the virtual list's scrolling
+	 * content, like upstream's editor overlay, so it stays mounted (and keeps
+	 * focus) when its row scrolls out of the rendered window. Then focuses it
+	 * with the caret at the end, as upstream does. Moving happens before focus,
+	 * since moving a focused element blurs it.
+	 */
+	function mountEditor(input: HTMLInputElement): void {
+		scrollEl?.querySelector('[data-testid="virtual-spacer"]')?.appendChild(input);
 		input.focus();
 		input.setSelectionRange(input.value.length, input.value.length);
 	}
@@ -771,20 +780,7 @@
 											startEdit();
 										}}
 									>
-										{#if isEditing}
-											<input
-												class="xlsx-cell-input"
-												data-testid="cell-input"
-												aria-label={`Edit ${columnIndexToLetter(col)}${index + 1}`}
-												value={draft}
-												{@attach focusAtEnd}
-												oninput={(event) => {
-													draft = event.currentTarget.value;
-												}}
-												onkeydown={handleEditKeydown}
-												onblur={() => commitEdit()}
-											/>
-										{:else}
+										{#if !isEditing}
 											{displayAt(index, col)}
 										{/if}
 									</div>
@@ -793,6 +789,21 @@
 						{/snippet}
 					</VirtualList>
 				{/key}
+				{#if editing && selected}
+					<input
+						class="xlsx-cell-input"
+						data-testid="cell-input"
+						aria-label={`Edit ${columnIndexToLetter(selected.col)}${selected.row + 1}`}
+						style={`top: ${selected.row * rowHeight}px; left: ${ROWNUM_WIDTH + selected.col * COLUMN_WIDTH}px; width: ${COLUMN_WIDTH}px; height: ${rowHeight}px;`}
+						value={draft}
+						{@attach mountEditor}
+						oninput={(event) => {
+							draft = event.currentTarget.value;
+						}}
+						onkeydown={handleEditKeydown}
+						onblur={() => commitEdit()}
+					/>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -1058,8 +1069,11 @@
 	}
 
 	.xlsx-cell-input {
-		width: 100%;
-		padding: 0.125rem 0.25rem;
+		position: absolute;
+		z-index: 2;
+		box-sizing: border-box;
+		margin: 0;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--xlsx-selected-border);
 		border-radius: 0.25rem;
 		background: var(--xlsx-bg);

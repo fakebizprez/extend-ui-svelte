@@ -601,3 +601,34 @@ describe('Base UI state attributes', () => {
 		expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('data-disabled', '');
 	});
 });
+
+// Base UI 1.4.1's Toggle destructures and drops `type` and `form`: a toggle is
+// always type="button" and never joins a form.
+describe('Toggle type and form', () => {
+	it('stays type="button" and drops form, so it never submits, like Base UI', async () => {
+		const onsubmit = vi.fn((event: SubmitEvent) => event.preventDefault());
+		const form = document.createElement('form');
+		form.id = 'f1';
+		form.addEventListener('submit', onsubmit);
+		document.body.append(form);
+		render(Toggle, {
+			target: form,
+			props: { children: label('Bold'), 'aria-label': 'Bold', type: 'submit', form: 'f1' }
+		});
+		const button = screen.getByRole('button', { name: 'Bold' });
+
+		expect(button).toHaveAttribute('type', 'button');
+		expect(button).not.toHaveAttribute('form');
+		await fireEvent.click(button);
+		expect(onsubmit).not.toHaveBeenCalled();
+		expect(button).toHaveAttribute('aria-pressed', 'true');
+		form.remove();
+	});
+
+	it('drops type and form on a ToggleGroupItem too', () => {
+		render(ToggleGroupItem, { value: 'bold', type: 'submit', form: 'f1', 'aria-label': 'Bold' });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveAttribute('type', 'button');
+		expect(button).not.toHaveAttribute('form');
+	});
+});

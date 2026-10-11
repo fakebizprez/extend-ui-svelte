@@ -1,7 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 // Unit tests for the shared grid keyboard navigation: run in the Vitest node project.
 import { describe, expect, it } from 'vitest';
-import { navigateGrid, type GridKey } from './grid-navigation.js';
+import { navigateGrid, usedRange, type GridKey } from './grid-navigation.js';
 
 // A 10-row by 4-column sheet; a page is 3 rows or 2 columns.
 const BOUNDS = { rowCount: 10, colCount: 4, pageRows: 3, pageCols: 2 };
@@ -63,5 +63,58 @@ describe('navigateGrid (upstream react-xlsx keys)', () => {
 		expect(navigateGrid(key('a'), at(2, 1), BOUNDS)).toBeNull();
 		expect(navigateGrid(key('Delete'), at(2, 1), BOUNDS)).toBeNull();
 		expect(navigateGrid(key('F2'), at(2, 1), BOUNDS)).toBeNull();
+	});
+});
+
+describe('navigateGrid with a used range (upstream resolveFirst/LastUsedVisibleIndex)', () => {
+	// A 10-row by 6-column grid whose data sits in C3:D5.
+	const USED = { ...BOUNDS, colCount: 6, used: { firstRow: 2, lastRow: 4, firstCol: 2, lastCol: 3 } };
+
+	it('goes to the corners of the used range with Ctrl+Home and Ctrl+End', () => {
+		expect(navigateGrid(key('Home', { ctrlKey: true }), at(7, 5), USED)).toEqual(at(2, 2));
+		expect(navigateGrid(key('End', { metaKey: true }), at(0, 0), USED)).toEqual(at(4, 3));
+	});
+
+	it('goes to the first and last used column with Home and End', () => {
+		expect(navigateGrid(key('Home'), at(3, 5), USED)).toEqual(at(3, 2));
+		expect(navigateGrid(key('End'), at(3, 0), USED)).toEqual(at(3, 3));
+	});
+
+	it('jumps to the used edges with Ctrl or Cmd plus an arrow', () => {
+		expect(navigateGrid(key('ArrowUp', { ctrlKey: true }), at(8, 3), USED)).toEqual(at(2, 3));
+		expect(navigateGrid(key('ArrowDown', { ctrlKey: true }), at(0, 3), USED)).toEqual(at(4, 3));
+		expect(navigateGrid(key('ArrowLeft', { metaKey: true }), at(3, 5), USED)).toEqual(at(3, 2));
+		expect(navigateGrid(key('ArrowRight', { metaKey: true }), at(3, 0), USED)).toEqual(at(3, 3));
+	});
+
+	it('keeps plain arrows free to leave the used range', () => {
+		expect(navigateGrid(key('ArrowUp'), at(2, 2), USED)).toEqual(at(1, 2));
+		expect(navigateGrid(key('ArrowRight'), at(2, 3), USED)).toEqual(at(2, 4));
+	});
+});
+
+describe('usedRange', () => {
+	it('finds the rows and columns that hold values', () => {
+		const values = [
+			[null, null, null, null],
+			[null, null, null, null],
+			[null, null, 'x', null],
+			[null, null, null, 4],
+			[null, null, '', null]
+		];
+		expect(usedRange(values)).toEqual({ firstRow: 2, lastRow: 3, firstCol: 2, lastCol: 3 });
+	});
+
+	it('counts extra used cells such as formulas with no saved value', () => {
+		expect(usedRange([[null, null], [null, null]], ['1:0'])).toEqual({
+			firstRow: 1,
+			lastRow: 1,
+			firstCol: 0,
+			lastCol: 0
+		});
+	});
+
+	it('is undefined for a sheet with no values', () => {
+		expect(usedRange([[null], ['']])).toBeUndefined();
 	});
 });

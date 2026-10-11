@@ -12,6 +12,7 @@ export {
 	DEFAULT_SCALE,
 	DEFAULT_SIGNATURE_HEIGHT,
 	DEFAULT_SIGNATURE_WIDTH,
+	defaultPlacementForPage,
 	embedSignaturePng,
 	ensurePdfExtension,
 	getSignedDownloadFileName,

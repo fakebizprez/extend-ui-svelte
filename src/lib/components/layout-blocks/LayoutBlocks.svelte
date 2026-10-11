@@ -12,6 +12,9 @@
 	  ported: the sample data ATTENTION_OCR_OUTPUT and PDF_URL, the OcrBlocks
 	  demo built on them, and OcrBlockOverlay (overlays on the rendered PDF
 	  page); blockToArea/blockToHighlightArea are exported for that.
+	- Port-only exports: DEFAULT_LAYOUT_BLOCKS_HEIGHT/_OVERSCAN,
+	  estimateOcrBlockRowHeight, OCR_BLOCK_TYPE_LABELS, renderBlockMarkdown,
+	  and a default export (listed under Differences on the docs page).
 	- blockToArea returns a CSS string instead of a React style object.
 	- Block markdown is sanitized with hast-util-sanitize (the library behind
 	  upstream's rehype-sanitize) and upstream's schema; see sanitizeBlockHtml.
@@ -82,8 +85,17 @@
 		if (localActiveBlockId !== undefined) localActiveBlockId = firstBlock.id;
 	});
 
+	// Upstream's focusedBlockIdRef: set at once by focusBlock, so repeat events
+	// on a block are ignored even while a controlled parent has not caught up,
+	// and re-synced only when the effective focused id changes.
+	let focusedBlockIdRef: string | undefined;
+	$effect.pre(() => {
+		focusedBlockIdRef = focusedBlockId;
+	});
+
 	function focusBlock(block: OcrBlock): void {
-		if (block.id === focusedBlockId) return;
+		if (block.id === focusedBlockIdRef) return;
+		focusedBlockIdRef = block.id;
 		localActiveBlockId = block.id;
 		onBlockFocus?.(block);
 	}

@@ -160,6 +160,46 @@ describe('DocxEditor', () => {
 		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
 	});
 
+	const zoomControls = () => [
+		screen.getByRole('button', { name: 'Zoom out' }),
+		screen.getByRole('combobox', { name: 'Zoom level' }),
+		screen.getByRole('button', { name: 'Zoom in' })
+	];
+
+	it('disables the zoom controls when there is no document, like upstream', () => {
+		render(DocxEditor, { ...DARK });
+
+		for (const control of zoomControls()) expect(control).toBeDisabled();
+		// Like upstream's Import DOCX, Upload stays available.
+		expect(screen.getByRole('button', { name: 'Upload' })).toBeEnabled();
+	});
+
+	it('disables the zoom controls and Upload while loading, and the zoom controls on error', async () => {
+		let fail!: (error: Error) => void;
+		mockedRenderDocx.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (fail = reject))
+		);
+		render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		await screen.findByTestId('docx-editor-loading');
+		await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+		for (const control of zoomControls()) expect(control).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
+
+		fail(new Error('boom'));
+		await screen.findByRole('alert');
+		for (const control of zoomControls()) expect(control).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Upload' })).toBeEnabled();
+	});
+
+	it('keeps Upload available in read-only mode, like upstream Import DOCX', async () => {
+		render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx', readOnly: true });
+		await screen.findAllByText(FIXTURE_TEXT);
+
+		expect(screen.getByRole('button', { name: 'Upload' })).toBeEnabled();
+		expect(screen.getByRole('button', { name: 'Bold' })).toBeDisabled();
+		expect(screen.getByRole('combobox', { name: 'Zoom level' })).toBeEnabled();
+	});
+
 	it('accepts .docx only in the upload input, like upstream', () => {
 		render(DocxEditor, { ...DARK });
 

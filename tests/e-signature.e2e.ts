@@ -225,3 +225,52 @@ test('a rapid double click on Next page still renders the page', async ({ page }
 		)
 		.toBeGreaterThan(0);
 });
+
+for (const delay of [0, 10, 25, 50, 100]) {
+	test(`paging ${delay}ms after Place signature still ends with the page rendered`, async ({
+		page
+	}) => {
+		await page.goto('/e-signature');
+		await page.waitForLoadState('networkidle');
+		const scope = page.getByTestId('e-signature').first();
+		const pad = scope.getByTestId('e-signature-pad');
+		await expect(pad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });
+		await expect(scope).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+		// A dev-server reload mid-test (another file saved) would reset the page;
+		// count loads so such a run reports that instead of a bogus state.
+		let reloads = 0;
+		page.on('load', () => (reloads += 1));
+		await drawSignature(page, pad);
+
+		for (let round = 0; round < 2; round += 1) {
+			await scope.getByRole('button', { name: 'Place signature' }).click();
+			await page.waitForTimeout(delay);
+			const pager = scope.getByRole('button', { name: round === 0 ? 'Next page' : 'Previous page' });
+			await pager.click();
+
+			await expect(scope).toHaveAttribute('data-signed', 'true', { timeout: 30000 });
+			expect(reloads, 'the dev server reloaded the page mid-test').toBe(0);
+			await expect(scope.getByRole('button', { name: 'Place signature' })).toBeEnabled();
+			await page.waitForTimeout(300);
+			await expect(scope.getByRole('alert')).toHaveCount(0);
+			await expect(scope.getByTestId('e-signature-page-indicator')).toHaveText(
+				`Page ${round === 0 ? 2 : 1} of 3`
+			);
+			const preview = scope.getByTestId('e-signature-preview');
+			await expect
+				.poll(() =>
+					preview.evaluate((element) => {
+						const canvas = element as HTMLCanvasElement;
+						const context = canvas.getContext('2d');
+						if (!context || canvas.width === 0) return 0;
+						const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+						let dark = 0;
+						for (let i = 0; i < data.length; i += 4) if (data[i] < 128 && data[i + 3] > 0) dark += 1;
+						return dark;
+					})
+				)
+				.toBeGreaterThan(0);
+		}
+		expect(reloads, 'the dev server reloaded the page mid-test').toBe(0);
+	});
+}

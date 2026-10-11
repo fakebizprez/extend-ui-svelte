@@ -146,7 +146,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { VirtualList } from '../../virtual-list/index.js';
 	import type { DocxSource } from '../../engines/docx/index.js';
@@ -298,6 +298,10 @@
 		const sidebarFlag = untrack(() => sidebarOpen);
 		status = 'loading';
 		errorMessage = '';
+		// Like upstream, a load shows only the loading surface: the previous
+		// document and its pages are gone until the new one is ready.
+		pages = [];
+		activePage = 1;
 		// Last call wins down to the DOM (upstream's isCurrent import queue): each
 		// load renders into its own detached element, and only the newest load's
 		// output is moved into the visible container.
@@ -309,8 +313,15 @@
 				pages = collectPages(element);
 				activePage = 1;
 				status = 'ready';
-				// Like upstream, every new document starts at defaultZoom.
-				setZoomLevel(untrack(() => defaultZoom));
+				// Like upstream, every new document starts at defaultZoom. Fit modes
+				// measure the page, so they wait until the container is shown.
+				const level = untrack(() => defaultZoom);
+				setZoomLevel(level);
+				if (typeof level !== 'number') {
+					void tick().then(() => {
+						if (id === generation) fitZoom();
+					});
+				}
 			},
 			(failure: unknown) => {
 				if (id !== generation) return;
@@ -737,7 +748,7 @@
 				class="docx-document"
 				data-testid="docx-container"
 				style={`zoom: ${zoom}%;`}
-				hidden={!currentSource || status === 'error'}
+				hidden={status !== 'ready'}
 				bind:this={containerEl}
 			></div>
 		</div>
@@ -901,6 +912,11 @@
 	.docx-document {
 		display: flex;
 		justify-content: center;
+	}
+
+	/* display: flex would otherwise override the hidden attribute. */
+	.docx-document[hidden] {
+		display: none;
 	}
 
 	.docx-state {

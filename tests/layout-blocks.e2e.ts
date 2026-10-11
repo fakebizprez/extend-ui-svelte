@@ -112,3 +112,40 @@ test('layout-blocks colors the active block ring by block type, like upstream', 
 	await table.click();
 	await expect(table).toHaveCSS('border-top-color', 'rgba(245, 158, 11, 0.6)');
 });
+
+test('a controlled panel whose parent keeps its block reports a new block once, like upstream', async ({
+	page
+}) => {
+	await page.goto('/layout-blocks');
+	await page.waitForLoadState('networkidle');
+	// Hover and focus before hydration are dropped on the dev server.
+	await page.locator('[data-ready]').waitFor();
+	const panel = page.getByTestId('pinned-panel');
+	const authors = panel.locator('[data-block-id="sample-authors"]');
+	await expect(authors).toBeVisible();
+
+	await authors.hover();
+	await authors.focus();
+	await authors.click();
+	await panel.locator('[data-block-id="sample-header"]').hover();
+	await authors.hover();
+	await expect(page.getByTestId('pinned-reports')).toHaveText('Reports: 3');
+	await expect(panel.locator('[data-active="true"]')).toHaveAttribute('data-block-id', 'sample-heading');
+});
+
+test.describe('layout-blocks docs', () => {
+	test('lists every port-only export under Differences from upstream', async ({ page }) => {
+		await page.goto('/layout-blocks');
+		const differences = page.getByRole('region', { name: 'Differences from upstream' });
+		for (const name of [
+			'DEFAULT_LAYOUT_BLOCKS_HEIGHT',
+			'DEFAULT_LAYOUT_BLOCKS_OVERSCAN',
+			'estimateOcrBlockRowHeight',
+			'OCR_BLOCK_TYPE_LABELS',
+			'renderBlockMarkdown',
+			'default export'
+		]) {
+			await expect(differences).toContainText(name);
+		}
+	});
+});

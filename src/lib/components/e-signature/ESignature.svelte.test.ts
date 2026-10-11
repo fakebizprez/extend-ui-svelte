@@ -83,17 +83,25 @@ const engineMock = vi.hoisted(() => ({
 	loads: 0,
 	// Like PDF.js on one canvas: a new render cancels the one still in flight.
 	cancelSuperseded: false,
+	// Like PdfEngine: load() drops the open document at once and reopens it later.
+	slowLoad: false,
+	hasDocument: true,
+	pageSize: { width: 612, height: 792 },
 	inFlight: null as ((reason: Error) => void) | null
 }));
 
 // Lets a test hold a placement mid-flight; null passes through to pdf-lib.
-const embedGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
+const embedGate = vi.hoisted(() => ({
+	wait: null as Promise<void> | null,
+	placements: [] as unknown[]
+}));
 
 vi.mock('./sign-pdf.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./sign-pdf.js')>();
 	return {
 		...actual,
 		embedSignaturePng: async (...args: Parameters<typeof actual.embedSignaturePng>) => {
+			embedGate.placements.push(args[2]);
 			const stamped = await actual.embedSignaturePng(...args);
 			if (embedGate.wait) await embedGate.wait;
 			return stamped;
@@ -109,11 +117,17 @@ vi.mock('../../engines/pdf/index.js', () => ({
 			currentPage: 0,
 			load: async () => {
 				engineMock.loads += 1;
+				if (engineMock.slowLoad) {
+					engineMock.hasDocument = false;
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					engineMock.hasDocument = true;
+				}
 				engine.pageCount = engineMock.pageCount;
 				engine.currentPage = engineMock.pageCount > 0 ? 1 : 0;
 				return engine.pageCount;
 			},
 			renderPage: async (pageNumber: number) => {
+				if (!engineMock.hasDocument) throw new Error('PdfEngine.renderPage: no document loaded.');
 				engineMock.rendered.push(pageNumber);
 				if (engineMock.cancelSuperseded) {
 					const cancelled = new Error(`Rendering cancelled, page ${pageNumber}`);
@@ -125,7 +139,7 @@ vi.mock('../../engines/pdf/index.js', () => ({
 					});
 					engineMock.inFlight = null;
 				}
-				return { width: 612, height: 792 };
+				return { ...engineMock.pageSize };
 			},
 			setCurrentPage: (page: number) => {
 				const clamped = Math.min(Math.max(Math.floor(page), 1), engine.pageCount);
@@ -187,6 +201,10 @@ beforeEach(async () => {
 	engineMock.rendered.length = 0;
 	engineMock.loads = 0;
 	engineMock.cancelSuperseded = false;
+	engineMock.slowLoad = false;
+	engineMock.pageSize = { width: 612, height: 792 };
+	embedGate.placements.length = 0;
+	engineMock.hasDocument = true;
 	engineMock.inFlight = null;
 	embedGate.wait = null;
 	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
@@ -286,6 +304,28 @@ describe('ESignature', () => {
 		expect(engineMock.rendered.slice(-2)).toEqual([2, 3]);
 	});
 
+	it('paging while the signed PDF reloads waits and renders the current page', async () => {
+		render(ESignature, { src: SRC });
+		const pad = await screen.findByTestId('e-signature-pad');
+		await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		engineMock.slowLoad = true;
+		simulateStroke();
+		const place = await screen.findByRole('button', { name: 'Place signature' });
+		await waitFor(() => expect(place).toBeEnabled());
+
+		await fireEvent.click(place);
+		// Page while the stamped document is being reloaded.
+		await waitFor(() => expect(engineMock.hasDocument).toBe(false));
+		await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+
+		await waitFor(() => expect(screen.getByTestId('e-signature')).toHaveAttribute('data-signed', 'true'));
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		expect(screen.getByTestId('e-signature-page-indicator')).toHaveTextContent('Page 2 of 3');
+		expect(engineMock.rendered.at(-1)).toBe(2);
+	});
+
 	it('still shows a real error from the latest render', async () => {
 		render(ESignature, { src: SRC });
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
@@ -366,6 +406,34 @@ describe('ESignature', () => {
 		expect(screen.getByTestId('e-signature-page-indicator')).toHaveTextContent('Page 1 of 5');
 		expect(screen.getByRole('button', { name: 'Download signed PDF' })).toBeDisabled();
 	});
+
+	for (const [label, size, expected] of [
+		['Letter', { width: 612, height: 792 }, { x: 300, y: 230, width: 250, height: 58 }],
+		['A4', { width: 595.28, height: 841.89 }, { x: 291.8, y: 244.5, width: 243.2, height: 61.7 }]
+	] as const) {
+		it(`places upstream's default field scaled to a ${label} page`, async () => {
+			engineMock.pageSize = { ...size };
+			render(ESignature, { src: SRC });
+			const pad = await screen.findByTestId('e-signature-pad');
+			await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+			await waitFor(() =>
+				expect(screen.getByLabelText('Position X (pt)')).toHaveValue(expected.x)
+			);
+			expect(screen.getByLabelText('Position Y (pt)')).toHaveValue(expected.y);
+			expect(screen.getByLabelText('Width (pt)')).toHaveValue(expected.width);
+			expect(screen.getByLabelText('Height (pt)')).toHaveValue(expected.height);
+
+			simulateStroke();
+			const place = screen.getByRole('button', { name: 'Place signature' });
+			await waitFor(() => expect(place).toBeEnabled());
+			await fireEvent.click(place);
+			await waitFor(() => expect(embedGate.placements).toHaveLength(1));
+			const placed = embedGate.placements[0] as Record<string, number>;
+			for (const key of ['x', 'y', 'width', 'height'] as const) {
+				expect(placed[key]).toBeCloseTo(expected[key], 0);
+			}
+		});
+	}
 
 	it('applies position and scale changes to the placement controls', async () => {
 		render(ESignature, { src: SRC });

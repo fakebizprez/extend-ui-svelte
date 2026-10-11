@@ -330,6 +330,56 @@ describe('XlsxEditor', () => {
 		expect(screen.getByRole('grid')).toHaveFocus();
 	});
 
+	it('jumps to the used range with Ctrl+Home and Ctrl+End, like upstream', async () => {
+		// lanesBytes holds data in B2:D6.
+		render(XlsxEditor, { ...DARK, data: lanesBytes() });
+		await screen.findByRole('gridcell', { name: 'Lane' });
+		const grid = screen.getByRole('grid');
+		grid.focus();
+
+		await fireEvent.keyDown(grid, { key: 'Home', ctrlKey: true });
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('B2');
+		await fireEvent.keyDown(grid, { key: 'End', ctrlKey: true });
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('D6');
+		await fireEvent.keyDown(grid, { key: 'Home' });
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('B6');
+	});
+
+	it('keeps the cell editor mounted and focused when its row scrolls out of view', async () => {
+		const workbook = utils.book_new();
+		const data: (string | number)[][] = [['id']];
+		for (let i = 1; i < 500; i += 1) data.push([`row-${i}`]);
+		utils.book_append_sheet(workbook, utils.aoa_to_sheet(data), 'Big');
+		const bytes = new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+		const onCellChange = vi.fn();
+		render(XlsxEditor, { ...DARK, data: bytes, height: 340, onCellChange });
+
+		await fireEvent.dblClick(await screen.findByRole('gridcell', { name: 'row-1' }));
+		const input = await screen.findByTestId('cell-input');
+		await fireEvent.input(input, { target: { value: 'row-1 edited' } });
+
+		// Scroll the edited row far out of the virtual window, as a mouse wheel would.
+		const viewport = screen.getByTestId('virtual-viewport');
+		viewport.scrollTop = 400 * 34;
+		await fireEvent.scroll(viewport);
+		expect(await screen.findByRole('gridcell', { name: 'row-405' })).toBeVisible();
+		expect(screen.queryByRole('gridcell', { name: 'row-2' })).not.toBeInTheDocument();
+
+		// Upstream's editor overlay stays put: same input, still focused, nothing committed.
+		expect(screen.getByTestId('cell-input')).toBe(input);
+		expect(input).toHaveFocus();
+		expect(onCellChange).not.toHaveBeenCalled();
+
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onCellChange).toHaveBeenCalledExactlyOnceWith({
+			sheet: 'Big',
+			row: 1,
+			col: 0,
+			value: 'row-1 edited'
+		});
+		expect(screen.getByRole('grid')).toHaveFocus();
+	});
+
 	it('scrolls the virtualized grid to keep the active cell rendered', async () => {
 		const workbook = utils.book_new();
 		const data: (string | number)[][] = [['id']];

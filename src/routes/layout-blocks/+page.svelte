@@ -1,5 +1,6 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		getOcrBlocks,
 		LayoutBlocks,
@@ -11,6 +12,10 @@
 
 	let isDark = $state(false);
 	let focusedBlockId = $state<string | undefined>(undefined);
+	let pinnedReports = $state(0);
+	// Set once hydrated so tests know the panels are live.
+	let ready = $state(false);
+	onMount(() => (ready = true));
 
 	const sampleOutput: ParsedOcrOutput = {
 		chunks: [
@@ -177,6 +182,22 @@
 	/>
 </div>
 
+<h2>Controlled, parent keeps its block</h2>
+<p>
+	<code>activeBlockId</code> stays on the heading; the panel still reports each new block once,
+	like upstream.
+</p>
+<p data-testid="pinned-reports" data-ready={ready || undefined}>Reports: {pinnedReports}</p>
+<div data-testid="pinned-panel" style:max-width="640px">
+	<LayoutBlocks
+		blocks={sampleBlocks.slice(0, 3)}
+		activeBlockId="sample-heading"
+		height={320}
+		{isDark}
+		onBlockFocus={() => (pinnedReports += 1)}
+	/>
+</div>
+
 <h2>Long document ({LONG_DOCUMENT_BLOCK_COUNT} blocks, virtualized)</h2>
 <div data-testid="long-panel" style:max-width="640px">
 	<LayoutBlocks blocks={longDocumentBlocks} {isDark} />
@@ -190,6 +211,15 @@
 			<code>className</code> and <code>class</code> are both accepted.
 			Also exported, like upstream: <code>getOcrBlocks</code>,
 			<code>blockToHighlightArea</code>, <code>blockToArea</code>, and the block types.
+		</li>
+		<li>
+			Port-only exports (upstream keeps these internal or has no equivalent):
+			<code>DEFAULT_LAYOUT_BLOCKS_HEIGHT</code> and <code>DEFAULT_LAYOUT_BLOCKS_OVERSCAN</code>
+			(defaults for the added <code>height</code> and <code>overscan</code> props),
+			<code>estimateOcrBlockRowHeight</code> (upstream's internal row size estimate),
+			<code>OCR_BLOCK_TYPE_LABELS</code> (badge text per block type),
+			<code>renderBlockMarkdown</code> (sanitized markdown to HTML), and a default export of
+			the panel.
 		</li>
 		<li>
 			Not ported: upstream's sample data and demo, <code>ATTENTION_OCR_OUTPUT</code> (the

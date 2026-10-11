@@ -292,7 +292,9 @@
 	{/if}
 	{#if showFileList && files.length > 0}
 		<ul class="file-list">
-			{#each files as file (file.id)}
+			<!-- Upstream's id repeats for identical files; each drop replaces the whole
+				list, so the position makes the key unique without changing the id. -->
+			{#each files as file, index (`${index}:${file.id}`)}
 				<li class="file-row">
 					<FileThumbnail
 						file={{ name: file.name, type: file.type }}

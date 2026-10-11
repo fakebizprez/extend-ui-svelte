@@ -84,6 +84,19 @@ describe('FileUpload', () => {
 		expect(screen.getByText('photo.png')).toBeInTheDocument();
 	});
 
+	it('lists two identical files dropped together, like upstream', async () => {
+		const onFilesChange = vi.fn();
+		const { container } = render(FileUpload, { onFilesChange });
+		const twin = () => new File(['x'], 'a.pdf', { type: 'application/pdf', lastModified: 1 });
+
+		await dropOn(screen.getByRole('button', { name: /click to upload/i }), [twin(), twin()]);
+
+		expect(container.querySelectorAll('.file-row')).toHaveLength(2);
+		const [items] = onFilesChange.mock.calls.at(-1)!;
+		// Upstream's id is kept even though the two files share it.
+		expect(items.map((item: { id: string }) => item.id)).toEqual(['a.pdf-1-1', 'a.pdf-1-1']);
+	});
+
 	it('accepts multiple files when multiple is true', async () => {
 		const onFilesAccepted = vi.fn();
 		render(FileUpload, { multiple: true, onFilesAccepted });

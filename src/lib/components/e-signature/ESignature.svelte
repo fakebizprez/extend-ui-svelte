@@ -28,11 +28,8 @@
 	import {
 		clampPage,
 		dataUrlToBytes,
-		DEFAULT_POSITION_X,
-		DEFAULT_POSITION_Y,
 		DEFAULT_SCALE,
-		DEFAULT_SIGNATURE_HEIGHT,
-		DEFAULT_SIGNATURE_WIDTH,
+		defaultPlacementForPage,
 		embedSignaturePng,
 		getSignedDownloadFileName,
 		MAX_SCALE,
@@ -49,13 +46,13 @@
 		fileName?: string;
 		/** Initial 1-based page; the component owns the active page after mount. */
 		page?: number;
-		/** Signature offset from the left page edge in PDF points. */
+		/** Signature offset from the left page edge in PDF points. Defaults to upstream's field scaled to the page. */
 		positionX?: number;
-		/** Signature offset from the bottom page edge in PDF points. */
+		/** Signature offset from the bottom page edge in PDF points. Defaults to upstream's field scaled to the page. */
 		positionY?: number;
-		/** Signature box width in PDF points before scaling. */
+		/** Signature box width in PDF points before scaling. Defaults to upstream's field scaled to the page. */
 		signatureWidth?: number;
-		/** Signature box height in PDF points before scaling. */
+		/** Signature box height in PDF points before scaling. Defaults to upstream's field scaled to the page. */
 		signatureHeight?: number;
 		/** Placement scale multiplier. */
 		scale?: number;
@@ -87,10 +84,10 @@
 		src,
 		fileName,
 		page = 1,
-		positionX = $bindable(DEFAULT_POSITION_X),
-		positionY = $bindable(DEFAULT_POSITION_Y),
-		signatureWidth = $bindable(DEFAULT_SIGNATURE_WIDTH),
-		signatureHeight = $bindable(DEFAULT_SIGNATURE_HEIGHT),
+		positionX = $bindable(),
+		positionY = $bindable(),
+		signatureWidth = $bindable(),
+		signatureHeight = $bindable(),
 		scale = $bindable(DEFAULT_SCALE),
 		penColor = '#000000',
 		backgroundColor = 'rgba(0,0,0,0)',
@@ -135,6 +132,18 @@
 	let signedBytes: Uint8Array | null = $state.raw(null);
 	// Bumped on every source change so an in-flight placement can tell it is stale.
 	let loadGeneration = 0;
+
+	// Until the parent or the user sets them, position and size follow upstream's
+	// default field scaled to the active page (Letter until a page renders).
+	let pageSize = $state({ width: 612, height: 792 });
+	const fallback = $derived(defaultPlacementForPage(pageSize.width, pageSize.height));
+	const placeX = $derived(positionX ?? fallback.x);
+	const placeY = $derived(positionY ?? fallback.y);
+	const placeWidth = $derived(signatureWidth ?? fallback.width);
+	const placeHeight = $derived(signatureHeight ?? fallback.height);
+	const shown = (value: number) => Math.round(value * 10) / 10;
+	const typed = (input: HTMLInputElement) =>
+		Number.isNaN(input.valueAsNumber) ? undefined : input.valueAsNumber;
 
 	const pdfReady = $derived(status === 'ready' && numPages > 0);
 	const canPlace = $derived(pdfReady && hasSignature && !placing);
@@ -263,6 +272,9 @@
 	// canvas cancels the older one, and PDF.js rejects it with
 	// RenderingCancelledException.
 	let renderGeneration = 0;
+	// load() drops the open document at once, so renders wait for a reload in
+	// progress (the signed PDF after Place signature) instead of failing.
+	let reloading: Promise<unknown> = Promise.resolve();
 
 	async function renderPreview(): Promise<void> {
 		const eng = engine;
@@ -270,7 +282,10 @@
 		if (!eng || !canvas || status !== 'ready' || numPages === 0) return;
 		const generation = ++renderGeneration;
 		try {
-			await eng.renderPage(activePage, canvas, { scale: 1 });
+			await reloading;
+			if (generation !== renderGeneration || engine !== eng) return;
+			const size = await eng.renderPage(activePage, canvas, { scale: 1 });
+			if (generation === renderGeneration && size) pageSize = { width: size.width, height: size.height };
 		} catch (failure: unknown) {
 			if (generation !== renderGeneration) return;
 			if (failure instanceof Error && failure.name === 'RenderingCancelledException') return;
@@ -314,10 +329,10 @@
 			const pngBytes = dataUrlToBytes(instance.toDataURL('image/png'));
 			const placement = resolvePlacement({
 				page: activePage,
-				x: positionX,
-				y: positionY,
-				width: signatureWidth,
-				height: signatureHeight,
+				x: placeX,
+				y: placeY,
+				width: placeWidth,
+				height: placeHeight,
 				scale,
 				pageCount: numPages
 			});
@@ -326,9 +341,12 @@
 			// The document changed mid-placement: drop the stamp for the old file.
 			if (generation !== loadGeneration) return;
 			signedBytes = stamped;
-			const count = await eng.load(new Uint8Array(stamped));
+			const loading = eng.load(new Uint8Array(stamped));
+			reloading = loading.catch(() => undefined);
+			const count = await loading;
 			if (generation !== loadGeneration) return;
 			numPages = count;
+			// Re-render whatever page is current now; paging may have moved it.
 			await renderPreview();
 		} catch (failure: unknown) {
 			if (generation !== loadGeneration) return;
@@ -439,19 +457,43 @@
 				<div class="es-grid">
 					<label class="es-field">
 						Position X (pt)
-						<input type="number" min="0" step="1" bind:value={positionX} />
+						<input
+							type="number"
+							min="0"
+							step="1"
+							value={shown(placeX)}
+							oninput={(event) => (positionX = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Position Y (pt)
-						<input type="number" min="0" step="1" bind:value={positionY} />
+						<input
+							type="number"
+							min="0"
+							step="1"
+							value={shown(placeY)}
+							oninput={(event) => (positionY = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Width (pt)
-						<input type="number" min="1" step="1" bind:value={signatureWidth} />
+						<input
+							type="number"
+							min="1"
+							step="1"
+							value={shown(placeWidth)}
+							oninput={(event) => (signatureWidth = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Height (pt)
-						<input type="number" min="1" step="1" bind:value={signatureHeight} />
+						<input
+							type="number"
+							min="1"
+							step="1"
+							value={shown(placeHeight)}
+							oninput={(event) => (signatureHeight = typed(event.currentTarget))}
+						/>
 					</label>
 				</div>
 				<label class="es-field es-scale">

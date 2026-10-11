@@ -134,6 +134,7 @@
 		<code>.dark</code> ancestor class; <code>onIsDarkChange</code> is accepted and never called.
 	</li>
 	<li>The demo's sidebar icon is an inline SVG instead of Hugeicons.</li>
+	<li>Port-only export: <code>INLINE_THUMBNAIL_SIDEBAR_MIN_WIDTH</code>, the shell width at which the sidebar switches from overlay to inline (upstream keeps it private).</li>
 </ul>
 
 <p><a href="/">Back to all components</a></p>

@@ -1,6 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import FileSystem from './FileSystem.svelte';
 import { FileSystem as FileSystemExport } from './index.js';
 import type { FileSystemFileItem, FileSystemItem } from './types.js';
@@ -11,6 +11,11 @@ const ITEMS: FileSystemItem[] = [
 	{ kind: 'file', path: 'invoices/2026/jan.pdf', contentType: 'application/pdf' },
 	{ kind: 'file', path: 'readme.txt', contentType: 'text/plain' }
 ];
+
+/** The row's mouse-only disclosure chevron (hidden from assistive tech, like upstream). */
+function chevron(name: string): HTMLElement {
+	return within(treeitem(name)).getByTestId('file-system-toggle');
+}
 
 function treeitem(name: string): HTMLElement {
 	return screen.getByRole('treeitem', { name: new RegExp(name) });
@@ -32,12 +37,12 @@ describe('FileSystem', () => {
 		const folder = treeitem('invoices');
 		expect(folder).toHaveAttribute('aria-expanded', 'false');
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Expand invoices' }));
+		await fireEvent.click(chevron('invoices'));
 
 		expect(treeitem('invoices')).toHaveAttribute('aria-expanded', 'true');
 		expect(treeitem('2026')).toBeInTheDocument();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Collapse invoices' }));
+		await fireEvent.click(chevron('invoices'));
 
 		expect(treeitem('invoices')).toHaveAttribute('aria-expanded', 'false');
 		expect(screen.queryByRole('treeitem', { name: /2026/ })).not.toBeInTheDocument();
@@ -318,18 +323,22 @@ describe('FileSystem', () => {
 		const folder = treeitem('2026');
 		folder.focus();
 		await fireEvent.focus(folder);
-		await fireEvent.click(screen.getByRole('button', { name: 'Collapse invoices' }));
+		await fireEvent.click(chevron('invoices'));
 
 		const stops = screen.getAllByRole('treeitem').filter((row) => row.tabIndex === 0);
 		expect(stops).toEqual([treeitem('invoices')]);
 	});
 
-	it('keeps the expand buttons out of the Tab order, like upstream', () => {
+	it('keeps the disclosure chevrons out of the Tab order and the accessibility tree, like upstream', () => {
 		render(FileSystem, { items: ITEMS, defaultPath: 'invoices/' });
 
-		const buttons = screen.getAllByRole('button', { name: /^(Expand|Collapse) / });
-		expect(buttons.length).toBeGreaterThan(1);
-		for (const button of buttons) expect(button.tabIndex).toBe(-1);
+		expect(screen.queryAllByRole('button')).toHaveLength(0);
+		const chevrons = screen.getAllByTestId('file-system-toggle');
+		expect(chevrons.length).toBeGreaterThan(1);
+		for (const toggle of chevrons) {
+			expect(toggle).toHaveAttribute('aria-hidden', 'true');
+			expect(toggle.tabIndex).toBe(-1);
+		}
 	});
 
 	it('selection follows keyboard focus, like upstream', async () => {
@@ -352,6 +361,15 @@ describe('FileSystem', () => {
 			expect.objectContaining({ path: 'readme.txt' })
 		);
 		expect(onSelectionChange).toHaveBeenCalledTimes(3);
+	});
+
+	it('names folder rows by their name only; aria-expanded carries the state, like upstream', () => {
+		render(FileSystem, { items: ITEMS, defaultPath: 'invoices/' });
+
+		const invoices = screen.getByRole('treeitem', { name: 'invoices' });
+		expect(invoices).toHaveAttribute('aria-expanded', 'true');
+		expect(screen.getByRole('treeitem', { name: '2026' })).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByRole('treeitem', { name: 'readme.txt' })).not.toHaveAttribute('aria-expanded');
 	});
 
 	it('resolves a missing file url through upstream getFileUrl before onFileOpen', async () => {

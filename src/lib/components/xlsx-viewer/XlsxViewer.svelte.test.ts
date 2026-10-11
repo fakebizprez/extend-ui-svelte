@@ -194,6 +194,30 @@ describe('XlsxViewer', () => {
 		expect(screen.getByRole('gridcell', { name: '85' })).toHaveAttribute('aria-selected', 'true');
 	});
 
+	it('jumps to the used range with Ctrl+Home and Ctrl+End, like upstream', async () => {
+		// offsetBytes holds data in B2:C5.
+		render(XlsxViewer, { ...DARK, data: offsetBytes() });
+		await screen.findByRole('gridcell', { name: 'Lane' });
+		const grid = screen.getByRole('grid');
+		grid.focus();
+
+		await fireEvent.keyDown(grid, { key: 'Home', ctrlKey: true });
+		expect(screen.getByRole('gridcell', { name: 'Lane' })).toHaveAttribute('aria-selected', 'true');
+		await fireEvent.keyDown(grid, { key: 'End', ctrlKey: true });
+		expect(screen.getByRole('gridcell', { name: '3' })).toHaveAttribute('aria-selected', 'true');
+	});
+
+	it('clears the selection when the parent loads another workbook', async () => {
+		const { rerender, container } = render(XlsxViewer, { ...DARK, data: inventoryBytes() });
+		await fireEvent.click(await screen.findByRole('gridcell', { name: 'Resistor kit' }));
+		expect(screen.getByRole('grid')).toHaveAttribute('aria-activedescendant');
+
+		await rerender({ data: offsetBytes() });
+		await screen.findByRole('gridcell', { name: 'Lane' });
+		expect(screen.getByRole('grid')).not.toHaveAttribute('aria-activedescendant');
+		expect(container.querySelector('[role="gridcell"][aria-selected="true"]')).toBeNull();
+	});
+
 	it('scrolls to keep the selected cell rendered in a long sheet', async () => {
 		render(XlsxViewer, { ...DARK, data: bigSheetBytes(1000), height: 340 });
 		await screen.findByRole('gridcell', { name: 'id' });

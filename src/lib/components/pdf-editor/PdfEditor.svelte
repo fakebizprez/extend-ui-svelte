@@ -397,12 +397,19 @@
 		closeDelete();
 	}
 
-	function handleDialogKeyDown(event: KeyboardEvent): void {
-		if (event.key === 'Escape') {
+	// Escape closes the dialog at document level, like upstream, wherever focus is.
+	$effect(() => {
+		if (!confirmingDelete) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape') return;
 			event.preventDefault();
 			closeDelete();
-			return;
-		}
+		};
+		document.addEventListener('keydown', onKeyDown);
+		return () => document.removeEventListener('keydown', onKeyDown);
+	});
+
+	function handleDialogKeyDown(event: KeyboardEvent): void {
 		if (event.key !== 'Tab') return;
 		// Keep focus inside the modal dialog.
 		const buttons = [...(event.currentTarget as HTMLElement).querySelectorAll('button')];
@@ -803,7 +810,14 @@
 		</div>
 	{/if}
 	{#if confirmingDelete}
-		<div class="pdf-editor-dialog-backdrop">
+		<!-- Like upstream's Base UI Dialog, a press outside the popup dismisses it. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions: Escape is handled at document level. -->
+		<div
+			class="pdf-editor-dialog-backdrop"
+			onclick={(event) => {
+				if (event.target === event.currentTarget) closeDelete();
+			}}
+		>
 			<div
 				class="pdf-editor-dialog"
 				role="dialog"
@@ -825,6 +839,11 @@
 						Delete
 					</button>
 				</div>
+				<!-- Upstream's DialogContent shows an X close button by default. -->
+				<button type="button" class="pdf-editor-dialog-close" onclick={closeDelete}>
+					<span aria-hidden="true">&times;</span>
+					<span class="pdf-editor-sr-only">Close</span>
+				</button>
 			</div>
 		</div>
 	{/if}
@@ -1018,6 +1037,7 @@
 	}
 
 	.pdf-editor-dialog {
+		position: relative;
 		width: min(28rem, calc(100% - 2rem));
 		padding: 1.25rem;
 		border: 1px solid var(--pdf-editor-border);
@@ -1025,6 +1045,30 @@
 		background: var(--pdf-editor-bg);
 		color: var(--pdf-editor-fg);
 		box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+	}
+
+	.pdf-editor-dialog-close {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		width: 1.75rem;
+		height: 1.75rem;
+		border: none;
+		border-radius: 0.375rem;
+		background: transparent;
+		color: var(--pdf-editor-muted);
+		font-size: 18px;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.pdf-editor-sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
 	}
 
 	.pdf-editor-dialog-title {

@@ -194,7 +194,7 @@
 		defaultZoomScale?: number;
 		/** Show the formatting toolbar. */
 		showToolbar?: boolean;
-		/** Read-only mode: editing and import are disabled, export still works. */
+		/** Read-only mode: editing is disabled; upload and export still work, like upstream's read-only mode. */
 		readOnly?: boolean;
 		class?: string;
 		/** Alias of `class`, matching the upstream React prop. */
@@ -435,12 +435,12 @@
 			<button
 				type="button"
 				aria-label="Zoom out"
-				disabled={zoomIndex <= 0}
+				disabled={status !== 'ready' || zoomIndex <= 0}
 				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex - 1])}
 			>
 				−
 			</button>
-			<select aria-label="Zoom level" bind:value={zoomScale}>
+			<select aria-label="Zoom level" disabled={status !== 'ready'} bind:value={zoomScale}>
 				{#each ZOOM_OPTIONS as value (value)}
 					<option {value}>{value}%</option>
 				{/each}
@@ -448,12 +448,13 @@
 			<button
 				type="button"
 				aria-label="Zoom in"
-				disabled={zoomIndex >= ZOOM_OPTIONS.length - 1}
+				disabled={status !== 'ready' || zoomIndex >= ZOOM_OPTIONS.length - 1}
 				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex + 1])}
 			>
 				+
 			</button>
-			<button type="button" disabled={readOnly} onclick={() => fileInputEl?.click()}>
+			<!-- Like upstream's Import DOCX: disabled only while a document is importing. -->
+			<button type="button" disabled={status === 'loading'} onclick={() => fileInputEl?.click()}>
 				Upload
 			</button>
 			<button type="button" disabled={status !== 'ready' || exporting} onclick={handleExport}>

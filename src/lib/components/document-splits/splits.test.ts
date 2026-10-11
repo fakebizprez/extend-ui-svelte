@@ -323,3 +323,14 @@ describe('movePageToAdjacentGroup', () => {
 		expect(movePageToAdjacentGroup(splits, 'page-99', 1)).toBe(splits);
 	});
 });
+
+describe('migration guide', () => {
+	it('shows controlled splits and schema, not bind:, like the components', async () => {
+		const { readFile } = await import('node:fs/promises');
+		const guide = await readFile(`${process.cwd()}/docs/migration-react-to-svelte.md`, 'utf8');
+
+		expect(guide).not.toMatch(/bind:splits|bind:schema|bind:activeFieldKey \/>/);
+		expect(guide).not.toMatch(/<DocumentSplits[^>]*activeFieldKey/);
+		expect(guide).toContain('onSplitsChange={(next) => (splits = next)}');
+	});
+});

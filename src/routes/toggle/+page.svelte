@@ -23,6 +23,7 @@
 	let lastKey = $state('none');
 	let largePressed = $state('not reported');
 	let sizes = $state(['s', 'm', 'l']);
+	let submits = $state(0);
 </script>
 
 <h1>Toggle</h1>
@@ -156,6 +157,30 @@
 	{/each}
 </ToggleGroup>
 
+<h2>Inside a form</h2>
+<p>
+	<code>type</code> and <code>form</code> are ignored, like Base UI, so a toggle never submits
+	a form.
+</p>
+<form
+	id="toggle-demo-form"
+	onsubmit={(event) => {
+		event.preventDefault();
+		submits++;
+	}}
+>
+	<Toggle
+		variant="outline"
+		aria-label="Toggle in form"
+		type="submit"
+		form="toggle-demo-form"
+		{isDark}
+	>
+		Pin
+	</Toggle>
+</form>
+<p data-testid="form-submits">Form submits: {submits}</p>
+
 <h2>Disabled group</h2>
 <ToggleGroup aria-label="Disabled group" disabled defaultValue={['a']} {isDark}>
 	<ToggleGroupItem value="a" {isDark}>A</ToggleGroupItem>
@@ -185,6 +210,10 @@
 			1.4.1. Two deliberate changes: when the first item is disabled the stop moves to the next
 			enabled item (Base UI leaves the group with no Tab stop), and the remembered stop follows
 			the focused item rather than its position when items are added or removed.
+		</li>
+		<li>
+			Like Base UI, <code>type</code> and <code>form</code> are ignored: a toggle always renders
+			<code>type="button"</code> and never joins a form.
 		</li>
 		<li>
 			<code>className</code> and <code>class</code> are both accepted; <code>children</code> is

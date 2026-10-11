@@ -3,6 +3,14 @@ import { expect, test, type Page } from '@playwright/test';
 
 // The dev server reloads the page once after load; clicks before the settled,
 // hydrated page are dropped, so wait for network idle first.
+// The disclosure chevron is a mouse-only target, aria-hidden like upstream's.
+function chevron(page: Page, name: string) {
+	return page
+		.getByRole('treeitem', { name, exact: true })
+		.getByTestId('file-system-toggle')
+		.first();
+}
+
 async function openFileSystem(page: Page): Promise<void> {
 	await page.goto('/file-system');
 	await page.waitForLoadState('networkidle');
@@ -15,8 +23,8 @@ test('file-system expands a folder to reveal its children', async ({ page }) => 
 	await expect(tree).toBeVisible();
 	await expect(page.getByRole('treeitem', { name: /jan\.pdf/ })).toBeHidden();
 
-	await page.getByRole('button', { name: 'Expand invoices' }).click();
-	await page.getByRole('button', { name: 'Expand 2026' }).click();
+	await chevron(page, 'invoices').click();
+	await chevron(page, '2026').click();
 
 	await expect(page.getByRole('treeitem', { name: /jan\.pdf/ })).toBeVisible();
 	await expect(page.getByRole('treeitem', { name: /feb\.pdf/ })).toBeVisible();
@@ -103,9 +111,9 @@ test('docs record the defaultPath and export differences', async ({ page }) => {
 test('after collapsing the focused row\'s parent, Tab reaches that parent row', async ({ page }) => {
 	await openFileSystem(page);
 
-	await page.getByRole('button', { name: 'Expand invoices' }).click();
+	await chevron(page, 'invoices').click();
 	await page.getByRole('treeitem', { name: /2026/ }).click();
-	await page.getByRole('button', { name: 'Collapse invoices' }).click();
+	await chevron(page, 'invoices').click();
 
 	await page.getByLabel('Dark mode').focus();
 	await page.keyboard.press('Tab');
@@ -123,4 +131,26 @@ test('arrow keys move the selection and report it, like upstream', async ({ page
 		'true'
 	);
 	await expect(page.getByTestId('file-system-selection')).toContainText('readme.txt');
+});
+
+test('folder rows are named by the folder alone; aria-expanded carries the state', async ({
+	page
+}) => {
+	await openFileSystem(page);
+
+	const invoices = page.getByRole('treeitem', { name: 'invoices', exact: true });
+	await expect(invoices).toHaveAttribute('aria-expanded', 'false');
+	await invoices.press('ArrowRight');
+	await expect(invoices).toHaveAttribute('aria-expanded', 'true');
+
+	// Chromium's own accessibility tree agrees.
+	const cdp = await page.context().newCDPSession(page);
+	const { nodes } = (await cdp.send('Accessibility.getFullAXTree')) as {
+		nodes: { role?: { value?: string }; name?: { value?: string } }[];
+	};
+	const names = nodes
+		.filter((node) => node.role?.value === 'treeitem')
+		.map((node) => node.name?.value);
+	expect(names).toEqual(expect.arrayContaining(['invoices', '2026', 'readme.txt']));
+	expect(names.filter((name) => /Expand|Collapse/.test(name ?? ''))).toEqual([]);
 });

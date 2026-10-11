@@ -452,6 +452,39 @@ describe('PdfEditor', () => {
 		expect(sourceOrder(container)).toEqual([1, 2, 3]);
 	});
 
+	it('closes the delete dialog like upstream\'s Dialog: outside press, document Escape, Close button', async () => {
+		const { container } = render(PdfEditor, { src: SRC });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		const deleteButton = within(screen.getByRole('toolbar', { name: 'Page actions' })).getByRole('button', {
+			name: 'Delete pages'
+		});
+
+		// A press outside the popup (on the backdrop) closes it and returns focus.
+		await pageAction('Delete pages');
+		const backdrop = screen.getByRole('dialog').parentElement!;
+		await fireEvent.pointerDown(backdrop);
+		await fireEvent.click(backdrop);
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		await vi.waitFor(() => expect(deleteButton).toHaveFocus());
+
+		// Escape works at document level, wherever focus is.
+		await pageAction('Delete pages');
+		(document.activeElement as HTMLElement | null)?.blur();
+		await fireEvent.keyDown(document, { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+		// The X Close button, shown by default upstream.
+		await pageAction('Delete pages');
+		await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+		// A press inside the popup does not close it.
+		await pageAction('Delete pages');
+		await fireEvent.click(screen.getByRole('dialog'));
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		expect(sourceOrder(container)).toEqual([1, 2, 3]);
+	});
+
 	it('uses upstream\'s listbox focus model and arrow keys for the page list', async () => {
 		const onActivePageChange = vi.fn();
 		render(PdfEditor, { src: SRC, onActivePageChange });
@@ -549,5 +582,19 @@ describe('PdfEditor', () => {
 	it('exports the upstream PDFEditor name as an alias', () => {
 		expect(barrel.PDFEditor).toBe(PdfEditor);
 		expect(barrel.PdfEditor).toBe(PdfEditor);
+	});
+});
+
+describe('pdf-editor docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/pdf-editor/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		// Runtime exports of upstream components/extend/pdf-editor.tsx.
+		const upstream = new Set(['default', 'PDFEditor', 'serializeAnnotationItems', 'deserializeAnnotationItems']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
 	});
 });

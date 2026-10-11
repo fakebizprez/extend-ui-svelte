@@ -11,6 +11,7 @@ import {
 	DEFAULT_SCALE,
 	DEFAULT_SIGNATURE_HEIGHT,
 	DEFAULT_SIGNATURE_WIDTH,
+	defaultPlacementForPage,
 	embedSignaturePng,
 	getSignedDownloadFileName,
 	MAX_SCALE,
@@ -28,6 +29,20 @@ async function blankPdfBytes(pages = 1): Promise<Uint8Array> {
 	}
 	return await doc.save();
 }
+
+describe('defaultPlacementForPage', () => {
+	it('keeps upstream\'s field on a Letter page', () => {
+		expect(defaultPlacementForPage(612, 792)).toEqual({ x: 300, y: 230, width: 250, height: 58 });
+	});
+
+	it('scales upstream\'s field by pageWidth/612 and pageHeight/792 on A4', () => {
+		const placement = defaultPlacementForPage(595.28, 841.89);
+		expect(placement.x).toBeCloseTo(291.8, 1);
+		expect(placement.y).toBeCloseTo(244.5, 1);
+		expect(placement.width).toBeCloseTo(243.2, 1);
+		expect(placement.height).toBeCloseTo(61.65, 1);
+	});
+});
 
 describe('signature placement helpers', () => {
 	it('exposes the documented defaults', () => {

@@ -224,3 +224,13 @@ test('toggles and groups carry Base UI state attributes', async ({ page }) => {
 	await expect(disabled.getByRole('button').first()).toHaveAttribute('data-disabled', '');
 	await expect(page.getByRole('button', { name: 'Disabled toggle' })).toHaveAttribute('data-disabled', '');
 });
+
+test('a toggle given type="submit" and form never submits the form, like Base UI', async ({ page }) => {
+	const toggle = page.getByRole('button', { name: 'Toggle in form' });
+	await expect(toggle).toHaveAttribute('type', 'button');
+	await expect(toggle).not.toHaveAttribute('form');
+
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByTestId('form-submits')).toHaveText('Form submits: 0');
+});

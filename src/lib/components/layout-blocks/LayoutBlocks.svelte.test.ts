@@ -127,6 +127,31 @@ describe('LayoutBlocks', () => {
 		expect(onBlockFocus).toHaveBeenCalledTimes(3);
 	});
 
+	it('reports a block once while a controlled parent has not caught up, like upstream', async () => {
+		const onBlockFocus = vi.fn();
+		render(LayoutBlocks, {
+			blocks: sampleBlocks,
+			activeBlockId: 'heading-1',
+			onBlockFocus,
+			height: 800
+		});
+		const para = screen.getAllByTestId('layout-block')[1]!;
+
+		// Upstream's focusedBlockIdRef updates at once, so repeat events on the
+		// same block are ignored even though the parent never moves activeBlockId.
+		await fireEvent.mouseEnter(para);
+		await fireEvent.focus(para);
+		await fireEvent.click(para);
+		await fireEvent.mouseEnter(para);
+		expect(onBlockFocus).toHaveBeenCalledTimes(1);
+		expect(onBlockFocus).toHaveBeenCalledWith(sampleBlocks[1]);
+		expect(para).toHaveAttribute('data-active', 'false');
+
+		// Going back to the controlled block reports it again, like upstream.
+		await fireEvent.mouseEnter(screen.getAllByTestId('layout-block')[0]!);
+		expect(onBlockFocus).toHaveBeenCalledTimes(2);
+	});
+
 	it('does not refocus the already active block', async () => {
 		const onBlockFocus = vi.fn();
 		render(LayoutBlocks, {

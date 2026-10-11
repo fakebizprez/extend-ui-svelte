@@ -27,7 +27,12 @@
 <script lang="ts">
 	import { VirtualList } from '../../virtual-list/index.js';
 	import WorkbookSheetTabs from './WorkbookSheetTabs.svelte';
-	import { navigateGrid, scrollCellIntoView, type GridPosition } from './grid-navigation.js';
+	import {
+		navigateGrid,
+		scrollCellIntoView,
+		usedRange,
+		type GridPosition
+	} from './grid-navigation.js';
 	import type { WorkBook } from '../../engines/xlsx/index.js';
 
 	type EngineModule = typeof import('../../engines/xlsx/index.js');
@@ -139,12 +144,15 @@
 	// (with SheetJS inside it) is loaded through a dynamic import.
 	$effect(() => {
 		const sourceKey: unknown = data ?? src ?? null;
+		// A new source is a new workbook: drop the sheet, rows, and selection,
+		// as upstream does by remounting with key={src}.
+		sheetNames = [];
+		activeSheetIndex = 0;
+		rows = [];
+		selected = null;
+		errorMessage = '';
 		if (sourceKey === null || sourceKey === undefined) {
 			workbookCache = null;
-			sheetNames = [];
-			activeSheetIndex = 0;
-			rows = [];
-			errorMessage = '';
 			status = 'empty';
 			return;
 		}
@@ -234,7 +242,8 @@
 			rowCount: rows.length,
 			colCount: columns.length,
 			pageRows: Math.max(1, Math.floor(height / rowHeight)),
-			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH))
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH)),
+			used: usedRange(rows)
 		});
 		if (!next) return;
 		event.preventDefault();

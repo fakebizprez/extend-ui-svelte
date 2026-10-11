@@ -315,12 +315,15 @@
 					onkeydown={(event) => onRowKeyDown(event, entry)}
 				>
 					{#if entry.kind === 'folder'}
-						<button
-							type="button"
+						<!-- Like upstream, the chevron is decoration: the row's aria-expanded
+							carries the state and ArrowRight, ArrowLeft, or Enter toggle it, so this
+							mouse target stays out of the accessibility tree. -->
+						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+						<span
 							class="file-system-chevron"
-							tabindex="-1"
 							class:open={isExpanded}
-							aria-label={isExpanded ? `Collapse ${entry.name}` : `Expand ${entry.name}`}
+							aria-hidden="true"
+							data-testid="file-system-toggle"
 							onclick={(event) => {
 								event.stopPropagation();
 								toggle(entry);
@@ -336,7 +339,7 @@
 									stroke-linejoin="round"
 								/>
 							</svg>
-						</button>
+						</span>
 						<svg
 							class="file-system-icon"
 							viewBox="0 0 24 24"

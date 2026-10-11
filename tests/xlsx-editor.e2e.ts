@@ -322,3 +322,20 @@ test('xlsx-editor keeps the selected cell when the active sheet tab is clicked',
 	await expect(cell).toHaveAttribute('aria-selected', 'true');
 	await expect(editor.getByTestId('formula-bar')).toHaveValue('Resistor kit');
 });
+
+test('xlsx-editor Ctrl+Home and Ctrl+End jump to the used range, like upstream', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	await expect(editor.getByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
+	await editor.getByRole('tab', { name: 'Lanes' }).click();
+	const address = editor.getByTestId('active-cell-address');
+
+	// Lanes holds data in B2:D6; A1 is empty.
+	await editor.getByRole('gridcell', { name: 'Total' }).click();
+	await page.keyboard.press('ControlOrMeta+Home');
+	await expect(address).toHaveText('B2');
+	await page.keyboard.press('ControlOrMeta+End');
+	await expect(address).toHaveText('D6');
+	await page.keyboard.press('Home');
+	await expect(address).toHaveText('B6');
+});

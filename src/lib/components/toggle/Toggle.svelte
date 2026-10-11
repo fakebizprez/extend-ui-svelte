@@ -9,6 +9,7 @@
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 	- No `TogglePrimitive` re-export (Base UI is React-only).
+	- Like Base UI, `type` and `form` are ignored: always type="button".
 	- A consumer `onclick` runs before the built-in toggle, like Base UI;
 	  `event.preventDefault()` stands in for `preventBaseUIHandler()`.
 	- Upstream's before-pseudo shadow, touch hit-area, and icon sizing
@@ -92,6 +93,9 @@
 		isDark = false,
 		// Shared-contract parity; intentionally unused, the parent owns the theme.
 		onIsDarkChange: _onIsDarkChange,
+		// Dropped like Base UI's Toggle: always type="button", never part of a form.
+		type: _type,
+		form: _form,
 		...rest
 	}: ToggleProps = $props();
 

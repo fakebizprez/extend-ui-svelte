@@ -225,3 +225,17 @@ describe('BoundingBoxCitations (HumanReviewBlock)', () => {
 		vi.unstubAllGlobals();
 	});
 });
+
+describe('bounding-box-citations docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/bounding-box-citations/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		// Runtime exports of upstream components/extend/bounding-box-citations.tsx.
+		const upstream = new Set(['default', 'REVIEW_FIELDS', 'getMetadataLocation', 'getReviewFieldLocation', 'getReviewLocationKey', 'findReviewField', 'HumanReviewHighlight', 'JsonDiffView', 'JsonCodeView', 'HumanReviewPanel']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
+	});
+});

@@ -568,6 +568,25 @@ describe('DocxViewer', () => {
 		expect(screen.getByRole('button', { name: 'Toggle thumbnails' })).toBeDisabled();
 	});
 
+	it('shows only the loading surface while a new upload loads, like upstream', async () => {
+		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		const upload = deferredRender('UPLOADED DOC');
+
+		const file = new File(['fake'], 'upload.docx');
+		await fireEvent.change(screen.getByTestId('docx-file-input'), { target: { files: [file] } });
+
+		expect(await screen.findByText('Loading document…')).toBeVisible();
+		expect(screen.getByTestId('docx-container')).not.toBeVisible();
+		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of -');
+
+		upload.release();
+		await upload.settled;
+		expect(screen.getByTestId('docx-container')).toBeVisible();
+		expect(screen.getByTestId('docx-container')).toHaveTextContent('UPLOADED DOC');
+		expect(screen.queryByText('Loading document…')).not.toBeInTheDocument();
+	});
+
 	it('accepts Word documents in the upload input', async () => {
 		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
 

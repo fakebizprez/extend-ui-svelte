@@ -213,3 +213,17 @@ describe('FileThumbnail', () => {
 		expect(parseFloat(preview.style.aspectRatio)).toBeCloseTo(LETTER.width / LETTER.height, 3);
 	});
 });
+
+describe('file-thumbnail docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/file-thumbnail/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		// Runtime exports of upstream components/extend/file-thumbnail.tsx.
+		const upstream = new Set(['default', 'FileThumbnail', 'FileThumbnailLoadingOverlay']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
+	});
+});

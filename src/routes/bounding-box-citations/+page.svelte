@@ -108,6 +108,7 @@
 	<li>Block: <code>src</code> is the primary PDF prop and upstream's <code>file</code> is an alias; added <code>bind:activeFieldKey</code>, <code>onActiveFieldChange</code>, <code>onFieldFocus</code>, <code>onLocationHover</code>, <code>bind:values</code>, <code>fileName</code>, and <code>height</code>.</li>
 	<li>Block: the PDF renders on the shared PdfViewer; scroll-to-area is computed from the rendered page slots because PdfViewer has no <code>scrollToPageArea</code> handle.</li>
 	<li>Block: the resizable split stacks vertically below 900px instead of switching to a vertical resizable layout.</li>
+	<li>Port-only exports: the overlay helpers <code>boxesForPage</code>, <code>formatCitationValue</code>, <code>getCitationLocation</code>, plus the types <code>BoundingBoxCitationsProps</code>, <code>HumanReviewPanelProps</code>, <code>CitationBox</code>, <code>ArrayNestedView</code>, <code>ArrayReviewSide</code>. Upstream's <code>HumanReviewTheme</code> type is not exported because <code>theme</code> is replaced by <code>isDark</code>.</li>
 </ul>
 
 <p><a href="/">Back to all components</a></p>

@@ -399,3 +399,48 @@ test('the thumbnail listbox moves through pages with the arrow, Home, and End ke
 	await expect(indicator).toHaveText(/Page\s+1\s+of 8/);
 	await expect(listbox).toBeFocused();
 });
+
+test('a new upload shows only the loading surface until it is ready, like upstream', async ({
+	page
+}) => {
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	const documentEl = page.getByTestId('docx-container');
+	await expect(documentEl).toContainText(EXPECTED_TEXT, { timeout: 20000 });
+
+	// Hold the next DOCX read until released. JSZip reads uploads with
+	// Blob.arrayBuffer (FileReader as a fallback).
+	await page.evaluate(() => {
+		const held: Array<() => void> = [];
+		const originalArrayBuffer = Blob.prototype.arrayBuffer;
+		const originalRead = FileReader.prototype.readAsArrayBuffer;
+		Blob.prototype.arrayBuffer = function (this: Blob) {
+			return new Promise<ArrayBuffer>((resolve, reject) =>
+				held.push(() => originalArrayBuffer.call(this).then(resolve, reject))
+			);
+		};
+		FileReader.prototype.readAsArrayBuffer = function (blob: Blob) {
+			held.push(() => originalRead.call(this, blob));
+		};
+		(window as unknown as { __releaseDocx: () => void }).__releaseDocx = () => {
+			Blob.prototype.arrayBuffer = originalArrayBuffer;
+			FileReader.prototype.readAsArrayBuffer = originalRead;
+			for (const read of held.splice(0)) read();
+		};
+	});
+	const uploaded = 'Uploaded replacement document';
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'replacement.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await replacementDocx(uploaded)
+	});
+
+	await expect(page.getByRole('status')).toHaveText('Loading document…');
+	await expect(documentEl).toBeHidden();
+	await expect(page.getByText(EXPECTED_TEXT)).toBeHidden();
+
+	await page.evaluate(() => (window as unknown as { __releaseDocx: () => void }).__releaseDocx());
+	await expect(documentEl).toBeVisible({ timeout: 20000 });
+	await expect(documentEl).toContainText(uploaded);
+	await expect(page.getByRole('status')).toHaveCount(0);
+});

@@ -22,6 +22,25 @@ export const DEFAULT_POSITION_X = 300;
 /** Placement offset from the bottom page edge in PDF points (792 - 504 - 58). */
 export const DEFAULT_POSITION_Y = 230;
 
+/**
+ * Upstream's default field on the page actually being signed: like its
+ * downloadSignedPdf, the 612x792 reference bbox scales by pageWidth/612 and
+ * pageHeight/792, and y flips to the bottom-left origin.
+ */
+export function defaultPlacementForPage(
+	pageWidth: number,
+	pageHeight: number
+): { x: number; y: number; width: number; height: number } {
+	const scaleX = pageWidth / 612;
+	const scaleY = pageHeight / 792;
+	return {
+		x: 300 * scaleX,
+		y: pageHeight - (504 + 58) * scaleY,
+		width: 250 * scaleX,
+		height: 58 * scaleY
+	};
+}
+
 /** Default placement scale multiplier. */
 export const DEFAULT_SCALE = 1;
 

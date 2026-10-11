@@ -2,7 +2,9 @@
 // Keyboard navigation shared by the XLSX viewer and editor grids, following
 // upstream react-xlsx's handleGridKeyDown: arrows, Ctrl/Cmd+arrows, Home/End,
 // PageUp/PageDown (Alt for columns), Tab/Shift+Tab, and Enter/Shift+Enter.
-// Moves clamp to the sheet. Pure and framework-free.
+// Home/End and the Ctrl/Cmd jumps go to the used range's edges, as upstream's
+// resolveFirstUsedVisibleIndex / resolveLastUsedVisibleIndex do. Moves clamp
+// to the sheet. Pure apart from scrollCellIntoView.
 
 export interface GridPosition {
 	row: number;
@@ -16,6 +18,41 @@ export interface GridBounds {
 	pageRows: number;
 	/** Columns in one viewport, for Alt+PageUp/PageDown. */
 	pageCols: number;
+	/** Rows and columns holding data; the whole grid when omitted. */
+	used?: UsedRange;
+}
+
+/** Zero-based inclusive bounds of the cells that hold data. */
+export interface UsedRange {
+	firstRow: number;
+	lastRow: number;
+	firstCol: number;
+	lastCol: number;
+}
+
+/**
+ * The rows and columns holding a value (blank strings count as empty), plus
+ * `extraKeys` (`row:col`, e.g. formula cells). Undefined when nothing is used.
+ */
+export function usedRange(values: unknown[][], extraKeys: Iterable<string> = []): UsedRange | undefined {
+	let range: UsedRange | undefined;
+	const include = (row: number, col: number) => {
+		if (!range) range = { firstRow: row, lastRow: row, firstCol: col, lastCol: col };
+		range.firstRow = Math.min(range.firstRow, row);
+		range.lastRow = Math.max(range.lastRow, row);
+		range.firstCol = Math.min(range.firstCol, col);
+		range.lastCol = Math.max(range.lastCol, col);
+	};
+	values.forEach((cells, row) =>
+		cells.forEach((value, col) => {
+			if (value !== null && value !== undefined && value !== '') include(row, col);
+		})
+	);
+	for (const key of extraKeys) {
+		const [row, col] = key.split(':').map(Number) as [number, number];
+		include(row, col);
+	}
+	return range;
 }
 
 export type GridKey = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey'>;
@@ -31,27 +68,28 @@ export function navigateGrid(
 ): GridPosition | null {
 	const lastRow = bounds.rowCount - 1;
 	const lastCol = bounds.colCount - 1;
+	const used = bounds.used ?? { firstRow: 0, lastRow, firstCol: 0, lastCol };
 	const command = event.ctrlKey || event.metaKey;
 	const { row, col } = current;
 	let next: GridPosition;
 	switch (event.key) {
 		case 'ArrowDown':
-			next = { row: command ? lastRow : row + 1, col };
+			next = { row: command ? used.lastRow : row + 1, col };
 			break;
 		case 'ArrowUp':
-			next = { row: command ? 0 : row - 1, col };
+			next = { row: command ? used.firstRow : row - 1, col };
 			break;
 		case 'ArrowRight':
-			next = { row, col: command ? lastCol : col + 1 };
+			next = { row, col: command ? used.lastCol : col + 1 };
 			break;
 		case 'ArrowLeft':
-			next = { row, col: command ? 0 : col - 1 };
+			next = { row, col: command ? used.firstCol : col - 1 };
 			break;
 		case 'Home':
-			next = { row: command ? 0 : row, col: 0 };
+			next = { row: command ? used.firstRow : row, col: used.firstCol };
 			break;
 		case 'End':
-			next = { row: command ? lastRow : row, col: lastCol };
+			next = { row: command ? used.lastRow : row, col: used.lastCol };
 			break;
 		case 'PageDown':
 		case 'PageUp': {

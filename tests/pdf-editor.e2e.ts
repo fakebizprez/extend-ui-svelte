@@ -204,3 +204,26 @@ test('pdf editor confirms deletes in the component and keeps the last page', asy
 	await expect(editor.getByTestId('pdf-editor-page')).toHaveCount(1);
 	expect(nativeDialogs).toBe(0);
 });
+
+test('pdf editor delete dialog dismisses like upstream: outside press, Escape, Close', async ({
+	page
+}) => {
+	const editor = await openEditor(page);
+	const dialog = editor.getByRole('dialog', { name: 'Delete this page?' });
+
+	await pageAction(editor, 'Delete pages').click();
+	const backdrop = await editor.locator('.pdf-editor-dialog-backdrop').boundingBox();
+	await page.mouse.click(backdrop!.x + 20, backdrop!.y + 20);
+	await expect(dialog).toHaveCount(0);
+	await expect(pageAction(editor, 'Delete pages')).toBeFocused();
+
+	await pageAction(editor, 'Delete pages').click();
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+
+	await pageAction(editor, 'Delete pages').click();
+	await dialog.getByRole('button', { name: 'Close' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(editor.getByTestId('pdf-editor-page')).toHaveCount(3);
+});

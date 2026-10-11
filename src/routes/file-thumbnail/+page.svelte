@@ -58,6 +58,9 @@
 			Dark mode is set by the parent through <code>isDark</code>. Like upstream there is no
 			theme switch inside the thumbnail.
 		</li>
+		<li>
+			Port-only exports for the built-in PDF rendering: <code>clampPageNumber</code>, <code>DEFAULT_THUMBNAIL_PAGE</code>, <code>DEFAULT_THUMBNAIL_WIDTH</code>, <code>renderLoadedPdfThumbnail</code>, <code>renderPdfThumbnail</code>, <code>thumbnailScale</code>, plus the types <code>PdfThumbnailRenderOptions</code>, <code>PdfThumbnailRenderResult</code>. <code>FileThumbnailProps</code> is exported as a type, as upstream does.
+		</li>
 	</ul>
 </section>
 
