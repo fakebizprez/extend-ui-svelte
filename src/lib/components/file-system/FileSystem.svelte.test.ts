@@ -248,16 +248,21 @@ describe('FileSystem', () => {
 		expect(onSelectionChange).toHaveBeenCalledTimes(1);
 	});
 
-	it('reports null when the selected entry leaves the manifest', async () => {
+	it('keeps the selection quietly when the selected entry leaves the items, like upstream', async () => {
+		// Upstream reports null only when search or a filter hides the entry;
+		// the tree has neither, so a removed entry just shows nothing selected.
 		const onSelectionChange = vi.fn();
 		const { rerender } = render(FileSystem, { items: ITEMS, onSelectionChange });
 
 		await fireEvent.click(treeitem('readme.txt'));
 		await rerender({ items: ITEMS.filter((item) => item.path !== 'readme.txt') });
 
-		expect(onSelectionChange).toHaveBeenLastCalledWith(null);
-		expect(onSelectionChange).toHaveBeenCalledTimes(2);
+		expect(onSelectionChange).toHaveBeenCalledTimes(1);
 		expect(screen.queryByRole('treeitem', { selected: true })).not.toBeInTheDocument();
+
+		// Restoring the entry shows it selected again.
+		await rerender({ items: ITEMS });
+		expect(screen.getByRole('treeitem', { selected: true })).toHaveTextContent('readme.txt');
 	});
 
 	it('keeps a parent-set selection while items are still loading', async () => {

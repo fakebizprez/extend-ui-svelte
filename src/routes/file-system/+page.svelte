@@ -91,11 +91,6 @@
 			Port additions: <code>bind:selectedPath</code>, <code>onRename</code>, and
 			<code>renamable</code> (inline rename with F2).
 		</li>
-		<li>
-			When the selected entry is removed from <code>items</code>, the selection is cleared and
-			<code>onSelectionChange(null)</code> is called. Upstream reports <code>null</code> only when
-			search, a filter, or navigation hides the entry, and keeps a removed entry's selection.
-		</li>
 	</ul>
 </section>
 

@@ -17,8 +17,6 @@
 	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
 	  switch, so onIsDarkChange is accepted and never called.
 	- Port additions: bind:selectedPath, onRename, renamable (inline F2 rename).
-	- Removing the selected entry from items clears the selection and reports
-	  null; upstream reports null only when search, filters or navigation hide it.
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
@@ -107,22 +105,9 @@
 		onSelectionChange?.(entry);
 	}
 
-	// A selected entry removed from items clears the selection (upstream does this
-	// only for entries hidden by search/filters). A parent-set path that has not
-	// appeared yet (items still loading) is kept.
-	let presentPath: string | null = null;
-	$effect(() => {
-		const path = selectedPath;
-		if (path === null) return;
-		if (index.files.has(path) || index.folders.has(path)) {
-			presentPath = path;
-			return;
-		}
-		if (presentPath !== path) return;
-		presentPath = null;
-		selectedPath = null;
-		onSelectionChange?.(null);
-	});
+	// Like upstream, removing the selected entry from items keeps the selection
+	// quietly (upstream reports null only when search or a filter hides it, and
+	// the tree has neither), so a parent-set path survives items still loading.
 
 	// Upstream's Finder-style type-ahead: letters and digits build a buffer
 	// that resets after 700ms idle; a single letter advances past the focused
