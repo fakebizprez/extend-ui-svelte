@@ -107,6 +107,7 @@
 	let buttonEl = $state<HTMLButtonElement | undefined>(undefined);
 
 	// Initial capture is intended: uncontrolled state starts from the default.
+	// svelte-ignore state_referenced_locally
 	let internalPressed = $state(defaultPressed);
 	const pressed = $derived(group ? group.isSelected(itemValue) : (pressedProp ?? internalPressed));
 	const isDisabled = $derived(disabled || (group?.isDisabled() ?? false));
