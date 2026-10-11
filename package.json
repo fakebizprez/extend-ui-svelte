@@ -95,5 +95,8 @@
 		"type": "git",
 		"url": "git+https://github.com/fakebizprez/extend-ui-svelte.git"
 	},
-	"author": "Anthony Fecarotta (https://linehaul.ai)"
+	"author": "Anthony Fecarotta (https://linehaul.ai)",
+	"publishConfig": {
+		"access": "public"
+	}
 }
