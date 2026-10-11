@@ -1,6 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI pdf-editor. Upstream: extend-hq/ui (MIT).
 // Framework-free page-order model plus the pdf-lib export used by PdfEditor.
-import { ensurePdfExtension } from '#lib/components/pdf-viewer/zoom.js';
+import { ensurePdfExtension } from '../pdf-viewer/zoom.js';
 
 /** One page in the edited document: which source page it came from and its rotation. */
 export interface EditedPdfPage {

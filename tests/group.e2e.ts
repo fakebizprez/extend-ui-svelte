@@ -25,17 +25,70 @@ test('group page shows horizontal, vertical, text, and nested groups', async ({ 
 	await expect(nested.getByRole('group')).toHaveCount(2);
 });
 
-// The join classes are Tailwind utilities; the docs site does not load Tailwind yet.
-test('grouped buttons sit edge to edge like upstream', async ({
+type Edges = {
+	tl: number; tr: number; br: number; bl: number;
+	top: number; right: number; bottom: number; left: number;
+	x: number; y: number; w: number; h: number;
+};
+
+async function edges(locator: import('@playwright/test').Locator): Promise<Edges[]> {
+	return locator.evaluateAll((nodes) =>
+		nodes.map((node) => {
+			const style = getComputedStyle(node);
+			const rect = node.getBoundingClientRect();
+			return {
+				tl: parseFloat(style.borderTopLeftRadius),
+				tr: parseFloat(style.borderTopRightRadius),
+				br: parseFloat(style.borderBottomRightRadius),
+				bl: parseFloat(style.borderBottomLeftRadius),
+				top: parseFloat(style.borderTopWidth),
+				right: parseFloat(style.borderRightWidth),
+				bottom: parseFloat(style.borderBottomWidth),
+				left: parseFloat(style.borderLeftWidth),
+				x: rect.left, y: rect.top, w: rect.width, h: rect.height
+			};
+		})
+	);
+}
+
+// Upstream groupVariants: inner corners lose their radius and the inner edges
+// lose their border, so adjoining items never draw a double border.
+test('horizontal group joins items like upstream: square inner corners, no double borders', async ({
 	page
 }) => {
 	const horizontal = page.getByRole('group', { name: 'Clipboard actions' });
-	const boxes = await horizontal.locator('button').evaluateAll((buttons) =>
-		buttons.map((button) => button.getBoundingClientRect())
-	);
-	for (let index = 1; index < boxes.length; index += 1) {
-		expect(boxes[index]!.left).toBeGreaterThanOrEqual(boxes[index - 1]!.right - 1);
-	}
+	const [copy, paste, cut] = await edges(horizontal.locator('button'));
+	const [firstSeparator] = await edges(horizontal.getByRole('separator'));
+
+	// Outer corners keep the button radius.
+	expect(copy!.tl).toBeGreaterThan(0);
+	expect(copy!.bl).toBeGreaterThan(0);
+	expect(cut!.tr).toBeGreaterThan(0);
+	expect(cut!.br).toBeGreaterThan(0);
+	expect(copy!.left).toBeGreaterThan(0);
+	expect(cut!.right).toBeGreaterThan(0);
+
+	// Inner corners are square and inner edges have no border.
+	expect([copy!.tr, copy!.br, copy!.right]).toEqual([0, 0, 0]);
+	expect([paste!.tl, paste!.tr, paste!.br, paste!.bl, paste!.left, paste!.right]).toEqual([
+		0, 0, 0, 0, 0, 0
+	]);
+	expect([cut!.tl, cut!.bl, cut!.left]).toEqual([0, 0, 0]);
+
+	// Between two items there is exactly the 1px separator line.
+	expect(firstSeparator!.w).toBe(1);
+	expect(Math.round(paste!.x - (copy!.x + copy!.w))).toBe(1);
+});
+
+test('vertical group joins items top to bottom like upstream', async ({ page }) => {
+	const vertical = page.getByRole('group', { name: 'Vertical actions' });
+	const [up, down] = await edges(vertical.locator('button'));
+
+	expect(up!.tl).toBeGreaterThan(0);
+	expect(down!.bl).toBeGreaterThan(0);
+	expect([up!.bl, up!.br, up!.bottom]).toEqual([0, 0, 0]);
+	expect([down!.tl, down!.tr, down!.top]).toEqual([0, 0, 0]);
+	expect(Math.round(down!.y - (up!.y + up!.h))).toBe(1);
 });
 
 test('group buttons are clickable and reachable with the keyboard in order', async ({ page }) => {

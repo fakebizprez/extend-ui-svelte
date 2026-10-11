@@ -5,7 +5,7 @@
 	shared VirtualList, so large decks never render all at once.
 -->
 <script lang="ts">
-	import type { PptxDeck } from '#lib/engines/pptx/index.js';
+	import type { PptxDeck } from '../../engines/pptx/index.js';
 
 	interface Props {
 		/** Loaded deck; rendering runs on the client only. */

@@ -10,10 +10,10 @@ export {
 	type CsvTsvViewerProps,
 	type ParsedTable
 } from './components/csv-tsv-viewer/index.js';
-export { DEFAULT_IS_DARK, resolveIsDark, toggleIsDark } from './dark-mode';
-export type { DarkModeProps } from './dark-mode';
-export { VirtualList } from './virtual-list/index';
-export { computeWindow, DEFAULT_OVERSCAN } from './virtual-list/index';
+export { DEFAULT_IS_DARK, resolveIsDark, toggleIsDark } from './dark-mode.js';
+export type { DarkModeProps } from './dark-mode.js';
+export { VirtualList } from './virtual-list/index.js';
+export { computeWindow, DEFAULT_OVERSCAN } from './virtual-list/index.js';
 export {
 	ButtonGroup,
 	ButtonGroupSeparator,
@@ -89,6 +89,14 @@ export {
 	type PdfViewerProps
 } from './components/pdf-viewer/index.js';
 export { PptxViewer, PptxViewerPreview } from './components/pptx-viewer/index.js';
-export { SchemaBuilder, SchemaBuilderPanel } from './components/schema-builder/index.js';
+export {
+	SchemaBuilder,
+	SchemaBuilderPanel,
+	SchemaJsonView
+} from './components/schema-builder/index.js';
 export { XlsxEditor, XlsxEditorPreview } from './components/xlsx-editor/index.js';
-export { XlsxViewer, XlsxViewerPreview } from './components/xlsx-viewer/index.js';
+export {
+	WorkbookSheetTabs,
+	XlsxViewer,
+	XlsxViewerPreview
+} from './components/xlsx-viewer/index.js';

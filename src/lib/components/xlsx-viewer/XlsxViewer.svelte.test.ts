@@ -5,7 +5,10 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { utils, write } from 'xlsx';
 import XlsxViewer from './XlsxViewer.svelte';
 import XlsxEditor from '../xlsx-editor/XlsxEditor.svelte';
-import { XlsxViewerPreview } from './index.js';
+import { XlsxViewerPreview, type XlsxViewerProps } from './index.js';
+
+/** Required upstream props: dark mode is parent-controlled. */
+const DARK = { isDark: false, onIsDarkChange: () => {} };
 
 function inventoryBytes(): Uint8Array {
 	const workbook = utils.book_new();
@@ -58,8 +61,17 @@ afterEach(() => {
 });
 
 describe('XlsxViewer', () => {
+	it('requires isDark and onIsDarkChange, like upstream XlsxViewerPreview', () => {
+		// @ts-expect-error isDark and onIsDarkChange are required
+		const missingBoth: XlsxViewerProps = { src: '/fixtures/sample.xlsx' };
+		// @ts-expect-error onIsDarkChange is required
+		const missingCallback: XlsxViewerProps = { src: '/fixtures/sample.xlsx', isDark: false };
+		const complete: XlsxViewerProps = { src: '/fixtures/sample.xlsx', ...DARK };
+		expect([missingBoth, missingCallback, complete]).toHaveLength(3);
+	});
+
 	it('renders sheet tabs and first-sheet cell values from data bytes', async () => {
-		render(XlsxViewer, { data: inventoryBytes() });
+		render(XlsxViewer, { ...DARK, data: inventoryBytes() });
 
 		const tablist = await screen.findByRole('tablist', { name: 'Sheets' });
 		const tabs = within(tablist).getAllByRole('tab');
@@ -73,7 +85,7 @@ describe('XlsxViewer', () => {
 	});
 
 	it('shows column letters and row numbers with row 1 as data, like upstream', async () => {
-		const { container } = render(XlsxViewer, { data: inventoryBytes() });
+		const { container } = render(XlsxViewer, { ...DARK, data: inventoryBytes() });
 
 		expect(await screen.findByRole('columnheader', { name: 'A' })).toBeVisible();
 		expect(screen.getByRole('columnheader', { name: 'D' })).toBeVisible();
@@ -89,7 +101,7 @@ describe('XlsxViewer', () => {
 	});
 
 	it('keeps true positions: A1 origin and blank rows', async () => {
-		const { container } = render(XlsxViewer, { data: offsetBytes() });
+		const { container } = render(XlsxViewer, { ...DARK, data: offsetBytes() });
 
 		expect(await screen.findByRole('cell', { name: 'Lane' })).toBeVisible();
 		expect(screen.getByTestId('row-count')).toHaveTextContent('5 rows');
@@ -117,7 +129,7 @@ describe('XlsxViewer', () => {
 			'Errors'
 		);
 		const bytes = new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
-		const { container } = render(XlsxViewer, { data: bytes });
+		const { container } = render(XlsxViewer, { ...DARK, data: bytes });
 
 		await screen.findByRole('cell', { name: '3' });
 		const cells = within(container.querySelector('[data-row-index="0"]') as HTMLElement)
@@ -126,10 +138,31 @@ describe('XlsxViewer', () => {
 		expect(cells).toEqual(['#DIV/0!', 'TRUE', '3']);
 	});
 
+	it('hides the sheet tabs for a single-sheet workbook in viewer and editor, like upstream', async () => {
+		render(XlsxViewer, { ...DARK, data: offsetBytes() });
+		render(XlsxEditor, { ...DARK, data: offsetBytes() });
+
+		await screen.findByRole('cell', { name: 'Lane' });
+		await screen.findByRole('gridcell', { name: 'Lane' });
+		expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+	});
+
+	it('switches sheets from the keyboard', async () => {
+		render(XlsxViewer, { ...DARK, data: inventoryBytes() });
+		const inventory = await screen.findByRole('tab', { name: 'Inventory' });
+
+		await fireEvent.keyDown(inventory, { key: 'ArrowRight' });
+		expect(await screen.findByRole('cell', { name: 'Total SKUs' })).toBeVisible();
+		const summary = screen.getByRole('tab', { name: 'Summary' });
+		expect(summary).toHaveAttribute('aria-selected', 'true');
+		// The tab strip stays mounted while the sheet loads, so focus stays put.
+		expect(summary).toHaveFocus();
+	});
+
 	it('reports the same row count as the editor for the same file', async () => {
 		const bytes = offsetBytes();
-		render(XlsxViewer, { data: bytes });
-		render(XlsxEditor, { data: bytes });
+		render(XlsxViewer, { ...DARK, data: bytes });
+		render(XlsxEditor, { ...DARK, data: bytes });
 
 		await screen.findByRole('cell', { name: 'Lane' });
 		await screen.findByRole('gridcell', { name: 'Lane' });
@@ -138,14 +171,14 @@ describe('XlsxViewer', () => {
 	});
 
 	it('accepts className as an alias of class and exports the upstream name', async () => {
-		render(XlsxViewerPreview, { data: inventoryBytes(), class: 'from-class', className: 'from-alias' });
+		render(XlsxViewerPreview, { ...DARK, data: inventoryBytes(), class: 'from-class', className: 'from-alias' });
 
 		const viewer = await screen.findByTestId('xlsx-viewer');
 		expect(viewer).toHaveClass('from-class', 'from-alias');
 	});
 
 	it('switches sheets when a tab is clicked', async () => {
-		render(XlsxViewer, { data: inventoryBytes() });
+		render(XlsxViewer, { ...DARK, data: inventoryBytes() });
 
 		const summaryTab = await screen.findByRole('tab', { name: 'Summary' });
 		await fireEvent.click(summaryTab);
@@ -163,7 +196,7 @@ describe('XlsxViewer', () => {
 			'fetch',
 			vi.fn(async () => new Response(bytes.buffer as ArrayBuffer, { status: 200 }))
 		);
-		render(XlsxViewer, { src: '/fixtures/sample.xlsx' });
+		render(XlsxViewer, { ...DARK, src: '/fixtures/sample.xlsx' });
 
 		expect(await screen.findByRole('tab', { name: 'Inventory' })).toBeVisible();
 		expect(await screen.findByRole('cell', { name: 'Resistor kit' })).toBeVisible();
@@ -171,7 +204,7 @@ describe('XlsxViewer', () => {
 	});
 
 	it('virtualizes many rows instead of rendering them all', async () => {
-		const { container } = render(XlsxViewer, { data: bigSheetBytes(1000), height: 400 });
+		const { container } = render(XlsxViewer, { ...DARK, data: bigSheetBytes(1000), height: 400 });
 
 		expect(await screen.findByRole('cell', { name: 'id' })).toBeVisible();
 		expect(screen.getByTestId('row-count')).toHaveTextContent('1001 rows');
@@ -189,7 +222,7 @@ describe('XlsxViewer', () => {
 	});
 
 	it('shows an empty state when neither src nor data is given', async () => {
-		render(XlsxViewer, {});
+		render(XlsxViewer, DARK);
 
 		expect(await screen.findByText('No workbook to preview')).toBeVisible();
 		expect(screen.queryByRole('table')).not.toBeInTheDocument();
@@ -197,7 +230,7 @@ describe('XlsxViewer', () => {
 	});
 
 	it('shows an error for empty workbook bytes', async () => {
-		render(XlsxViewer, { data: new Uint8Array(0) });
+		render(XlsxViewer, { ...DARK, data: new Uint8Array(0) });
 
 		expect(await screen.findByRole('alert')).toHaveTextContent(
 			'Cannot load workbook from empty data'
@@ -209,20 +242,20 @@ describe('XlsxViewer', () => {
 			'fetch',
 			vi.fn(async () => new Response('nope', { status: 404, statusText: 'Not Found' }))
 		);
-		render(XlsxViewer, { src: '/fixtures/missing.xlsx' });
+		render(XlsxViewer, { ...DARK, src: '/fixtures/missing.xlsx' });
 
 		expect(await screen.findByRole('alert')).toHaveTextContent('Cannot load workbook');
 	});
 
 	it('reflects the parent-controlled dark mode', async () => {
-		const { unmount } = render(XlsxViewer, { data: inventoryBytes(), isDark: false });
+		const { unmount } = render(XlsxViewer, { ...DARK, data: inventoryBytes(), isDark: false });
 
 		const viewer = await screen.findByTestId('xlsx-viewer');
 		expect(viewer).toHaveAttribute('data-dark', 'false');
 		expect(viewer.classList.contains('dark')).toBe(false);
 		unmount();
 
-		render(XlsxViewer, { data: inventoryBytes(), isDark: true });
+		render(XlsxViewer, { ...DARK, data: inventoryBytes(), isDark: true });
 		const darkViewer = await screen.findByTestId('xlsx-viewer');
 		expect(darkViewer).toHaveAttribute('data-dark', 'true');
 		expect(darkViewer.classList.contains('dark')).toBe(true);
@@ -230,7 +263,7 @@ describe('XlsxViewer', () => {
 
 	it('notifies the parent when the dark-mode toggle is clicked', async () => {
 		const onIsDarkChange = vi.fn();
-		render(XlsxViewer, { data: inventoryBytes(), isDark: false, onIsDarkChange });
+		render(XlsxViewer, { ...DARK, data: inventoryBytes(), isDark: false, onIsDarkChange });
 
 		const toggle = await screen.findByRole('switch', { name: 'Toggle dark mode' });
 		expect(toggle).toHaveAttribute('aria-checked', 'false');

@@ -8,6 +8,8 @@
 
 <PdfViewer {...rest}>
 	{#snippet pageOverlay(overlay)}
-		<span data-testid="test-overlay">Overlay page {overlay.pageNumber} @ {overlay.scale}x</span>
+		<span data-testid="test-overlay"
+			>Overlay page {overlay.pageNumber} @ {overlay.scale}x, {overlay.pageWidth}x{overlay.pageHeight} r{overlay.rotation}</span
+		>
 	{/snippet}
 </PdfViewer>

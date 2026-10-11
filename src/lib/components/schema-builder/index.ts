@@ -6,6 +6,7 @@ export { default as SchemaBuilder } from './SchemaBuilder.svelte';
 /** Upstream React export name. */
 export { default as SchemaBuilderPanel } from './SchemaBuilder.svelte';
 export { default } from './SchemaBuilder.svelte';
+export { default as SchemaJsonView } from './SchemaJsonView.svelte';
 export {
 	createSchemaBuilderEnumValue,
 	createSchemaBuilderId,

@@ -137,3 +137,19 @@ test('a controlled builder shows the schema again after the parent rejects an ed
 	await required.click();
 	await expect(required).not.toBeChecked();
 });
+
+test('docs list the port-only remove buttons and the upstream exports', async ({ page }) => {
+	await openBuilder(page);
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('Remove field');
+	await expect(differences).toContainText('Remove enum value');
+	await expect(differences).toContainText('SchemaJsonView');
+});
+
+test('the field list is announced as a list', async ({ page }) => {
+	await openBuilder(page);
+
+	const fields = page.getByTestId('schema-builder').getByRole('list', { name: 'Fields' });
+	await expect(fields.getByRole('listitem')).toHaveCount(2);
+});

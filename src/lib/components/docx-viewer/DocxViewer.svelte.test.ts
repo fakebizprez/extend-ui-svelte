@@ -5,14 +5,14 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import DocxViewer, { resolveZoomLevel } from './DocxViewer.svelte';
 import { DocxViewerPreview } from './index.js';
 
-vi.mock('#lib/engines/docx/index.js', () => ({
+vi.mock('../../engines/docx/index.js', () => ({
 	renderDocx: vi.fn(),
 	clearDocx: vi.fn()
 }));
 
 // The mocked engine module: the component loads it through a dynamic import()
 // inside onMount, which resolves to this same mock.
-import { clearDocx, renderDocx } from '#lib/engines/docx/index.js';
+import { clearDocx, renderDocx } from '../../engines/docx/index.js';
 
 const mockedRenderDocx = vi.mocked(renderDocx);
 
@@ -433,6 +433,21 @@ describe('DocxViewer', () => {
 		expect(documentEl).toHaveTextContent('UPLOADED DOC');
 		expect(documentEl).not.toHaveTextContent('STALE SRC DOC');
 		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of 1');
+	});
+
+	it('clearing src while a render is in flight leaves the empty state, not the stale doc', async () => {
+		const slow = deferredRender('STALE SRC DOC');
+		const { rerender } = render(DocxViewer, { ...DARK, src: 'https://example.com/slow.docx' });
+		await vi.waitFor(() => expect(mockedRenderDocx).toHaveBeenCalledTimes(1));
+
+		await rerender({ ...DARK, src: undefined });
+		slow.release();
+		await slow.settled;
+
+		expect(screen.getByText('Upload a Word document to preview')).toBeVisible();
+		expect(screen.getByTestId('docx-container')).not.toHaveTextContent('STALE SRC DOC');
+		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of -');
+		expect(screen.getByRole('button', { name: 'Toggle thumbnails' })).toBeDisabled();
 	});
 
 	it('accepts Word documents in the upload input', async () => {

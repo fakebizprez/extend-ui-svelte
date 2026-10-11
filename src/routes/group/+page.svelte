@@ -8,6 +8,11 @@
 	let ready = $state(false);
 	onMount(() => (ready = true));
 	let lastAction = $state('none');
+
+	// Demo buttons use upstream Button's outline variant at the default size, so
+	// the group's joining (square inner corners, shared edges) is visible.
+	const buttonClass =
+		'relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-input bg-popover px-[calc(--spacing(3)-1px)] text-base font-medium whitespace-nowrap text-foreground shadow-xs/5 outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring sm:h-8 sm:text-sm dark:bg-input/32 dark:hover:bg-input/64';
 </script>
 
 <h1>Group</h1>
@@ -29,7 +34,7 @@
 		{#if index > 0}
 			<GroupSeparator {isDark} />
 		{/if}
-		<button type="button" data-slot="button" onclick={() => (lastAction = action)}>
+		<button type="button" data-slot="button" class={buttonClass} onclick={() => (lastAction = action)}>
 			{action}
 		</button>
 	{/each}
@@ -38,27 +43,32 @@
 
 <h2>Vertical</h2>
 <Group aria-label="Vertical actions" orientation="vertical" {isDark}>
-	<button type="button" data-slot="button">Move up</button>
+	<button type="button" data-slot="button" class={buttonClass}>Move up</button>
 	<GroupSeparator orientation="horizontal" {isDark} />
-	<button type="button" data-slot="button">Move down</button>
+	<button type="button" data-slot="button" class={buttonClass}>Move down</button>
 </Group>
 
 <h2>With text</h2>
 <Group aria-label="Amount" {isDark}>
 	<GroupText {isDark}>$</GroupText>
-	<input data-slot="input-control" aria-label="Amount value" value="250.00" />
+	<input
+		data-slot="input-control"
+		aria-label="Amount value"
+		value="250.00"
+		class="h-9 w-32 min-w-0 border border-input bg-background px-[calc(--spacing(3)-1px)] text-base text-foreground outline-none sm:h-8 sm:text-sm dark:bg-input/32"
+	/>
 	<GroupText {isDark}>USD</GroupText>
 </Group>
 
 <h2>Nested groups</h2>
 <Group aria-label="Toolbar" {isDark}>
 	<Group aria-label="History" {isDark}>
-		<button type="button" data-slot="button">Undo</button>
-		<button type="button" data-slot="button">Redo</button>
+		<button type="button" data-slot="button" class={buttonClass}>Undo</button>
+		<button type="button" data-slot="button" class={buttonClass}>Redo</button>
 	</Group>
 	<Group aria-label="Zoom" {isDark}>
-		<button type="button" data-slot="button">Zoom out</button>
-		<button type="button" data-slot="button">Zoom in</button>
+		<button type="button" data-slot="button" class={buttonClass}>Zoom out</button>
+		<button type="button" data-slot="button" class={buttonClass}>Zoom in</button>
 	</Group>
 </Group>
 

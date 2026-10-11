@@ -22,6 +22,7 @@
 <section aria-labelledby="differences-from-upstream">
 	<h2 id="differences-from-upstream">Differences from upstream</h2>
 	<ul>
+		<li>Upstream exports only <code>DocxEditorPreview</code>; every upstream export is available here.</li>
 		<li>
 			Exported as both <code>DocxEditor</code> and the upstream name
 			<code>DocxEditorPreview</code>; <code>className</code> and <code>class</code> are both

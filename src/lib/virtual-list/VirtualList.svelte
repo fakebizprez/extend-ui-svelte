@@ -17,7 +17,7 @@
 		DEFAULT_OVERSCAN,
 		prefixOffsets,
 		totalHeight
-	} from './window';
+	} from './window.js';
 
 	interface Props {
 		/** All items; only the visible window is rendered. */

@@ -13,8 +13,11 @@
 	- Native HTML5 drag-and-drop reorders top-level fields only; nested moves,
 	  enum reordering, and collapsible nested editors are not ported.
 	- "Add field" / "Add nested field" buttons instead of upstream's "Add property".
+	- The JSON pane is SchemaJsonView (also exported, like upstream), which
+	  renders plain preformatted JSON instead of a highlighted code file.
 	- Port additions: per-field `required` (serialized as `required` on its parent
-	  object at every level), onSerializedSchemaChange.
+	  object at every level), onSerializedSchemaChange, and the "Remove field" /
+	  "Remove enum value" buttons (upstream cannot remove fields or enum values).
 -->
 <script module lang="ts">
 	export type SchemaBuilderScalarType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
@@ -324,6 +327,7 @@
 
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import SchemaJsonView from './SchemaJsonView.svelte';
 
 	interface Props {
 		/** Uncontrolled starting schema. Defaults to SAMPLE_SCHEMA, like upstream. */
@@ -360,7 +364,6 @@
 	// Raw: edits replace the schema immutably, so it never holds $state proxies.
 	let uncontrolled = $state.raw<SchemaBuilderSchema>(untrack(() => defaultSchema));
 	const current = $derived<SchemaBuilderSchema>(schema ?? uncontrolled);
-	const serialized = $derived<SerializedSchema>(serializeSchema(current));
 
 	let lastSerializedSource: SchemaBuilderSchema | undefined = undefined;
 	$effect(() => {
@@ -602,7 +605,8 @@
 	</div>
 {/snippet}
 
-{#snippet fieldRows(properties: SchemaBuilderProperty[], nested: boolean)}
+{#snippet fieldRows(properties: SchemaBuilderProperty[], nested: boolean, label: string)}
+	<div class="schema-builder-list" role="list" aria-label={label}>
 	{#each properties as property (property.id)}
 		{@const rowTestId = nested ? 'schema-builder-nested-field' : 'schema-builder-field'}
 		<div
@@ -660,7 +664,7 @@
 				{@render enumEditor(property.enumValues ?? [], (values) => setEnumValues(property.id, values))}
 			{:else if property.type === 'object'}
 				<div class="schema-builder-nested" data-testid="schema-builder-nested">
-					{@render fieldRows(property.properties ?? [], true)}
+					{@render fieldRows(property.properties ?? [], true, `${property.key || 'Object'} fields`)}
 					<button type="button" onclick={() => addNestedField(property.id)}>
 						Add nested field
 					</button>
@@ -685,7 +689,11 @@
 						</select>
 					</label>
 					{#if property.items?.type === 'object'}
-						{@render fieldRows(property.items.properties ?? [], true)}
+						{@render fieldRows(
+							property.items.properties ?? [],
+							true,
+							`${property.key || 'Array'} item fields`
+						)}
 						<button type="button" onclick={() => addArrayItemField(property.id)}>
 							Add nested field
 						</button>
@@ -698,6 +706,7 @@
 			{/if}
 		</div>
 	{/each}
+	</div>
 {/snippet}
 
 <section
@@ -714,13 +723,11 @@
 			{#if current.properties.length === 0}
 				<p data-testid="schema-builder-empty">No fields yet. Add the first field to begin.</p>
 			{/if}
-			{@render fieldRows(current.properties, false)}
+			{@render fieldRows(current.properties, false, 'Fields')}
 			<button type="button" onclick={addField}>Add field</button>
 		</div>
 
-		<pre
-			class="schema-builder-output"
-			data-testid="schema-builder-output">{JSON.stringify(serialized, null, 2)}</pre>
+		<SchemaJsonView schema={current} theme={dark ? 'dark' : 'light'} />
 	</div>
 </section>
 
@@ -754,7 +761,8 @@
 		grid-template-columns: 1fr 1fr;
 		gap: 1rem;
 	}
-	.schema-builder-fields {
+	.schema-builder-fields,
+	.schema-builder-list {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
@@ -786,14 +794,5 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
-	}
-	.schema-builder-output {
-		margin: 0;
-		overflow: auto;
-		max-height: 32rem;
-		border: 1px solid var(--color-border, #e5e7eb);
-		border-radius: 0.5rem;
-		padding: 0.75rem;
-		font-size: 0.8rem;
 	}
 </style>

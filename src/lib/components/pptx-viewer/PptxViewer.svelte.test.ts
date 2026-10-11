@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import PptxViewer from './PptxViewer.svelte';
-import { PptxViewerPreview } from './index.js';
+import { PptxViewerPreview, type PptxViewerPreviewProps } from './index.js';
 
 const { mockLoadDeck } = vi.hoisted(() => ({ mockLoadDeck: vi.fn() }));
 
-vi.mock('#lib/engines/pptx/index.js', () => ({
+vi.mock('../../engines/pptx/index.js', () => ({
 	loadDeck: mockLoadDeck,
 	DEFAULT_RENDER_WIDTH: 1280
 }));
@@ -222,6 +222,13 @@ describe('PptxViewer', () => {
 
 	it('is exported under the upstream name PptxViewerPreview', () => {
 		expect(PptxViewerPreview).toBe(PptxViewer);
+	});
+
+	it('accepts props typed with the upstream PptxViewerPreviewProps export', async () => {
+		const props: PptxViewerPreviewProps = { src: '/sample.pptx', fileName: 'typed.pptx' };
+		render(PptxViewerPreview, props);
+
+		expect(await screen.findByTestId('presentation-name')).toHaveTextContent('typed.pptx');
 	});
 
 	it('renders upstream toolbarActions inside the toolbar', async () => {

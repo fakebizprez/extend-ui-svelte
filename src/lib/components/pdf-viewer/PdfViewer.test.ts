@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	anchorOffset,
+	mostVisiblePage,
 	clampZoom,
 	computeFitZoom,
 	computePageLayout,
@@ -199,7 +200,13 @@ describe('page layout', () => {
 	});
 
 	it('is empty without pages', () => {
-		expect(computePageLayout([], 24)).toEqual({ tops: [], heights: [], totalHeight: 0, totalWidth: 0 });
+		expect(computePageLayout([], 24)).toEqual({
+			tops: [],
+			heights: [],
+			widths: [],
+			totalHeight: 0,
+			totalWidth: 0
+		});
 	});
 
 	it('finds the page at a scroll offset, 1-based', () => {
@@ -225,6 +232,25 @@ describe('page layout', () => {
 		// The same document point after zooming 2x: top of page 2 (200) + 25% of 400.
 		expect(anchorOffset(after, anchor!)).toBe(300);
 		expect(pageAnchorAt(computePageLayout([], 0), 0)).toBeNull();
+	});
+
+	it('picks the page with the largest visible share of its area, like EmbedPDF', () => {
+		const layout = computePageLayout(
+			[{ width: 100, height: 100 }, { width: 100, height: 400 }, { width: 100, height: 100 }],
+			0
+		);
+		// 450..550 shows 50% of page 3 but only 25% of page 2.
+		expect(mostVisiblePage(layout, 450, 100, 0, 100)).toBe(3);
+		// Ties go to the lower page number; nothing measured falls back to page 1.
+		expect(mostVisiblePage(layout, 0, 1000, 0, 100)).toBe(1);
+		expect(mostVisiblePage(computePageLayout([], 0), 0, 100, 0, 100)).toBe(0);
+	});
+
+	it('counts horizontal visibility for pages wider than the viewport', () => {
+		// A 400px-wide page above a 100px one, centred at x 150..250, in a 100px-wide view.
+		const layout = computePageLayout([{ width: 400, height: 100 }, { width: 100, height: 100 }], 0);
+		// Scrolled to x 150: page 1 shows 100/400 of its width, page 2 all of it.
+		expect(mostVisiblePage(layout, 0, 200, 150, 100)).toBe(2);
 	});
 
 	it('windows only the pages in view plus overscan', () => {

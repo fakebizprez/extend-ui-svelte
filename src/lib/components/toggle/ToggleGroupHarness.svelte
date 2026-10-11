@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import ToggleGroup, { type ToggleGroupProps } from './ToggleGroup.svelte';
-	import ToggleGroupItem from './ToggleGroupItem.svelte';
+	import ToggleGroupItem, { type ToggleGroupItemProps } from './ToggleGroupItem.svelte';
 
 	interface HarnessItem {
 		value: string;
@@ -17,6 +17,7 @@
 	let {
 		itemClassName,
 		itemOnclick,
+		itemOnPressedChange,
 		items = [
 			{ value: 'bold', label: 'Bold' },
 			{ value: 'italic', label: 'Italic' }
@@ -25,6 +26,7 @@
 	}: ToggleGroupProps & {
 		itemClassName?: string;
 		itemOnclick?: (event: MouseEvent) => void;
+		itemOnPressedChange?: ToggleGroupItemProps['onPressedChange'];
 		items?: HarnessItem[];
 	} = $props();
 </script>
@@ -33,6 +35,7 @@
 	{#each items as item (item.value)}
 		<ToggleGroupItem value={item.value} disabled={item.disabled} className={itemClassName}
 			onclick={itemOnclick}
+			onPressedChange={itemOnPressedChange}
 		>
 			{item.label}
 		</ToggleGroupItem>

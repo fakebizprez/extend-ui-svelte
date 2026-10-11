@@ -7,7 +7,7 @@
 	are windowed with the shared virtual-list math, so long arrays stay cheap.
 -->
 <script lang="ts">
-	import { computeWindow } from '#lib/virtual-list/window.js';
+	import { computeWindow } from '../../virtual-list/window.js';
 	import type { JsonValue, ReviewFieldSchema, ReviewLocation } from './citations.js';
 	import { getObjectValue } from './citations.js';
 	import HumanReviewArrayGrid from './HumanReviewArrayGrid.svelte';

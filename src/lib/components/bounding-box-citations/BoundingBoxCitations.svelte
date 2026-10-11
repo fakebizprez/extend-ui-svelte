@@ -22,8 +22,8 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import PdfViewer from '#lib/components/pdf-viewer/PdfViewer.svelte';
-	import { cn } from '#lib/utils.js';
+	import PdfViewer from '../pdf-viewer/PdfViewer.svelte';
+	import { cn } from '../../utils.js';
 	import {
 		boxesForPage,
 		findReviewField,
@@ -147,6 +147,31 @@
 	}
 
 	/**
+	 * Centre of an area as fractions of the displayed page, after the page is
+	 * turned clockwise by `rotation` degrees (overlays turn with the page).
+	 */
+	function rotatedCenter(location: ReviewLocation, rotation: number): { x: number; y: number } {
+		const x = (location.area.left + location.area.width / 2) / 100;
+		const y = (location.area.top + location.area.height / 2) / 100;
+		const turns = ((Math.round(rotation / 90) % 4) + 4) % 4;
+		return [
+			{ x, y },
+			{ x: 1 - y, y: x },
+			{ x: 1 - x, y: 1 - y },
+			{ x: y, y: 1 - x }
+		][turns]!;
+	}
+
+	/** Content offset (scrollLeft space) of an element inside the PDF viewport. */
+	function leftInViewport(viewport: HTMLElement, element: HTMLElement): number {
+		return (
+			viewport.scrollLeft +
+			element.getBoundingClientRect().left -
+			viewport.getBoundingClientRect().left
+		);
+	}
+
+	/**
 	 * Centers a page area in the PDF viewport, measuring the rendered page so
 	 * the viewer's gaps and per-page sizes are respected. Pages outside the
 	 * viewer's render window are reached in two steps: jump to an estimate from
@@ -157,9 +182,16 @@
 		if (!viewport) return;
 		const page = viewport.querySelector<HTMLElement>(`[data-page-number="${location.page}"]`);
 		if (page) {
-			const areaCenter = ((location.area.top + location.area.height / 2) / 100) * page.offsetHeight;
+			const center = rotatedCenter(location, Number(page.dataset.rotation ?? 0));
 			viewport.scrollTo?.({
-				top: Math.max(0, offsetInViewport(viewport, page) + areaCenter - viewport.clientHeight / 2),
+				top: Math.max(
+					0,
+					offsetInViewport(viewport, page) + center.y * page.offsetHeight - viewport.clientHeight / 2
+				),
+				left: Math.max(
+					0,
+					leftInViewport(viewport, page) + center.x * page.offsetWidth - viewport.clientWidth / 2
+				),
 				behavior
 			});
 			return;

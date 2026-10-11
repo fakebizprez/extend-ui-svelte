@@ -16,12 +16,17 @@
 	  upstream `className`.
 	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
 	  switch, so onIsDarkChange is accepted and never called.
+	- defaultPath expands the tree down to that folder instead of opening a
+	  view inside it (the tree has no inside-a-folder view).
+	- Types for unported features (FileSystemView, FileSystemLoadChildrenArgs,
+	  FileSystemLoadChildrenResult, FileSystemViewerKind, FileSystemSortKey,
+	  FileSystemFilterType) are not exported.
 	- Port additions: bind:selectedPath, onRename, renamable (inline F2 rename).
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { resolveIsDark } from '#lib/dark-mode.js';
+	import { resolveIsDark } from '../../dark-mode.js';
 	import {
 		ancestorFolderPaths,
 		buildFileSystemIndex,
@@ -70,6 +75,7 @@
 		isDark = false
 	}: Props = $props();
 
+	// svelte-ignore state_referenced_locally: `defaultPath` intentionally seeds the initial expansion only.
 	const expanded = new SvelteSet(ancestorFolderPaths(defaultPath));
 	const renames = new SvelteMap<string, string>();
 	let focusPath = $state<string | null>(null);

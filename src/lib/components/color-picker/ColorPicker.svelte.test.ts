@@ -248,6 +248,29 @@ describe('ColorPicker', () => {
 		expect(onChange).not.toHaveBeenCalled();
 	});
 
+	it('disables only the channel and opacity fields in a disabled panel, like upstream', () => {
+		render(ColorPicker, { value: '#FF0000', variant: 'panel', disabled: true, showAlpha: true });
+
+		for (const name of ['Red', 'HSL hue', 'OKLCH lightness']) {
+			expect(screen.getByLabelText(name)).toBeDisabled();
+		}
+		expect(screen.getByLabelText('Opacity', { selector: 'input' })).toBeDisabled();
+
+		// Upstream passes `disabled` only to the channel groups and the opacity field.
+		expect(screen.getByRole('button', { name: 'Chroma and lightness' })).toBeEnabled();
+		expect(screen.getByRole('slider', { name: 'Hue' })).toBeEnabled();
+		expect(screen.getByRole('slider', { name: 'Opacity' })).toBeEnabled();
+		expect(screen.getByLabelText('Color value')).toBeEnabled();
+		expect(screen.getByLabelText('Color format')).toBeEnabled();
+	});
+
+	it('labels the panel opacity field "Opacity", like upstream', () => {
+		render(ColorPicker, { value: '#FF000080', variant: 'panel', showAlpha: true });
+
+		expect(screen.getByLabelText('Opacity', { selector: 'input' })).toHaveValue('50');
+		expect(screen.queryByLabelText('Panel opacity')).not.toBeInTheDocument();
+	});
+
 	it('renders the rainbow trigger and custom icons', () => {
 		const rainbow = render(ColorPicker, { value: '#FF0000', variant: 'swatch', rainbowTrigger: true });
 		expect(rainbow.container.querySelector('span[style*="conic-gradient"]')).not.toBeNull();

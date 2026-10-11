@@ -8,3 +8,5 @@ export { default as PptxViewerPreview } from './PptxViewer.svelte';
 export { default } from './PptxViewer.svelte';
 export { default as PptxSlide } from './PptxSlide.svelte';
 export type PptxViewerProps = ComponentProps<typeof PptxViewer>;
+/** Upstream React props type name. */
+export type PptxViewerPreviewProps = PptxViewerProps;

@@ -6,6 +6,7 @@
 
 	let isDark = $state(false);
 	let darkPreview = $state(true);
+	let emptyDark = $state(false);
 	let lastChange = $state('');
 	let lastExport = $state('');
 	// Each reload hands the editor a new src, so it starts over like a new file.
@@ -46,7 +47,7 @@
 />
 
 <h2>Empty state</h2>
-<XlsxEditor />
+<XlsxEditor isDark={emptyDark} onIsDarkChange={(value) => (emptyDark = value)} />
 
 <h2>Differences from upstream</h2>
 <p>Also exported as <code>XlsxEditorPreview</code>, the upstream name.</p>
@@ -76,6 +77,11 @@
 		number formats, merge cells, wrap text, vertical alignment, undo/redo, add/remove sheet,
 		cell formatting from the file, frozen panes, column resize, zoom, the upload menu, and
 		read-only mode for files over 5 MB.
+	</li>
+	<li>
+		Exports: <code>XlsxEditorSurface</code> (a react-xlsx context surface) is not ported;
+		<code>XlsxEditor</code> is self-contained. Sheet tabs reuse the viewer's
+		<code>WorkbookSheetTabs</code>, as upstream does.
 	</li>
 </ul>
 

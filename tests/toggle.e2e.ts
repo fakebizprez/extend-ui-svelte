@@ -142,6 +142,8 @@ test('a consumer onclick or onkeydown runs and the built-in behavior still runs'
 	const large = group.getByRole('button', { name: 'Large text' });
 	await large.click();
 	await expect(large).toHaveAttribute('aria-pressed', 'true');
+	// Like Base UI, a grouped item reports onPressedChange with event details.
+	await expect(page.getByTestId('large-pressed')).toHaveText('Large pressed: true (none)');
 	await small.click();
 	await expect(page.getByTestId('consumer-clicks')).toHaveText('Consumer clicks: 2');
 	await expect(small).toHaveAttribute('aria-pressed', 'true');

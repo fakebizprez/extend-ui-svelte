@@ -179,3 +179,14 @@ test('pdf viewer resets zoom to defaultZoom when a new document loads', async ({
 	await expect(viewer.getByTestId('pdf-page-indicator')).toHaveText('Page 1 of 1');
 	await expect(viewer.getByTestId('pdf-zoom-label')).toHaveText('50%');
 });
+
+test('pdf viewer marks the most visible page as current, like upstream', async ({ page }) => {
+	const viewer = await openViewer(page);
+	const viewport = viewer.getByTestId('pdf-viewport');
+	await viewport.evaluate((element) => {
+		element.scrollTop = element.scrollHeight;
+	});
+
+	await expect(viewer.getByTestId('pdf-page-indicator')).toHaveText('Page 3 of 3');
+	await expect(viewer.getByRole('button', { name: 'Next page' })).toBeDisabled();
+});

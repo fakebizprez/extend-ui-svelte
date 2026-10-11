@@ -5,8 +5,9 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { PdfEngine, PdfPageSize } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
 	import type { PdfViewerPageOverlayProps } from './types.js';
+	import { rotatedPageSize } from './zoom.js';
 
 	interface Props {
 		/** Engine instance, or null before it loads on the client. */
@@ -31,7 +32,6 @@
 		$props();
 
 	let canvas: HTMLCanvasElement | null = $state(null);
-	let size = $state.raw<PdfPageSize | null>(null);
 	let renderError = $state('');
 
 	$effect(() => {
@@ -44,10 +44,7 @@
 		let cancelled = false;
 		renderError = '';
 		eng.renderPage(page, target, { scale: pageScale, rotation: pageRotation }).then(
-			(result) => {
-				if (cancelled) return;
-				size = result;
-			},
+			() => {},
 			(failure: unknown) => {
 				if (cancelled) return;
 				renderError = failure instanceof Error ? failure.message : 'Could not render page.';
@@ -58,10 +55,13 @@
 		};
 	});
 
+	// Like upstream's <Rotate>, the overlay lives in unrotated page space and turns
+	// with the page, so overlay coordinates keep pointing at the same content.
+	const unrotated = $derived(rotatedPageSize({ width, height }, rotation));
 	const overlayProps: PdfViewerPageOverlayProps = $derived({
 		pageNumber,
-		pageWidth: size?.width ?? width,
-		pageHeight: size?.height ?? height,
+		pageWidth: scale > 0 ? unrotated.width / scale : unrotated.width,
+		pageHeight: scale > 0 ? unrotated.height / scale : unrotated.height,
 		scale,
 		rotation
 	});
@@ -84,7 +84,10 @@
 		<div class="pdf-page-error" role="alert">{renderError}</div>
 	{/if}
 	{#if overlay}
-		<div class="pdf-page-overlay">
+		<div
+			class="pdf-page-overlay"
+			style={`width: ${unrotated.width}px; height: ${unrotated.height}px; transform: translate(-50%, -50%) rotate(${rotation}deg);`}
+		>
 			{@render overlay(overlayProps)}
 		</div>
 	{/if}
@@ -117,7 +120,8 @@
 
 	.pdf-page-overlay {
 		position: absolute;
-		inset: 0;
+		left: 50%;
+		top: 50%;
 		pointer-events: none;
 	}
 </style>

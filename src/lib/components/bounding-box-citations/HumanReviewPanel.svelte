@@ -18,7 +18,7 @@
 	- Panel height comes from `--human-review-panel-height` (default 560px).
 -->
 <script lang="ts">
-	import { cn } from '#lib/utils.js';
+	import { cn } from '../../utils.js';
 	import type { JsonObject, JsonValue, ReviewField, ReviewLocation } from './citations.js';
 	import HumanReviewFieldCard from './HumanReviewFieldCard.svelte';
 	import JsonCodeView from './JsonCodeView.svelte';

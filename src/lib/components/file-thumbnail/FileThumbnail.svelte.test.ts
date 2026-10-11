@@ -8,7 +8,7 @@ import { FileThumbnail as FileThumbnailExport } from './index.js';
 
 // A US Letter page (612x792 pt): portrait, so width/height is below 1.
 const LETTER = { width: 612, height: 792 };
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => ({
 		load: async () => 3,
 		renderPage: async (_page: number, _canvas: HTMLCanvasElement, options?: { scale?: number }) => ({

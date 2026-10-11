@@ -14,3 +14,4 @@ export {
 	type ToggleGroupSpacing
 } from './ToggleGroup.svelte';
 export { default as ToggleGroupItem, type ToggleGroupItemProps } from './ToggleGroupItem.svelte';
+export type { ToggleChangeEventDetails } from './toggle-context.js';

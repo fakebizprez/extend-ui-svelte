@@ -10,14 +10,14 @@ import DocxEditor, {
 } from './DocxEditor.svelte';
 import { DocxEditorPreview } from './index.js';
 
-vi.mock('#lib/engines/docx/index.js', () => ({
+vi.mock('../../engines/docx/index.js', () => ({
 	renderDocx: vi.fn(),
 	clearDocx: vi.fn()
 }));
 
 // The mocked engine module: the component loads it through a dynamic import()
 // inside onMount, which resolves to this same mock.
-import { clearDocx, renderDocx } from '#lib/engines/docx/index.js';
+import { clearDocx, renderDocx } from '../../engines/docx/index.js';
 
 const mockedRenderDocx = vi.mocked(renderDocx);
 const mockedClearDocx = vi.mocked(clearDocx);
@@ -66,6 +66,37 @@ describe('DocxEditor', () => {
 		const click = vi.spyOn(input, 'click').mockImplementation(() => {});
 		await fireEvent.click(screen.getByRole('button', { name: 'Upload DOCX' }));
 		expect(click).toHaveBeenCalledTimes(1);
+	});
+
+	it('clearing src while a load is in flight leaves the empty state, not the stale doc', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		let settled!: Promise<unknown>;
+		mockedRenderDocx.mockImplementationOnce((_source, container) => {
+			settled = gate.then(() => {
+				container.innerHTML = '<div class="docx-wrapper"><section class="docx"><article><p>STALE EDITOR DOC</p></article></section></div>';
+				return { container, showThumbnails: false };
+			});
+			return settled as ReturnType<typeof renderDocx>;
+		});
+		const { rerender } = render(DocxEditor, { ...DARK, src: 'https://example.com/slow.docx' });
+		await vi.waitFor(() => expect(mockedRenderDocx).toHaveBeenCalledTimes(1));
+
+		await rerender({ ...DARK, src: undefined });
+		// The stale load must not even flash the editor surface back in.
+		let flashed = false;
+		const observer = new MutationObserver(() => {
+			if (screen.queryByTestId('docx-editor-content')) flashed = true;
+		});
+		observer.observe(screen.getByTestId('docx-editor'), { childList: true, subtree: true });
+		release();
+		await settled;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		observer.disconnect();
+
+		expect(flashed).toBe(false);
+		expect(screen.getByText('Upload a DOCX to edit')).toBeVisible();
+		expect(screen.queryByTestId('docx-editor-content')).not.toBeInTheDocument();
 	});
 
 	it('accepts .docx only in the upload input, like upstream', () => {

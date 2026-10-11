@@ -2,7 +2,7 @@
 // Local formula engine for the XLSX editor: A1 references, ranges, basic
 // arithmetic, TRUE/FALSE, and SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT with Excel's
 // argument rules. Pure and framework-free.
-import { XlsxCellError } from '#lib/engines/xlsx/xlsx.js';
+import { XlsxCellError } from '../../engines/xlsx/xlsx.js';
 
 /** A cell value: text, number, boolean, blank (null), or an error such as #DIV/0!. */
 export type CellValue = string | number | boolean | null | XlsxCellError;

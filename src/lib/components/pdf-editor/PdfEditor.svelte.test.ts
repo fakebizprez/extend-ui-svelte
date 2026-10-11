@@ -13,7 +13,7 @@ const mockState = vi.hoisted(() => ({
 	loads: [] as unknown[]
 }));
 
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
 		const listeners = new Set<(page: number) => void>();
 		const engine = {
@@ -208,6 +208,58 @@ describe('PdfEditor', () => {
 		await vi.waitFor(() =>
 			expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('100%')
 		);
+	});
+
+	it('reports the active page when delete or move changes the selection', async () => {
+		const onActivePageChange = vi.fn();
+		render(PdfEditor, { src: SRC, onActivePageChange });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Select page 3' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
+		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 2 of 2');
+		expect(onActivePageChange.mock.calls).toEqual([[1], [3], [2]]);
+
+		// The selection follows its page: page 2 moves up to position 1.
+		await fireEvent.click(screen.getByRole('button', { name: 'Move page 2 up' }));
+		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of 2');
+		expect(onActivePageChange).toHaveBeenLastCalledWith(1);
+
+		// Deleting a page above the selection shifts it up too.
+		await fireEvent.click(screen.getByRole('button', { name: 'Select page 1' }));
+		expect(onActivePageChange).toHaveBeenLastCalledWith(2);
+		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
+		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of 1');
+		expect(onActivePageChange).toHaveBeenLastCalledWith(1);
+	});
+
+	it('handles upstream\'s keyboard shortcuts inside the editor', async () => {
+		const bytes = await sourcePdfBytes();
+		Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:x'), writable: true });
+		Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true });
+		vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+		const onSave = vi.fn();
+		render(PdfEditor, { src: bytes, defaultZoom: 1, onSave });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		const editor = screen.getByTestId('pdf-editor');
+		const label = screen.getByTestId('pdf-editor-zoom-label');
+
+		expect(await fireEvent.keyDown(editor, { key: '=', metaKey: true })).toBe(false);
+		expect(label).toHaveTextContent('120%');
+		await fireEvent.keyDown(editor, { key: '-', ctrlKey: true });
+		expect(label).toHaveTextContent('100%');
+		await fireEvent.keyDown(editor, { key: '0', metaKey: true });
+		expect(screen.getByRole('combobox', { name: 'Zoom level' })).toHaveValue('fit-page');
+
+		// Typing targets keep their own keys.
+		await fireEvent.keyDown(screen.getByRole('combobox', { name: 'Zoom level' }), {
+			key: '=',
+			metaKey: true
+		});
+		expect(screen.getByRole('combobox', { name: 'Zoom level' })).toHaveValue('fit-page');
+
+		await fireEvent.keyDown(editor, { key: 's', metaKey: true });
+		await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
 	});
 
 	it('previews the selected page at its real size', async () => {

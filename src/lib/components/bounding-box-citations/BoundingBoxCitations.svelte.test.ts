@@ -6,7 +6,7 @@ import BoundingBoxCitations from './BoundingBoxCitations.svelte';
 import type { ReviewField } from './citations.js';
 import { REVIEW_FIELDS } from './review.js';
 
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
 		const listeners = new Set<(page: number) => void>();
 		const engine = {

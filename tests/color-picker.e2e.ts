@@ -59,8 +59,8 @@ test('color picker dark mode follows the parent toggle outside the component', a
 	await expect(demos.locator('.dark')).toHaveCount(0);
 
 	await page.getByLabel('Dark mode').check();
-	// One themed root per picker: input, swatch, alpha, panel, disabled.
-	await expect(demos.locator('.dark')).toHaveCount(5);
+	// One themed root per picker: input, swatch, alpha, panel, disabled swatch, disabled panel.
+	await expect(demos.locator('.dark')).toHaveCount(6);
 
 	await page.getByLabel('Dark mode').uncheck();
 	await expect(demos.locator('.dark')).toHaveCount(0);
@@ -158,4 +158,24 @@ test('a click outside closes the picker panel and returns focus to the trigger',
 	await page.getByRole('heading', { name: 'Color Picker' }).click();
 	await expect(dialog).toBeHidden();
 	await expect(trigger).toBeFocused();
+});
+
+test('a disabled panel locks only the channel and opacity fields, like upstream', async ({ page }) => {
+	const panel = page.getByTestId('disabled-panel-demo');
+	for (const name of ['Red', 'HSL hue', 'OKLCH lightness']) {
+		await expect(panel.getByRole('textbox', { name, exact: true })).toBeDisabled();
+	}
+	await expect(panel.getByRole('textbox', { name: 'Opacity' })).toBeDisabled();
+
+	await expect(panel.getByRole('button', { name: 'Chroma and lightness' })).toBeEnabled();
+	await expect(panel.getByRole('slider', { name: 'Hue' })).toBeEnabled();
+	await expect(panel.getByRole('slider', { name: 'Opacity' })).toBeEnabled();
+	await expect(panel.getByRole('textbox', { name: 'Color value' })).toBeEnabled();
+	await expect(panel.getByLabel('Color format')).toBeEnabled();
+});
+
+test('the panel opacity field is labelled "Opacity", like upstream', async ({ page }) => {
+	await page.getByRole('button', { name: 'Overlay color', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'Overlay color panel' });
+	await expect(dialog.getByRole('textbox', { name: 'Opacity', exact: true })).toHaveValue('50');
 });

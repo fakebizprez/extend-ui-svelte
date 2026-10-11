@@ -12,7 +12,7 @@ const engineState = vi.hoisted(() => ({
 }));
 
 // A plain engine that does not supersede loads, so the component's own guard is tested.
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => ({
 		load: (url: string) =>
 			new Promise<number>((resolve) => {

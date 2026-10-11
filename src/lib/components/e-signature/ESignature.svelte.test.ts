@@ -77,15 +77,31 @@ vi.mock('signature_pad', () => {
 	return { default: MockSignaturePad };
 });
 
-const engineMock = vi.hoisted(() => ({ pageCount: 3, rendered: [] as number[] }));
+const engineMock = vi.hoisted(() => ({ pageCount: 3, rendered: [] as number[], loads: 0 }));
 
-vi.mock('#lib/engines/pdf/index.js', () => ({
+// Lets a test hold a placement mid-flight; null passes through to pdf-lib.
+const embedGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
+
+vi.mock('./sign-pdf.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./sign-pdf.js')>();
+	return {
+		...actual,
+		embedSignaturePng: async (...args: Parameters<typeof actual.embedSignaturePng>) => {
+			const stamped = await actual.embedSignaturePng(...args);
+			if (embedGate.wait) await embedGate.wait;
+			return stamped;
+		}
+	};
+});
+
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
 		const listeners = new Set<(page: number) => void>();
 		const engine = {
 			pageCount: 0,
 			currentPage: 0,
 			load: async () => {
+				engineMock.loads += 1;
 				engine.pageCount = engineMock.pageCount;
 				engine.currentPage = engineMock.pageCount > 0 ? 1 : 0;
 				return engine.pageCount;
@@ -152,6 +168,8 @@ beforeEach(async () => {
 	sigMock.instances.length = 0;
 	engineMock.pageCount = 3;
 	engineMock.rendered.length = 0;
+	engineMock.loads = 0;
+	embedGate.wait = null;
 	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
 		{} as CanvasRenderingContext2D
 	);
@@ -266,6 +284,35 @@ describe('ESignature', () => {
 		expect(downloadAttr).toBe('contract-signed.pdf');
 		expect(createObjectURL).toHaveBeenCalled();
 		expect(onSignedDownload).toHaveBeenCalledWith('contract-signed.pdf');
+	});
+
+	it('drops a placement still in flight when the file changes', async () => {
+		let release!: () => void;
+		embedGate.wait = new Promise<void>((resolve) => (release = resolve));
+		const { rerender } = render(ESignature, { file: SRC });
+
+		const pad = await screen.findByTestId('e-signature-pad');
+		await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		simulateStroke();
+		const place = await screen.findByRole('button', { name: 'Place signature' });
+		await waitFor(() => expect(place).toBeEnabled());
+		await fireEvent.click(place);
+
+		// A new five-page document replaces the old one while the stamp is pending.
+		engineMock.pageCount = 5;
+		await rerender({ file: 'https://example.com/files/other.pdf' });
+		expect(await screen.findByText('Page 1 of 5')).toBeVisible();
+		const loadsAfterSwitch = engineMock.loads;
+
+		release();
+		await waitFor(() =>
+			expect(screen.getByRole('button', { name: 'Place signature' })).toBeEnabled()
+		);
+		expect(engineMock.loads).toBe(loadsAfterSwitch);
+		expect(screen.getByTestId('e-signature')).toHaveAttribute('data-signed', 'false');
+		expect(screen.getByTestId('e-signature-page-indicator')).toHaveTextContent('Page 1 of 5');
+		expect(screen.getByRole('button', { name: 'Download signed PDF' })).toBeDisabled();
 	});
 
 	it('applies position and scale changes to the placement controls', async () => {

@@ -1,7 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 // Unit tests for the file-thumbnail PDF helper (pure logic + engine orchestration).
 import { describe, expect, it, vi } from 'vitest';
-import type { PdfEngine, PdfPageSize, PdfSource } from '#lib/engines/pdf/index.js';
+import type { PdfEngine, PdfPageSize, PdfSource } from '../../engines/pdf/index.js';
 import {
 	clampPageNumber,
 	DEFAULT_THUMBNAIL_PAGE,

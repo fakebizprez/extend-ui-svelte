@@ -29,7 +29,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
 	import {
 		DEFAULT_THUMBNAIL_PAGE,
 		DEFAULT_THUMBNAIL_WIDTH,
@@ -145,7 +145,7 @@
 
 	async function ensureEngine(): Promise<PdfEngine> {
 		// Browser-only: the engine (and PDF.js behind it) loads on the client.
-		enginePromise ??= import('#lib/engines/pdf/index.js').then((module) =>
+		enginePromise ??= import('../../engines/pdf/index.js').then((module) =>
 			module.createPdfEngine()
 		);
 		return enginePromise;

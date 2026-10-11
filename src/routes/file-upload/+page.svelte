@@ -37,6 +37,12 @@
 			<code>class</code> are both accepted.
 		</li>
 		<li>
+			Also exports helpers and types that upstream keeps private to the file:
+			<code>DEFAULT_ACCEPT</code>, <code>DEFAULT_ACCEPTED_FILE_TYPES</code>,
+			<code>formatBytes</code>, <code>matchesAccept</code>, <code>toUploadItems</code>,
+			<code>FileUploadItem</code>, and <code>AcceptedFileType</code>.
+		</li>
+		<li>
 			The animated border beam is a pure-CSS conic gradient instead of the
 			<code>BorderBeam</code> component; <code>showBorderBeam</code> is kept.
 			<code>borderBeamTheme</code> is replaced by the shared <code>isDark</code> flag.

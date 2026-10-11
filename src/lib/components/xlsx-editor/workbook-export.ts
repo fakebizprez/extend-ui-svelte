@@ -2,7 +2,7 @@
 // Workbook export for the XLSX editor: edited grids back to .xlsx bytes via
 // SheetJS, plus a browser download trigger. SheetJS is loaded with a dynamic
 // import so it only loads on the client.
-import { XLSX_ERROR_CODES, XlsxCellError } from '#lib/engines/xlsx/xlsx.js';
+import { XLSX_ERROR_CODES, XlsxCellError } from '../../engines/xlsx/xlsx.js';
 import type { CellValue } from './formulas.js';
 
 /** One editable sheet: cell values plus its formula cells. */

@@ -24,7 +24,7 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
 	import {
 		clampPage,
 		dataUrlToBytes,
@@ -133,6 +133,8 @@
 	let placing = $state(false);
 	let originalBytes: Uint8Array | null = $state.raw(null);
 	let signedBytes: Uint8Array | null = $state.raw(null);
+	// Bumped on every source change so an in-flight placement can tell it is stale.
+	let loadGeneration = 0;
 
 	const pdfReady = $derived(status === 'ready' && numPages > 0);
 	const canPlace = $derived(pdfReady && hasSignature && !placing);
@@ -157,7 +159,7 @@
 		(async () => {
 			const [{ default: SignaturePad }, { createPdfEngine }] = await Promise.all([
 				import('signature_pad'),
-				import('#lib/engines/pdf/index.js')
+				import('../../engines/pdf/index.js')
 			]);
 			if (cancelled) return;
 			const created = createPdfEngine();
@@ -210,6 +212,7 @@
 		const source = pdfUrl;
 		const eng = engine;
 		if (!eng) return;
+		loadGeneration += 1;
 		if (!source) {
 			status = 'empty';
 			numPages = 0;
@@ -298,6 +301,7 @@
 		}
 		placing = true;
 		placeError = '';
+		const generation = loadGeneration;
 		try {
 			const pngBytes = dataUrlToBytes(instance.toDataURL('image/png'));
 			const placement = resolvePlacement({
@@ -311,10 +315,15 @@
 			});
 			// Stamp onto the original bytes so re-placing replaces the stamp.
 			const stamped = await embedSignaturePng(bytes, pngBytes, placement);
+			// The document changed mid-placement: drop the stamp for the old file.
+			if (generation !== loadGeneration) return;
 			signedBytes = stamped;
-			numPages = await eng.load(new Uint8Array(stamped));
+			const count = await eng.load(new Uint8Array(stamped));
+			if (generation !== loadGeneration) return;
+			numPages = count;
 			await renderPreview();
 		} catch (failure: unknown) {
+			if (generation !== loadGeneration) return;
 			placeError =
 				failure instanceof Error ? failure.message : 'Unable to place the signature.';
 		} finally {

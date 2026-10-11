@@ -7,5 +7,5 @@ export {
 	offsetTopForIndex,
 	prefixOffsets,
 	totalHeight
-} from './window';
-export type { VariableWindowOptions, VirtualWindow, VirtualWindowOptions } from './window';
+} from './window.js';
+export type { VariableWindowOptions, VirtualWindow, VirtualWindowOptions } from './window.js';

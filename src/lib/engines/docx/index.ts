@@ -170,9 +170,55 @@ export async function renderDocx(
 		throw new DocxRenderError('Failed to render the DOCX document.', { cause: error });
 	}
 	if (!isCurrent()) throw new DocxRenderCancelledError();
+	// docx-preview copies hyperlink targets from the file verbatim; sanitize
+	// before anything reaches the page.
+	const safeNodes = nodes.filter(sanitizeDocxNode);
 	container.innerHTML = '';
-	for (const node of nodes) container.appendChild(node);
+	for (const node of safeNodes) container.appendChild(node);
 	return { container, showThumbnails: resolved.showThumbnails };
+}
+
+const SAFE_LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const BLOCKED_ELEMENTS = 'script, iframe, object, embed, frame, frameset';
+const LINK_ATTRIBUTES = ['href', 'xlink:href'];
+
+/**
+ * True for link targets a rendered document may keep: http(s), mailto, tel,
+ * and in-document #anchors. Everything else (javascript:, data:, vbscript:,
+ * relative paths, ...) is unsafe. Browsers ignore ASCII whitespace and
+ * control characters inside a URL scheme, so those are removed first.
+ */
+export function isSafeDocxLinkTarget(target: string): boolean {
+	const normalized = target.replace(/[\u0000-\u0020\u007f]+/g, '');
+	if (normalized.startsWith('#')) return true;
+	const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(normalized)?.[1]?.toLowerCase();
+	return scheme !== undefined && SAFE_LINK_SCHEMES.has(scheme);
+}
+
+/**
+ * Defangs rendered DOCX markup in place: unsafe link targets lose their href,
+ * every on* event-handler attribute is removed, and script, iframe, object,
+ * embed, and frame elements are dropped. Returns false when the node itself
+ * is one of those elements and must not be inserted.
+ */
+export function sanitizeDocxNode(node: Node): boolean {
+	if (!(node instanceof Element)) return true;
+	if (node.matches(BLOCKED_ELEMENTS)) return false;
+	for (const blocked of Array.from(node.querySelectorAll(BLOCKED_ELEMENTS))) blocked.remove();
+	for (const element of [node, ...Array.from(node.querySelectorAll('*'))]) {
+		for (const name of element.getAttributeNames()) {
+			const lower = name.toLowerCase();
+			if (lower.startsWith('on')) {
+				element.removeAttribute(name);
+			} else if (
+				LINK_ATTRIBUTES.includes(lower) &&
+				!isSafeDocxLinkTarget(element.getAttribute(name) ?? '')
+			) {
+				element.removeAttribute(name);
+			}
+		}
+	}
+	return true;
 }
 
 /** Removes previously rendered DOCX output and cancels any render still in flight. */

@@ -86,3 +86,23 @@ test('xlsx-viewer shows error and boolean cells as text', async ({ page }) => {
 		'#N/A'
 	]);
 });
+
+test('xlsx-viewer sheet tabs switch from the keyboard, like upstream Radix tabs', async ({ page }) => {
+	await page.goto('/xlsx-viewer');
+	const viewer = page.getByTestId('xlsx-viewer').first();
+	const inventory = viewer.getByRole('tab', { name: 'Inventory' });
+	await expect(inventory).toHaveAttribute('tabindex', '0');
+	await expect(viewer.getByRole('tab', { name: 'Summary' })).toHaveAttribute('tabindex', '-1');
+
+	await inventory.focus();
+	await page.keyboard.press('ArrowRight');
+	const summary = viewer.getByRole('tab', { name: 'Summary' });
+	await expect(summary).toBeFocused();
+	await expect(summary).toHaveAttribute('aria-selected', 'true');
+	await expect(viewer.getByRole('cell', { name: 'Total SKUs' })).toBeVisible();
+
+	await page.keyboard.press('End');
+	await expect(viewer.getByRole('tab', { name: 'Checks' })).toHaveAttribute('aria-selected', 'true');
+	await page.keyboard.press('Home');
+	await expect(inventory).toHaveAttribute('aria-selected', 'true');
+});

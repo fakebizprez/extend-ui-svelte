@@ -2,7 +2,7 @@
 // Unit tests for the workbook export helper: run in the Vitest node project.
 import { describe, expect, it } from 'vitest';
 import { read, utils } from 'xlsx';
-import { XlsxCellError } from '#lib/engines/xlsx/index.js';
+import { XlsxCellError } from '../../engines/xlsx/index.js';
 import { downloadXlsxBytes, sheetsToXlsxBytes } from './workbook-export.js';
 
 describe('sheetsToXlsxBytes', () => {

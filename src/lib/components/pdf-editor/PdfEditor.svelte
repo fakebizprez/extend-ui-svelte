@@ -12,6 +12,7 @@
 	- Dark mode is parent-controlled (isDark + onIsDarkChange) per project
 	  contract; the editor never renders its own dark toggle.
 	- `class` and `className` are both accepted and merged.
+	- Shortcuts: ⌘/Ctrl S, =, -, 0 only (undo/redo, print, search not ported).
 	- Extra props: `onPagesChange`, `height`, `pageWidth`/`pageHeight`
 	  (fallback page size when the engine cannot report sizes).
 -->
@@ -22,9 +23,9 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { PdfEngine, PdfPageSize } from '#lib/engines/pdf/index.js';
-	import PdfPage from '#lib/components/pdf-viewer/PdfPage.svelte';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import type { PdfEngine, PdfPageSize } from '../../engines/pdf/index.js';
+	import PdfPage from '../pdf-viewer/PdfPage.svelte';
 	import {
 		formatZoomPercent,
 		isZoomMode,
@@ -35,7 +36,7 @@
 		ZOOM_MODES,
 		zoomStepByRange,
 		type PdfViewerZoomLevel
-	} from '#lib/components/pdf-viewer/zoom.js';
+	} from '../pdf-viewer/zoom.js';
 	import {
 		createEditState,
 		deleteEditPage,
@@ -219,7 +220,7 @@
 	onMount(() => {
 		let cancelled = false;
 		(async () => {
-			const { createPdfEngine } = await import('#lib/engines/pdf/index.js');
+			const { createPdfEngine } = await import('../../engines/pdf/index.js');
 			if (cancelled) return;
 			engine = createPdfEngine();
 		})();
@@ -269,7 +270,8 @@
 			selectedIndex = 0;
 			status = 'ready';
 			onDocumentLoadSuccess?.({ numPages: count, documentId, fileName: source.name });
-			if (count > 0) onActivePageChange?.(1);
+			reportedPage = 0;
+			reportActivePage();
 		})().catch((failure: unknown) => {
 			if (cancelled) return;
 			numPages = 0;
@@ -342,33 +344,73 @@
 		applyEdit(rotateEditPage(editState, index, direction));
 	}
 
+	/** Last page number sent to onActivePageChange; 0 forces the next report. */
+	let reportedPage = 0;
+
+	/** Tell the parent whenever the selected page's position changes, however it changed. */
+	function reportActivePage(): void {
+		if (activePage > 0 && activePage !== reportedPage) {
+			reportedPage = activePage;
+			onActivePageChange?.(activePage);
+		}
+	}
+
 	function deleteAt(index: number): void {
 		const next = deleteEditPage(editState, index);
 		if (next === editState) return;
-		if (selectedIndex >= next.pages.length) {
-			selectedIndex = Math.max(0, next.pages.length - 1);
-		}
+		// The selection follows its page; deleting the selected page selects the one after it.
+		if (index < selectedIndex) selectedIndex -= 1;
+		selectedIndex = Math.min(selectedIndex, Math.max(0, next.pages.length - 1));
 		applyEdit(next);
+		reportActivePage();
 	}
 
 	function move(index: number, delta: -1 | 1): void {
-		applyEdit(moveEditPage(editState, index, index + delta));
-		if (index === selectedIndex) {
-			const target = Math.min(Math.max(index + delta, 0), editState.pages.length - 1);
-			selectedIndex = target;
-		}
+		const target = Math.min(Math.max(index + delta, 0), editState.pages.length - 1);
+		applyEdit(moveEditPage(editState, index, target));
+		// The selection follows its page, including when a neighbour swaps past it.
+		if (index === selectedIndex) selectedIndex = target;
+		else if (target === selectedIndex) selectedIndex = index;
+		reportActivePage();
 	}
 
 	function select(index: number): void {
-		if (index === selectedIndex) return;
 		selectedIndex = index;
-		onActivePageChange?.(index + 1);
+		reportActivePage();
 	}
 
 	function reset(): void {
 		selectedIndex = 0;
 		applyEdit(createEditState(numPages));
-		onActivePageChange?.(1);
+		reportActivePage();
+	}
+
+	/** Upstream's editor shortcuts, for the features this port has. */
+	function handleKeyDown(event: KeyboardEvent): void {
+		if (!canEdit) return;
+		const target = event.target;
+		if (
+			target instanceof HTMLElement &&
+			(target.isContentEditable ||
+				target.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']"))
+		) {
+			if (event.key === 'Escape') target.blur();
+			return;
+		}
+		if (!(event.metaKey || event.ctrlKey)) return;
+		const key = event.key;
+		if (key === '=' || key === '+') {
+			zoomLevel = zoomStepByRange(zoom, 1, MIN_ZOOM, MAX_ZOOM);
+		} else if (key === '-') {
+			zoomLevel = zoomStepByRange(zoom, -1, MIN_ZOOM, MAX_ZOOM);
+		} else if (key === '0') {
+			zoomLevel = 'fit-page';
+		} else if (key.toLowerCase() === 's' && showDownload) {
+			void downloadDocument();
+		} else {
+			return;
+		}
+		event.preventDefault();
 	}
 
 	function setZoom(value: string): void {
@@ -425,7 +467,15 @@
 	}
 </script>
 
-<div class={rootClass} data-dark={String(isDark)} data-testid="pdf-editor">
+<!-- Like upstream, shortcuts are scoped to the focused editor (tabindex -1 lets clicks focus it). -->
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
+<div
+	class={rootClass}
+	data-dark={String(isDark)}
+	data-testid="pdf-editor"
+	tabindex="-1"
+	onkeydown={handleKeyDown}
+>
 	{#if showToolbar}
 		<div role="toolbar" aria-label="PDF editor toolbar" class="pdf-editor-toolbar">
 			<span class="pdf-editor-indicator" data-testid="pdf-editor-page-indicator">
@@ -658,6 +708,10 @@
 			'Segoe UI',
 			sans-serif;
 		font-size: 13px;
+	}
+
+	.pdf-editor:focus {
+		outline: none;
 	}
 
 	.pdf-editor.dark {

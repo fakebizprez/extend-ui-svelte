@@ -404,6 +404,17 @@ describe('SchemaBuilder round-2 fixes', () => {
 		expect(emitted.properties.transactions.items?.required).toEqual(['date']);
 	});
 
+	it('every listitem is owned by a list (axe rule "listitem")', () => {
+		render(SchemaBuilder, {});
+
+		const items = screen.getAllByRole('listitem');
+		expect(items.length).toBeGreaterThan(4);
+		for (const item of items) {
+			expect(item.parentElement?.getAttribute('role')).toBe('list');
+		}
+		expect(screen.getAllByRole('list')[0]).toHaveAccessibleName('Fields');
+	});
+
 	it('adds properties inside array-of-object items, like upstream', async () => {
 		const onSchemaChange = vi.fn();
 		render(SchemaBuilder, { onSchemaChange });

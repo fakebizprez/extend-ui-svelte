@@ -28,10 +28,10 @@ const COMPONENTS: Record<string, string[]> = {
 	'pdf-editor': ['PdfEditor', 'PDFEditor'],
 	'pdf-viewer': ['PdfViewer', 'PDFViewer'],
 	'pptx-viewer': ['PptxViewer', 'PptxViewerPreview'],
-	'schema-builder': ['SchemaBuilder', 'SchemaBuilderPanel'],
+	'schema-builder': ['SchemaBuilder', 'SchemaBuilderPanel', 'SchemaJsonView'],
 	toggle: ['Toggle', 'ToggleGroup', 'ToggleGroupItem'],
 	'xlsx-editor': ['XlsxEditor', 'XlsxEditorPreview'],
-	'xlsx-viewer': ['XlsxViewer', 'XlsxViewerPreview']
+	'xlsx-viewer': ['XlsxViewer', 'XlsxViewerPreview', 'WorkbookSheetTabs']
 };
 
 describe('package root', () => {

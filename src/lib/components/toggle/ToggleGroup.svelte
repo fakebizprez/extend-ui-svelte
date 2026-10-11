@@ -9,7 +9,8 @@
 	theme), and no `ToggleGroupPrimitive` re-export (Base UI is React-only).
 	Like Base UI, the group is one Tab stop (the focused, pressed, or first
 	enabled item) and arrow keys, Home, and End move focus inside it.
-	`onValueChange` gets no event details. A consumer `onkeydown` runs before
+	`onPressedChange` and `onValueChange` get Base UI-style event details
+	(`cancel()` skips the change). A consumer `onkeydown` runs before
 	the built-in navigation; `event.preventDefault()` stands in for Base UI's
 	`preventBaseUIHandler()`.
 -->
@@ -50,7 +51,8 @@
 		findTabStop,
 		nextGroupValue,
 		setToggleGroupContext,
-		type RegisteredItem
+		type RegisteredItem,
+		type ToggleChangeEventDetails
 	} from './toggle-context.js';
 
 	export interface ToggleGroupProps extends DarkModeProps {
@@ -58,7 +60,8 @@
 		value?: string[];
 		/** Initial selection for uncontrolled mode. Defaults to `[]`. */
 		defaultValue?: string[];
-		onValueChange?: (value: string[]) => void;
+		/** `details.cancel()` keeps the current selection. */
+		onValueChange?: (value: string[], details: ToggleChangeEventDetails) => void;
 		/** Allow more than one selected item. Defaults to `false`, like Base UI. */
 		multiple?: boolean;
 		/** Loop arrow-key focus from the last item back to the first. Defaults to `true`. */
@@ -97,11 +100,12 @@
 	let internalValue = $state([...defaultValue]);
 	const current = $derived(valueProp ?? internalValue);
 
-	function toggleValue(itemValue: string) {
+	function toggleValue(itemValue: string, details: ToggleChangeEventDetails) {
 		if (disabled) return;
 		const next = nextGroupValue(current, itemValue, multiple);
+		onValueChange?.(next, details);
+		if (details.isCanceled) return;
 		if (valueProp === undefined) internalValue = next;
-		onValueChange?.(next);
 	}
 
 	// Arrow keys move focus between enabled items along the group's axis, like

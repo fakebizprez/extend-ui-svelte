@@ -137,18 +137,22 @@ for (const width of [1280, 390]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/e-signature');
 
-		const pad = page.getByTestId('e-signature').first().getByTestId('e-signature-pad');
+		const scope = page.getByTestId('e-signature').first();
+		const pad = scope.getByTestId('e-signature-pad');
 		await expect(pad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });
-		const box = await pad.boundingBox();
-		expect(box).not.toBeNull();
-		if (!box) return;
+		// The PDF preview loading can shift the layout; draw only once it has settled.
+		await expect(scope).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+		const first = await pad.boundingBox();
+		expect(first).not.toBeNull();
+		if (!first) return;
 
 		// Known points, in CSS pixels from the pad's top-left corner.
 		const points = [
-			{ x: Math.round(box.width * 0.8), y: 60 },
-			{ x: Math.round(box.width * 0.3), y: 140 }
+			{ x: Math.round(first.width * 0.8), y: 60 },
+			{ x: Math.round(first.width * 0.3), y: 140 }
 		];
 		for (const point of points) {
+			const box = (await pad.boundingBox()) ?? first;
 			await page.mouse.move(box.x + point.x - 12, box.y + point.y);
 			await page.mouse.down();
 			await page.mouse.move(box.x + point.x + 12, box.y + point.y, { steps: 6 });

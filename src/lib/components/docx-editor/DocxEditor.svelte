@@ -174,11 +174,11 @@
 
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { toggleIsDark } from '#lib/dark-mode.js';
-	import type { DocxSource } from '#lib/engines/docx/index.js';
+	import { toggleIsDark } from '../../dark-mode.js';
+	import type { DocxSource } from '../../engines/docx/index.js';
 	import { DOCX_MIME_TYPE as EXPORT_MIME_TYPE, exportDocxBytes } from './export.js';
 
-	type EngineModule = typeof import('#lib/engines/docx/index.js');
+	type EngineModule = typeof import('../../engines/docx/index.js');
 	type Status = 'idle' | 'loading' | 'ready' | 'error';
 
 	interface Props {
@@ -250,7 +250,7 @@
 	// top level. Importing this component stays DOM-free.
 	onMount(() => {
 		let cancelled = false;
-		import('#lib/engines/docx/index.js').then(
+		import('../../engines/docx/index.js').then(
 			(loaded) => {
 				if (!cancelled) engine = loaded;
 			},
@@ -285,6 +285,8 @@
 		const editor = editorEl;
 		const source: DocxSource | undefined = uploadedFile ?? src;
 		if (!source) {
+			// Invalidate any load still in flight so it cannot land after the clear.
+			generation += 1;
 			if (loaded) {
 				if (hidden) loaded.clearDocx(hidden);
 				if (editor) editor.innerHTML = '';

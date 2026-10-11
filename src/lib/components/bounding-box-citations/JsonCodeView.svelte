@@ -5,7 +5,7 @@
 	virtualizes through @pierre/diffs). `isDark` replaces upstream `theme`.
 -->
 <script lang="ts">
-	import { computeWindow } from '#lib/virtual-list/window.js';
+	import { computeWindow } from '../../virtual-list/window.js';
 	import type { JsonValue } from './citations.js';
 	import { formatJson, tokenizeJsonLine } from './review.js';
 

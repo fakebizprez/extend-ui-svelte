@@ -187,15 +187,24 @@
 	<ul>
 		<li>
 			Exported as <code>LayoutBlocks</code> and the upstream name <code>OcrBlocksPanel</code>.
-			<code>className</code> and <code>class</code> are both accepted. The upstream
-			<code>OcrBlocks</code> demo (the panel preloaded with the bundled Attention sample) is not
-			ported.
+			<code>className</code> and <code>class</code> are both accepted.
+			Also exported, like upstream: <code>getOcrBlocks</code>,
+			<code>blockToHighlightArea</code>, <code>blockToArea</code>, and the block types.
+		</li>
+		<li>
+			Not ported: upstream's sample data and demo, <code>ATTENTION_OCR_OUTPUT</code> (the
+			bundled Attention paper OCR result), <code>PDF_URL</code> (its sample PDF path), and the
+			<code>OcrBlocks</code> demo that renders the panel from them.
 		</li>
 		<li>
 			Upstream's <code>OcrBlockOverlay</code> (the colored block outline drawn on the
 			rendered PDF page) is not ported, so blocks cannot be highlighted on the page yet.
-			<code>blockToArea</code> and <code>blockToHighlightArea</code> are exported for building
-			overlays.
+			<code>blockToArea</code> and <code>blockToHighlightArea</code> are exported from
+			<code>extend-ui-svelte/components/layout-blocks</code> for building overlays.
+		</li>
+		<li>
+			<code>blockToArea</code> returns a CSS declaration string (for a Svelte
+			<code>style</code> attribute) instead of upstream's React style object.
 		</li>
 		<li>
 			Adds <code>height</code> (viewport height, default 420 like upstream) and

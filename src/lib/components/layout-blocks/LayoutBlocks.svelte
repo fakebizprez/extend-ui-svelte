@@ -8,10 +8,11 @@
 	  estimate and then size to their content (ResizeObserver).
 	- Adds `height` (viewport px, default 420 like upstream's h-[420px]) and
 	  `overscan` (default 6 like upstream) props.
-	- Exported as LayoutBlocks and as the upstream name OcrBlocksPanel. The
-	  upstream OcrBlocks demo (panel preloaded with the bundled Attention
-	  sample) is not ported, and neither is OcrBlockOverlay (overlays on the
-	  rendered PDF page); blockToArea/blockToHighlightArea are exported for that.
+	- Exported as LayoutBlocks and as the upstream name OcrBlocksPanel. Not
+	  ported: the sample data ATTENTION_OCR_OUTPUT and PDF_URL, the OcrBlocks
+	  demo built on them, and OcrBlockOverlay (overlays on the rendered PDF
+	  page); blockToArea/blockToHighlightArea are exported for that.
+	- blockToArea returns a CSS string instead of a React style object.
 	- Block markdown is sanitized with hast-util-sanitize (the library behind
 	  upstream's rehype-sanitize) and upstream's schema; see sanitizeBlockHtml.
 	- `class` is accepted alongside `className`; both merge onto the root.
@@ -25,8 +26,8 @@
 	  renders no theme switcher of its own.
 -->
 <script lang="ts">
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { DarkModeProps } from '#lib/dark-mode.js';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import type { DarkModeProps } from '../../dark-mode.js';
 	import {
 		DEFAULT_LAYOUT_BLOCKS_HEIGHT,
 		DEFAULT_LAYOUT_BLOCKS_OVERSCAN,
@@ -69,6 +70,14 @@
 	const activeBlock = $derived(
 		blocks.find((block) => block.id === focusedBlockId) ?? firstBlock
 	);
+
+	// Upstream: when the blocks change and the locally focused block is gone,
+	// local focus resets to the new first block.
+	$effect.pre(() => {
+		if (!firstBlock || activeBlockId) return;
+		if (blocks.some((block) => block.id === localActiveBlockId)) return;
+		if (localActiveBlockId !== undefined) localActiveBlockId = firstBlock.id;
+	});
 
 	function focusBlock(block: OcrBlock): void {
 		if (block.id === focusedBlockId) return;

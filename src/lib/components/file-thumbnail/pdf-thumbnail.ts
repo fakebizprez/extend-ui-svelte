@@ -2,7 +2,7 @@
 // PDF thumbnail helper for FileThumbnail: measure-then-render orchestration on
 // top of the shared PDF engine wrapper. Only the requested page is rendered,
 // never the whole document.
-import type { PdfEngine, PdfSource } from '#lib/engines/pdf/index.js';
+import type { PdfEngine, PdfSource } from '../../engines/pdf/index.js';
 
 /** Default 1-based page rendered when the caller passes no page number. */
 export const DEFAULT_THUMBNAIL_PAGE = 1;

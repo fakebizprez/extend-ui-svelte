@@ -47,7 +47,7 @@
 			"dependencies": [
 				"pdfjs-dist@^6.4.299",
 				"docx-preview@^0.4.1",
-				"xlsx@^0.18.5",
+				"xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 				"pptx-browser@^4.1.5"
 			]
 		},
@@ -144,6 +144,10 @@
 			"description": "Sheet tabs, virtual rows, dark mode. Svelte 5 port of Extend UI xlsx-viewer.",
 			"files": [
 				{ "path": "src/lib/components/xlsx-viewer/XlsxViewer.svelte", "type": "registry:component" },
+				{
+					"path": "src/lib/components/xlsx-viewer/WorkbookSheetTabs.svelte",
+					"type": "registry:component"
+				},
 				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" }
 			],
 			"registryDependencies": ["dark-mode", "engines", "virtual-list"]
@@ -197,8 +201,8 @@
 				{ "path": "src/lib/components/xlsx-editor/formulas.ts", "type": "registry:lib" },
 				{ "path": "src/lib/components/xlsx-editor/workbook-export.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["dark-mode", "engines", "virtual-list"],
-			"dependencies": ["xlsx@^0.18.5"]
+			"registryDependencies": ["dark-mode", "engines", "virtual-list", "xlsx-viewer"],
+			"dependencies": ["xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"]
 		},
 		{
 			"name": "file-system",
@@ -236,6 +240,10 @@
 			"files": [
 				{
 					"path": "src/lib/components/schema-builder/SchemaBuilder.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/schema-builder/SchemaJsonView.svelte",
 					"type": "registry:component"
 				},
 				{ "path": "src/lib/components/schema-builder/index.ts", "type": "registry:lib" }

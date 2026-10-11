@@ -144,3 +144,11 @@ test('the header shows no split counter, like upstream', async ({ page }) => {
 	await gotoLoadedSplits(page);
 	await expect(page.getByTestId('document-splits').getByText(/^\s*\d+\s+splits?\s*$/)).toHaveCount(0);
 });
+
+test('docs do not list upstream\'s Remove button as a port addition', async ({ page }) => {
+	await page.goto('/document-splits');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('rename a split');
+	await expect(differences).not.toContainText('remove a split');
+});

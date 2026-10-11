@@ -51,14 +51,19 @@
 	import type { DarkModeProps } from '../../dark-mode.js';
 	import { cn } from '../../utils.js';
 	import { onDestroy } from 'svelte';
-	import { getToggleGroupContext } from './toggle-context.js';
+	import {
+		createChangeEventDetails,
+		getToggleGroupContext,
+		type ToggleChangeEventDetails
+	} from './toggle-context.js';
 
 	export interface ToggleProps extends DarkModeProps {
 		/** Controlled pressed state. Omit for uncontrolled mode. */
 		pressed?: boolean;
 		/** Initial pressed state for uncontrolled mode. Defaults to `false`. */
 		defaultPressed?: boolean;
-		onPressedChange?: (pressed: boolean) => void;
+		/** Fires for standalone and grouped toggles; `details.cancel()` skips the change. */
+		onPressedChange?: (pressed: boolean, details: ToggleChangeEventDetails) => void;
 		disabled?: boolean;
 		variant?: ToggleVariant;
 		size?: ToggleSize;
@@ -121,13 +126,16 @@
 			event.preventDefault();
 			return;
 		}
+		// Like Base UI: report first, then update unless the consumer canceled.
+		const next = !pressed;
+		const details = createChangeEventDetails(event);
+		onPressedChange?.(next, details);
+		if (details.isCanceled) return;
 		if (inGroup && group) {
-			group.toggleValue(value as string);
+			group.toggleValue(value as string, details);
 			return;
 		}
-		const next = !pressed;
 		if (pressedProp === undefined) internalPressed = next;
-		onPressedChange?.(next);
 	}
 </script>
 

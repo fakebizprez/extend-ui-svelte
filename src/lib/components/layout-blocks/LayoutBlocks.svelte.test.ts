@@ -224,4 +224,25 @@ describe('LayoutBlocks', () => {
 			}
 		}
 	});
+
+	it('resets local focus to the new first block when blocks are replaced, like upstream', async () => {
+		const onBlockFocus = vi.fn();
+		const first = [makeBlock(0, { id: 'a-0' }), makeBlock(1, { id: 'a-1' })];
+		const view = render(LayoutBlocks, { blocks: first, height: 800, onBlockFocus });
+		await fireEvent.mouseEnter(screen.getAllByTestId('layout-block')[1] as HTMLElement);
+		expect(onBlockFocus).toHaveBeenCalledTimes(1);
+
+		const replaced = [makeBlock(0, { id: 'b-0' }), makeBlock(1, { id: 'b-1' })];
+		await view.rerender({ blocks: replaced, height: 800, onBlockFocus });
+		const rows = screen.getAllByTestId('layout-block');
+		expect(rows[0]).toHaveAttribute('data-active', 'true');
+
+		// The block already shown as active does not fire again.
+		await fireEvent.mouseEnter(rows[0] as HTMLElement);
+		expect(onBlockFocus).toHaveBeenCalledTimes(1);
+
+		await fireEvent.mouseEnter(rows[1] as HTMLElement);
+		expect(onBlockFocus).toHaveBeenCalledTimes(2);
+		expect(onBlockFocus).toHaveBeenLastCalledWith(replaced[1]);
+	});
 });

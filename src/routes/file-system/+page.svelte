@@ -88,6 +88,16 @@
 			Dark mode is set by the parent through <code>isDark</code>; the tree has no theme switch.
 		</li>
 		<li>
+			<code>defaultPath</code> expands the folders down to that path in the tree instead of
+			opening a view inside that folder, since the tree has no inside-a-folder view.
+		</li>
+		<li>
+			Types for unported features are not exported: <code>FileSystemView</code>,
+			<code>FileSystemLoadChildrenArgs</code>, <code>FileSystemLoadChildrenResult</code>,
+			<code>FileSystemViewerKind</code>, <code>FileSystemSortKey</code>, and
+			<code>FileSystemFilterType</code>.
+		</li>
+		<li>
 			Port additions: <code>bind:selectedPath</code>, <code>onRename</code>, and
 			<code>renamable</code> (inline rename with F2).
 		</li>

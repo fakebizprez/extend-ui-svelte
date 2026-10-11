@@ -21,6 +21,7 @@
 	let formatting = $state(['bold']);
 	let consumerClicks = $state(0);
 	let lastKey = $state('none');
+	let largePressed = $state('not reported');
 </script>
 
 <h1>Toggle</h1>
@@ -129,9 +130,17 @@
 	<ToggleGroupItem value="small" aria-label="Small text" onclick={() => consumerClicks++} {isDark}>
 		Small
 	</ToggleGroupItem>
-	<ToggleGroupItem value="large" aria-label="Large text" {isDark}>Large</ToggleGroupItem>
+	<ToggleGroupItem
+		value="large"
+		aria-label="Large text"
+		onPressedChange={(pressed, details) => (largePressed = `${pressed} (${details.reason})`)}
+		{isDark}
+	>
+		Large
+	</ToggleGroupItem>
 </ToggleGroup>
 <p data-testid="font-size-key">Last key: {lastKey}</p>
+<p data-testid="large-pressed">Large pressed: {largePressed}</p>
 
 <h2>Disabled group</h2>
 <ToggleGroup aria-label="Disabled group" disabled defaultValue={['a']} {isDark}>
@@ -156,9 +165,6 @@
 			handler, like Base UI. To skip the built-in behavior, call
 			<code>event.preventDefault()</code>; Base UI's <code>event.preventBaseUIHandler()</code>
 			does not exist on DOM events.
-		</li>
-		<li>
-			<code>onValueChange</code> receives only the new value, without Base UI's event details.
 		</li>
 		<li>
 			<code>className</code> and <code>class</code> are both accepted; <code>children</code> is

@@ -18,8 +18,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import { DEFAULT_OVERSCAN } from '#lib/virtual-list/window.js';
-	import type { PdfEngine, PdfPageSize } from '#lib/engines/pdf/index.js';
+	import { DEFAULT_OVERSCAN } from '../../virtual-list/window.js';
+	import type { PdfEngine, PdfPageSize } from '../../engines/pdf/index.js';
 	import PdfPage from './PdfPage.svelte';
 	import type { PdfViewerPageOverlayProps } from './types.js';
 	import {
@@ -33,8 +33,8 @@
 		MAX_ZOOM,
 		MIN_ZOOM,
 		normalizeRotation,
+		mostVisiblePage,
 		pageAnchorAt,
-		pageAtOffset,
 		pageWindow,
 		resolveZoom,
 		rotatedPageSize,
@@ -121,7 +121,6 @@
 	let engine: PdfEngine | null = $state.raw(null);
 	// svelte-ignore state_referenced_locally: `src` intentionally seeds the initial status only.
 	let status = $state<'empty' | 'loading' | 'ready' | 'error'>(src ? 'loading' : 'empty');
-	let loadError = $state('');
 	let numPages = $state(0);
 	let pageSizes: PdfPageSize[] = $state.raw([]);
 	/** Rotation added per page index, in degrees; pages without an entry are unrotated. */
@@ -218,7 +217,7 @@
 		let cancelled = false;
 		let unsubscribe: (() => void) | null = null;
 		(async () => {
-			const { createPdfEngine } = await import('#lib/engines/pdf/index.js');
+			const { createPdfEngine } = await import('../../engines/pdf/index.js');
 			if (cancelled) return;
 			const created = createPdfEngine();
 			unsubscribe = created.onPageChange((page) => {
@@ -251,7 +250,6 @@
 		}
 		let cancelled = false;
 		status = 'loading';
-		loadError = '';
 		eng.load(source).then(
 			async (count) => {
 				if (cancelled) return;
@@ -269,12 +267,11 @@
 				if (viewport) viewport.scrollTop = 0;
 				onDocumentLoadSuccess?.(count);
 			},
-			(failure: unknown) => {
+			() => {
+				// Upstream shows a fixed message, never the raw PDF.js error (which can include the URL).
 				if (cancelled) return;
 				numPages = 0;
 				status = 'error';
-				loadError =
-					failure instanceof Error ? failure.message : 'Unable to load the PDF preview.';
 			}
 		);
 		return () => {
@@ -315,11 +312,18 @@
 		}
 	}
 
+	/** Scroll position a goToPage() call is landing on; its own scroll event keeps that page. */
+	let requestedScrollTop: number | null = null;
+
 	function handleScroll(event: Event): void {
 		const target = event.currentTarget;
 		if (!(target instanceof HTMLElement)) return;
 		scrollTop = target.scrollTop;
-		const page = pageAtOffset(layout, scrollTop);
+		const requested = requestedScrollTop;
+		requestedScrollTop = null;
+		// Like EmbedPDF, a requested page stays current while its own scroll lands.
+		if (requested !== null && Math.abs(requested - scrollTop) < 1) return;
+		const page = mostVisiblePage(layout, scrollTop, height, target.scrollLeft, viewportWidth);
 		if (page > 0 && page !== activePage) setActivePage(page);
 	}
 
@@ -329,7 +333,11 @@
 		setActivePage(clamped);
 		const top = layout.tops[clamped - 1] ?? 0;
 		scrollTop = top;
-		if (viewport) viewport.scrollTop = top;
+		if (viewport) {
+			viewport.scrollTop = top;
+			// The browser may clamp the position (e.g. the last page cannot reach the top).
+			requestedScrollTop = viewport.scrollTop;
+		}
 	}
 
 	/** Rotate the active page a quarter turn (upstream rotates the selected pages). */
@@ -533,7 +541,7 @@
 		<div class="pdf-state" role="status">Loading PDF…</div>
 	{:else if status === 'error'}
 		<div class="pdf-state pdf-error" role="alert">
-			{loadError || 'Unable to load the PDF preview.'}
+			Unable to load the PDF preview.
 		</div>
 	{:else if !effectiveSrc}
 		<div class="pdf-state">

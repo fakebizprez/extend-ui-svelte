@@ -2,9 +2,35 @@
 // Internal context shared by ToggleGroup and its items. Not part of the public API.
 import { getContext, setContext } from 'svelte';
 
+/** Base UI's `Toggle.ChangeEventDetails` / `ToggleGroup.ChangeEventDetails`. */
+export interface ToggleChangeEventDetails {
+	reason: 'none';
+	event: Event;
+	/** Skips the built-in state change. */
+	cancel: () => void;
+	/** Parity with Base UI; nothing here stops propagation. */
+	allowPropagation: () => void;
+	isCanceled: boolean;
+	isPropagationAllowed: boolean;
+	trigger: Element | undefined;
+}
+
+export function createChangeEventDetails(event: Event): ToggleChangeEventDetails {
+	const details: ToggleChangeEventDetails = {
+		reason: 'none',
+		event,
+		cancel: () => (details.isCanceled = true),
+		allowPropagation: () => (details.isPropagationAllowed = true),
+		isCanceled: false,
+		isPropagationAllowed: false,
+		trigger: (event.currentTarget as Element | null) ?? undefined
+	};
+	return details;
+}
+
 export interface ToggleGroupContext {
 	isSelected: (itemValue: string) => boolean;
-	toggleValue: (itemValue: string) => void;
+	toggleValue: (itemValue: string, details: ToggleChangeEventDetails) => void;
 	isDisabled: () => boolean;
 	/** Registers an item in DOM order; returns the unregister function. */
 	register: (itemValue: string, isDisabled: () => boolean) => () => void;

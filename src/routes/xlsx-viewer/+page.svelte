@@ -6,6 +6,7 @@
 
 	let isDark = $state(false);
 	let darkPreview = $state(true);
+	let emptyDark = $state(false);
 </script>
 
 <h1>XLSX Viewer</h1>
@@ -29,7 +30,7 @@
 />
 
 <h2>Empty state</h2>
-<XlsxViewer />
+<XlsxViewer isDark={emptyDark} onIsDarkChange={(value) => (emptyDark = value)} />
 
 <h2>Differences from upstream</h2>
 <p>Also exported as <code>XlsxViewerPreview</code>, the upstream name.</p>
@@ -51,6 +52,16 @@
 		Not ported: cell formatting (fonts, fills, borders, number formats, merged cells), frozen
 		panes, column resize, zoom, search, sheet thumbnails, and the upload/download menu
 		(<code>showDownload</code>, <code>showUpload</code>, <code>toolbarActions</code>).
+	</li>
+	<li>
+		Exports: <code>WorkbookSheetTabs</code> is ported and shared with the editor. It takes
+		<code>sheets</code>, <code>activeSheetIndex</code>, and
+		<code>onActiveSheetIndexChange</code> instead of <code>workbookIdentity</code> plus the
+		react-xlsx context, and has no hover thumbnails. Not ported:
+		<code>renderXlsxScroller</code> (a react-xlsx scroll-area helper),
+		<code>WorkbookTableHeaderMenu</code> (the column sort menu; the port has no sorting), and
+		<code>XlsxWorkbookSurface</code> (a context surface; <code>XlsxViewer</code> is
+		self-contained).
 	</li>
 </ul>
 

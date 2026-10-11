@@ -177,3 +177,75 @@ test('large documents only lay out and paint the pages near the viewport', async
 	await expect.poll(renderedPages).toContain(30);
 	expect(await renderedPages()).not.toContain(1);
 });
+
+const HOSTILE_LINKS: Record<string, string> = {
+	'JS LINK': 'javascript:void(window.__pwned=document.domain)',
+	'DATA LINK': 'data:text/html,<script>opener.__pwned=1</script>',
+	'VB LINK': 'vbscript:msgbox(1)',
+	'SAFE LINK': 'https://example.com/terms'
+};
+
+/** The fixture rebuilt with one external hyperlink per HOSTILE_LINKS entry. */
+async function hyperlinkDocx(): Promise<Buffer> {
+	const zip = await JSZip.loadAsync(readFileSync('tests/fixtures/sample.docx'));
+	const entries = Object.entries(HOSTILE_LINKS);
+	const escape = (value: string) =>
+		value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	zip.file(
+		'word/_rels/document.xml.rels',
+		'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			entries
+				.map(
+					([, target], index) =>
+						`<Relationship Id="rIdLink${index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escape(target)}" TargetMode="External"/>`
+				)
+				.join('') +
+			'</Relationships>'
+	);
+	const paragraphs = entries
+		.map(
+			([text], index) =>
+				`<w:p><w:hyperlink r:id="rIdLink${index}"><w:r><w:t>${text}</w:t></w:r></w:hyperlink></w:p>`
+		)
+		.join('');
+	zip.file(
+		'word/document.xml',
+		'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+			`<w:body>${paragraphs}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`
+	);
+	return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+test('hyperlinks with javascript:, data:, or vbscript: targets never run when clicked', async ({
+	page
+}) => {
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	await expect(page.getByTestId('docx-container')).toContainText(EXPECTED_TEXT, {
+		timeout: 20000
+	});
+
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'links.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await hyperlinkDocx()
+	});
+	const documentEl = page.getByTestId('docx-container');
+	await expect(documentEl).toContainText('SAFE LINK', { timeout: 20000 });
+
+	for (const text of ['JS LINK', 'DATA LINK', 'VB LINK']) {
+		const link = documentEl.locator('a', { hasText: text });
+		await expect(link, text).not.toHaveAttribute('href');
+		await link.click();
+	}
+	await page.waitForTimeout(500);
+
+	expect(page.url()).toMatch(/\/docx-viewer$/);
+	expect(await page.evaluate(() => (window as { __pwned?: unknown }).__pwned ?? null)).toBeNull();
+	await expect(documentEl.locator('a', { hasText: 'SAFE LINK' })).toHaveAttribute(
+		'href',
+		HOSTILE_LINKS['SAFE LINK']
+	);
+});

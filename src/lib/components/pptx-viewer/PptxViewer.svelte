@@ -17,8 +17,8 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { loadDeck, type PptxDeck } from '#lib/engines/pptx/index.js';
-	import { DEFAULT_OVERSCAN, VirtualList } from '#lib/virtual-list/index.js';
+	import { loadDeck, type PptxDeck } from '../../engines/pptx/index.js';
+	import { DEFAULT_OVERSCAN, VirtualList } from '../../virtual-list/index.js';
 	import PptxSlide from './PptxSlide.svelte';
 
 	interface Props {

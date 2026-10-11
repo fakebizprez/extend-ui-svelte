@@ -4,7 +4,10 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { read, utils, write } from 'xlsx';
 import XlsxEditor from './XlsxEditor.svelte';
-import { XlsxEditorPreview } from './index.js';
+import { XlsxEditorPreview, type XlsxEditorProps } from './index.js';
+
+/** Required upstream props: dark mode is parent-controlled. */
+const DARK = { isDark: false, onIsDarkChange: () => {} };
 
 function inventoryBytes(): Uint8Array {
 	const workbook = utils.book_new();
@@ -118,8 +121,17 @@ afterEach(() => {
 });
 
 describe('XlsxEditor', () => {
+	it('requires isDark and onIsDarkChange, like upstream XlsxEditorPreview', () => {
+		// @ts-expect-error isDark and onIsDarkChange are required
+		const missingBoth: XlsxEditorProps = { src: '/fixtures/sample.xlsx' };
+		// @ts-expect-error onIsDarkChange is required
+		const missingCallback: XlsxEditorProps = { src: '/fixtures/sample.xlsx', isDark: false };
+		const complete: XlsxEditorProps = { src: '/fixtures/sample.xlsx', ...DARK };
+		expect([missingBoth, missingCallback, complete]).toHaveLength(3);
+	});
+
 	it('renders every grid row with letter column headers', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		// Unlike the viewer, the header row is editable grid data.
@@ -134,7 +146,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('selects a cell on click and shows its address in the formula bar', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -147,7 +159,7 @@ describe('XlsxEditor', () => {
 
 	it('commits a double-click edit on Enter and notifies onCellChange', async () => {
 		const onCellChange = vi.fn();
-		render(XlsxEditor, { data: inventoryBytes(), onCellChange });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), onCellChange });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -169,7 +181,7 @@ describe('XlsxEditor', () => {
 
 	it('cancels an edit on Escape without changing the grid', async () => {
 		const onCellChange = vi.fn();
-		render(XlsxEditor, { data: inventoryBytes(), onCellChange });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), onCellChange });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: '120' }));
@@ -184,7 +196,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('focuses the edit input with the caret at the end when editing starts', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -206,7 +218,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('returns focus to the cell after Escape cancels an edit', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: '120' }));
@@ -219,7 +231,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('evaluates a formula entered into a cell', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		// Select D2 (first Reno cell), then replace it with a formula over the
@@ -238,7 +250,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('keeps formulas on load: the bar shows the formula, the grid the value', async () => {
-		render(XlsxEditor, { data: lanesBytes() });
+		render(XlsxEditor, { ...DARK, data: lanesBytes() });
 		expect(await screen.findByRole('gridcell', { name: 'Lane' })).toBeVisible();
 
 		const total = screen.getByRole('gridcell', { name: '7' });
@@ -256,7 +268,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('shows the saved value for a formula the local evaluator cannot compute', async () => {
-		render(XlsxEditor, { data: lanesBytes() });
+		render(XlsxEditor, { ...DARK, data: lanesBytes() });
 		await fireEvent.click(await screen.findByRole('tab', { name: 'Totals' }));
 
 		const total = await screen.findByRole('gridcell', { name: '787' });
@@ -265,7 +277,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('keeps true positions on load: A1 origin and blank rows', async () => {
-		render(XlsxEditor, { data: lanesBytes() });
+		render(XlsxEditor, { ...DARK, data: lanesBytes() });
 		const lane = await screen.findByRole('gridcell', { name: 'Lane' });
 
 		expect(screen.getByTestId('row-count')).toHaveTextContent('6 rows');
@@ -277,7 +289,7 @@ describe('XlsxEditor', () => {
 
 	it('round-trips a workbook with a blank row and data at B2 without moving cells', async () => {
 		const onExport = vi.fn();
-		render(XlsxEditor, { data: lanesBytes(), onExport });
+		render(XlsxEditor, { ...DARK, data: lanesBytes(), onExport });
 		await screen.findByRole('gridcell', { name: 'Lane' });
 
 		const workbook = await exportedWorkbook(onExport);
@@ -295,7 +307,7 @@ describe('XlsxEditor', () => {
 
 	it('writes formulas back on export with their values', async () => {
 		const onExport = vi.fn();
-		render(XlsxEditor, { data: lanesBytes(), onExport });
+		render(XlsxEditor, { ...DARK, data: lanesBytes(), onExport });
 		await screen.findByRole('gridcell', { name: 'Lane' });
 
 		const workbook = await exportedWorkbook(onExport);
@@ -309,7 +321,7 @@ describe('XlsxEditor', () => {
 	it('keeps a text cell that starts with = as text on load and export', async () => {
 		const onExport = vi.fn();
 		const onCellChange = vi.fn();
-		render(XlsxEditor, { data: mixedBytes(), onExport, onCellChange });
+		render(XlsxEditor, { ...DARK, data: mixedBytes(), onExport, onCellChange });
 		const text = await screen.findByRole('gridcell', { name: '=abc' });
 
 		await fireEvent.click(text);
@@ -329,7 +341,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('turns typed text starting with = into a formula, like upstream', async () => {
-		render(XlsxEditor, { data: mixedBytes() });
+		render(XlsxEditor, { ...DARK, data: mixedBytes() });
 		await screen.findByRole('gridcell', { name: '=abc' });
 
 		await editCell('=abc', '=B1*3');
@@ -339,7 +351,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it("shows the file's saved formula values until an input is edited", async () => {
-		const { container } = render(XlsxEditor, { data: mixedBytes() });
+		const { container } = render(XlsxEditor, { ...DARK, data: mixedBytes() });
 		await screen.findByRole('gridcell', { name: '=abc' });
 
 		// SUM ignores TRUE and the text "5" (Excel gives 10), and the stale
@@ -351,7 +363,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('shows boolean and error results as Excel does', async () => {
-		const { container } = render(XlsxEditor, { data: mixedBytes() });
+		const { container } = render(XlsxEditor, { ...DARK, data: mixedBytes() });
 		await screen.findByRole('gridcell', { name: '=abc' });
 
 		expect(rowTexts(container).slice(2)).toEqual(['TRUE', '5', '10', '999', 'TRUE', '#DIV/0!', '#N/A']);
@@ -359,7 +371,7 @@ describe('XlsxEditor', () => {
 
 	it('exports formula results and literals with their types', async () => {
 		const onExport = vi.fn();
-		render(XlsxEditor, { data: mixedBytes(), onExport });
+		render(XlsxEditor, { ...DARK, data: mixedBytes(), onExport });
 		await screen.findByRole('gridcell', { name: '=abc' });
 
 		const sheet = (await exportedWorkbook(onExport)).Sheets['Mixed'] as Record<
@@ -376,7 +388,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('resets styles and edits when the source changes to another workbook', async () => {
-		const { rerender } = render(XlsxEditor, { data: inventoryBytes() });
+		const { rerender } = render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
@@ -397,8 +409,18 @@ describe('XlsxEditor', () => {
 		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('—');
 	});
 
+	it('keeps focus on the sheet tab when switching sheets from the keyboard', async () => {
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
+		await gridLoaded();
+
+		await fireEvent.keyDown(screen.getByRole('tab', { name: 'Inventory' }), { key: 'ArrowRight' });
+		expect(await screen.findByRole('gridcell', { name: 'Total SKUs' })).toBeVisible();
+		expect(screen.getByRole('tab', { name: 'Summary' })).toHaveFocus();
+	});
+
 	it('accepts className as an alias of class and exports the upstream name', async () => {
 		render(XlsxEditorPreview, {
+...DARK,
 			data: inventoryBytes(),
 			class: 'from-class',
 			className: 'from-alias'
@@ -409,7 +431,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('toggles bold on the selected cell', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		const bold = screen.getByRole('button', { name: 'Bold' });
@@ -431,7 +453,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('sets text alignment on the selected cell', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -446,7 +468,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('sets a fill color on the selected cell', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -461,7 +483,7 @@ describe('XlsxEditor', () => {
 
 	it('exports the edited workbook through onExport', async () => {
 		const onExport = vi.fn();
-		render(XlsxEditor, { data: inventoryBytes(), fileName: 'edited.xlsx', onExport });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), fileName: 'edited.xlsx', onExport });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -482,7 +504,7 @@ describe('XlsxEditor', () => {
 	});
 
 	it('switches sheets when a tab is clicked and keeps per-sheet edits', async () => {
-		render(XlsxEditor, { data: inventoryBytes() });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
 		await fireEvent.dblClick(screen.getByRole('gridcell', { name: 'Resistor kit' }));
@@ -500,14 +522,14 @@ describe('XlsxEditor', () => {
 	});
 
 	it('shows an empty state when neither src nor data is given', async () => {
-		render(XlsxEditor, {});
+		render(XlsxEditor, DARK);
 
 		expect(await screen.findByText('No workbook to edit')).toBeVisible();
 		expect(screen.queryByRole('grid')).not.toBeInTheDocument();
 	});
 
 	it('shows an error for empty workbook bytes', async () => {
-		render(XlsxEditor, { data: new Uint8Array(0) });
+		render(XlsxEditor, { ...DARK, data: new Uint8Array(0) });
 
 		expect(await screen.findByRole('alert')).toHaveTextContent(
 			'Cannot load workbook from empty data'
@@ -517,6 +539,7 @@ describe('XlsxEditor', () => {
 	it('reflects the parent-controlled dark mode and notifies on toggle', async () => {
 		const onIsDarkChange = vi.fn();
 		const { unmount } = render(XlsxEditor, {
+...DARK,
 			data: inventoryBytes(),
 			isDark: false,
 			onIsDarkChange
@@ -530,7 +553,7 @@ describe('XlsxEditor', () => {
 		expect(onIsDarkChange).toHaveBeenCalledWith(true);
 		unmount();
 
-		render(XlsxEditor, { data: inventoryBytes(), isDark: true });
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), isDark: true });
 		expect(await screen.findByTestId('xlsx-editor')).toHaveAttribute('data-dark', 'true');
 	});
 });

@@ -26,6 +26,7 @@
 <section aria-labelledby="differences-from-upstream">
 	<h2 id="differences-from-upstream">Differences from upstream</h2>
 	<ul>
+		<li>Upstream exports <code>PptxViewerPreview</code> and <code>PptxViewerPreviewProps</code>; both are available here, plus <code>PptxViewer</code> and <code>PptxViewerProps</code>.</li>
 		<li>
 			Exported as both <code>PptxViewer</code> and the upstream name
 			<code>PptxViewerPreview</code>; <code>className</code> and <code>class</code> are both

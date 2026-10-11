@@ -196,24 +196,27 @@ export function rotatedPageSize(size: PdfLayoutSize, rotation: number): PdfLayou
 export interface PdfPageLayout {
 	tops: number[];
 	heights: number[];
+	widths: number[];
 	totalHeight: number;
 	totalWidth: number;
 }
 
 /** Lay pages of any size out top to bottom. */
 export function computePageLayout(sizes: readonly PdfLayoutSize[], gap: number): PdfPageLayout {
-	if (sizes.length === 0) return { tops: [], heights: [], totalHeight: 0, totalWidth: 0 };
+	if (sizes.length === 0) return { tops: [], heights: [], widths: [], totalHeight: 0, totalWidth: 0 };
 	const tops: number[] = [];
 	const heights: number[] = [];
+	const widths: number[] = [];
 	let offset = gap;
 	let maxWidth = 0;
 	for (const size of sizes) {
 		tops.push(offset);
 		heights.push(size.height);
+		widths.push(size.width);
 		offset += size.height + gap;
 		maxWidth = Math.max(maxWidth, size.width);
 	}
-	return { tops, heights, totalHeight: offset, totalWidth: maxWidth + 2 * gap };
+	return { tops, heights, widths, totalHeight: offset, totalWidth: maxWidth + 2 * gap };
 }
 
 /** Index of the last page whose top is at or above `offset` (0-based, -1 when empty). */
@@ -236,6 +239,43 @@ function indexAtOffset(layout: PdfPageLayout, offset: number): number {
 /** Page (1-based) at a scroll offset; 0 when there are no pages. */
 export function pageAtOffset(layout: PdfPageLayout, offset: number): number {
 	return indexAtOffset(layout, offset) + 1;
+}
+
+/**
+ * Current page the way EmbedPDF's scroll plugin picks it: the page with the
+ * largest visible share of its own area, ties going to the lower page number.
+ * Pages are centred horizontally in content at least as wide as the viewport.
+ * Returns 1-based, or 0 when there are no pages.
+ */
+export function mostVisiblePage(
+	layout: PdfPageLayout,
+	scrollTop: number,
+	viewportHeight: number,
+	scrollLeft: number,
+	viewportWidth: number
+): number {
+	const contentWidth = Math.max(layout.totalWidth, viewportWidth);
+	let best = 0;
+	let bestShare = -1;
+	for (let index = 0; index < layout.tops.length; index += 1) {
+		const top = layout.tops[index]!;
+		const height = layout.heights[index]!;
+		const width = layout.widths[index]!;
+		const left = (contentWidth - width) / 2;
+		const visibleHeight = Math.min(top + height, scrollTop + viewportHeight) - Math.max(top, scrollTop);
+		// An unmeasured viewport (width 0) counts every page as fully visible across.
+		const visibleWidth =
+			viewportWidth > 0
+				? Math.min(left + width, scrollLeft + viewportWidth) - Math.max(left, scrollLeft)
+				: width;
+		if (visibleHeight <= 0 || visibleWidth <= 0 || height <= 0 || width <= 0) continue;
+		const share = (visibleHeight * visibleWidth) / (height * width);
+		if (share > bestShare) {
+			best = index + 1;
+			bestShare = share;
+		}
+	}
+	return best || (layout.tops.length ? 1 : 0);
 }
 
 /** A document point: a page and how far down it is, as a fraction of the page height. */

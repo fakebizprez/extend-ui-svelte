@@ -91,3 +91,11 @@ test('file-system type-ahead focuses the entry whose name starts with the typed 
 
 	await expect(page.getByRole('treeitem', { name: /readme\.txt/ })).toBeFocused();
 });
+
+test('docs record the defaultPath and export differences', async ({ page }) => {
+	await openFileSystem(page);
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('defaultPath');
+	await expect(differences).toContainText('FileSystemLoadChildrenArgs');
+});

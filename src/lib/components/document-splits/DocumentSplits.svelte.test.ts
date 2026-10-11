@@ -11,7 +11,7 @@ const pdfMock = vi.hoisted(() => ({
 	rendered: [] as number[]
 }));
 
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
 		pdfMock.created += 1;
 		return {

@@ -65,6 +65,13 @@
 	<section>
 		<h2>Disabled</h2>
 		<ColorPicker label="Disabled color" value="#6B7280" variant="swatch" disabled {isDark} />
+		<p>
+			A disabled panel locks only its channel and opacity fields, like upstream; the plane,
+			sliders, value field, and format picker stay live.
+		</p>
+		<div data-testid="disabled-panel-demo">
+			<ColorPicker label="Locked fill" value="#6B728080" variant="panel" showAlpha disabled {isDark} />
+		</div>
 	</section>
 </div>
 

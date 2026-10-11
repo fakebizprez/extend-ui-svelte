@@ -1,7 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI xlsx-editor. Upstream: extend-hq/ui (MIT).
 // Unit tests for the local formula evaluator: run in the Vitest node project.
 import { describe, expect, it } from 'vitest';
-import { XlsxCellError } from '#lib/engines/xlsx/index.js';
+import { XlsxCellError } from '../../engines/xlsx/index.js';
 import {
 	columnIndexToLetter,
 	columnLetterToIndex,

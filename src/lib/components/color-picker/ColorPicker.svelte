@@ -10,6 +10,9 @@
 	  trigger, focus moves in on open, Escape / outside press / tabbing out
 	  close it, and focus returns to the trigger.
 	- Copy buttons, focus-reselect, and alpha scrub-dragging are omitted.
+	- Like upstream, `disabled` reaches only the channel and opacity fields
+	  inside the panel; the plane, sliders, eyedropper, value field, and format
+	  select stay interactive.
 	- The panel wraps its fields column under the plane when its container is
 	  narrower than the panel (upstream keeps one row and overflows).
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
@@ -496,20 +499,17 @@
 			type="button"
 			aria-label="Chroma and lightness"
 			class="relative size-53 shrink-0 cursor-crosshair touch-none rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-			{disabled}
 			onpointerdown={(event) => {
-				if (disabled) return;
 				event.preventDefault();
 				event.currentTarget.setPointerCapture?.(event.pointerId);
 				event.currentTarget.focus();
 				updatePlaneFromPointer(event);
 			}}
 			onpointermove={(event) => {
-				if (disabled || (event.buttons & 1) === 0) return;
+				if ((event.buttons & 1) === 0) return;
 				updatePlaneFromPointer(event);
 			}}
 			onkeydown={(event) => {
-				if (disabled) return;
 				const delta = event.shiftKey ? 10 : 1;
 				let next: [number, number] | null = null;
 				if (event.key === 'ArrowLeft') next = [hsva.s - delta, hsva.v];
@@ -547,7 +547,6 @@
 						onFraction={(fraction) => commitHsva({ ...hsva, a: 1 - fraction })}
 						onStep={(direction, big) =>
 							commitHsva({ ...hsva, a: clamp(hsva.a + direction * (big ? 0.1 : 0.01), 0, 1) })}
-						{disabled}
 					>
 						{#snippet track()}
 							{@render checkerboard(6)}
@@ -567,7 +566,6 @@
 					onFraction={(fraction) => commitHsva({ ...hsva, h: fraction * 360 })}
 					onStep={(direction, big) =>
 						commitHsva({ ...hsva, h: clamp(hsva.h - direction * (big ? 10 : 1), 0, 360) })}
-					{disabled}
 				>
 					{#snippet track()}
 						<span class="absolute inset-0" style="background: {OK_HUE_TRACK};"></span>
@@ -580,7 +578,6 @@
 					aria-label="Pick color from screen"
 					title="Pick color from screen"
 					class={cn(SWATCH_TRIGGER_BASE, SWATCH_TRIGGER_OUTLINE, 'size-8! shrink-0')}
-					{disabled}
 					onclick={handleEyeDropper}
 				>
 					<!-- Lucide "pipette", the upstream IconPlaceholder default. -->
@@ -616,12 +613,11 @@
 						class="h-full min-w-0 flex-1 rounded-[inherit] border-0 bg-transparent px-2 py-0 text-center text-sm leading-none tabular-nums outline-none"
 						value={formatColorValue(format, parts)}
 						onCommitText={commitText}
-						{disabled}
 					/>
 					{#if showAlpha}
 						<div class="flex h-full shrink-0 items-center gap-0.5 pr-2 pl-0.5">
 							<DraftInput
-								aria-label="Panel opacity"
+								aria-label="Opacity"
 								class="w-8 border-0 bg-transparent p-0 text-right text-sm tabular-nums outline-none"
 								{disabled}
 								inputMode="decimal"
@@ -641,7 +637,6 @@
 					aria-label="Color format"
 					class="size-8 shrink-0"
 					value={format}
-					{disabled}
 					onchange={handleFormatChange}
 				>
 					{#each COLOR_FORMAT_OPTIONS as option (option.value)}

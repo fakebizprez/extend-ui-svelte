@@ -98,7 +98,7 @@
 		</li>
 		<li>
 			Port additions: rename a split through its title input, split a group in two at the
-			midpoint, remove a split, and <code>pdfUrl</code>, which renders each page lazily through
+			midpoint, and <code>pdfUrl</code>, which renders each page lazily through
 			FileThumbnail when <code>thumbnailImages</code> has no cached image for it.
 		</li>
 		<li>

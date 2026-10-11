@@ -71,7 +71,13 @@
 		<li>
 			Port additions: a per-field <code>required</code> flag (upstream has none), serialized as a
 			<code>required</code> list on its parent object at every level, including array item
-			objects; and <code>onSerializedSchemaChange</code>.
+			objects; <code>onSerializedSchemaChange</code>; and the <code>Remove field</code> and
+			<code>Remove enum value</code> buttons (upstream has no way to remove a field or an enum
+			value).
+		</li>
+		<li>
+			<code>SchemaJsonView</code> is exported like upstream, but renders plain preformatted JSON
+			instead of the syntax-highlighted, virtualized code file.
 		</li>
 	</ul>
 </section>

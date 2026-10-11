@@ -12,10 +12,11 @@ const mockState = vi.hoisted(() => ({
 	pageCount: 3,
 	// Page sizes reported by the engine; null leaves getPageSizes off the mock.
 	sizes: null as Size[] | null,
-	loads: [] as unknown[]
+	loads: [] as unknown[],
+	loadError: null as Error | null
 }));
 
-vi.mock('#lib/engines/pdf/index.js', () => ({
+vi.mock('../../engines/pdf/index.js', () => ({
 	createPdfEngine: () => {
 		const listeners = new Set<(page: number) => void>();
 		const engine = {
@@ -23,6 +24,7 @@ vi.mock('#lib/engines/pdf/index.js', () => ({
 			currentPage: 0,
 			load: async (source: unknown) => {
 				mockState.loads.push(source);
+				if (mockState.loadError) throw mockState.loadError;
 				engine.pageCount = mockState.pageCount;
 				engine.currentPage = mockState.pageCount > 0 ? 1 : 0;
 				for (const listener of listeners) listener(engine.currentPage);
@@ -58,6 +60,7 @@ beforeEach(() => {
 	mockState.pageCount = 3;
 	mockState.sizes = null;
 	mockState.loads = [];
+	mockState.loadError = null;
 });
 
 afterEach(() => {
@@ -331,6 +334,63 @@ describe('PdfViewer', () => {
 		const overlays = await screen.findAllByTestId('test-overlay');
 		expect(overlays.length).toBeGreaterThan(0);
 		expect(overlays[0]).toHaveTextContent('Overlay page 1 @ 1x');
+	});
+
+	it('keeps overlays in unrotated page space and rotates them with the page, like upstream', async () => {
+		mockState.sizes = [LETTER, LETTER, LETTER];
+		const { container } = render(PdfViewerOverlayHarness, { src: SRC });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		expect((await screen.findAllByTestId('test-overlay'))[0]).toHaveTextContent('612x792 r0');
+		await fireEvent.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
+
+		const overlay = screen.getAllByTestId('test-overlay')[0]!;
+		expect(overlay).toHaveTextContent('Overlay page 1 @ 1x, 612x792 r90');
+		const layer = pageBox(container, 1).querySelector<HTMLElement>('.pdf-page-overlay')!;
+		expect(layer.style.width).toBe('612px');
+		expect(layer.style.height).toBe('792px');
+		expect(layer.style.transform).toContain('rotate(90deg)');
+	});
+
+	it('reports the most visible page as active, like EmbedPDF', async () => {
+		mockState.sizes = [LETTER, LETTER, LETTER];
+		render(PdfViewer, { src: SRC, pageGap: 0, height: 600 });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		const viewport = screen.getByTestId('pdf-viewport');
+		// 700..1300 shows 12% of page 1 and 64% of page 2.
+		viewport.scrollTop = 700;
+		await fireEvent.scroll(viewport);
+		expect(screen.getByTestId('pdf-page-indicator')).toHaveTextContent('Page 2 of 3');
+	});
+
+	it('keeps a requested page active while its own scroll lands, like EmbedPDF', async () => {
+		// Three 100px pages all fit in view, so scrolling alone would pick page 1.
+		mockState.sizes = [
+			{ width: 100, height: 100 },
+			{ width: 100, height: 100 },
+			{ width: 100, height: 100 }
+		];
+		render(PdfViewer, { src: SRC, pageGap: 0, height: 600 });
+
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+		const viewport = screen.getByTestId('pdf-viewport');
+		await fireEvent.scroll(viewport);
+		expect(screen.getByTestId('pdf-page-indicator')).toHaveTextContent('Page 2 of 3');
+
+		viewport.scrollTop = 0;
+		await fireEvent.scroll(viewport);
+		expect(screen.getByTestId('pdf-page-indicator')).toHaveTextContent('Page 1 of 3');
+	});
+
+	it('shows upstream\'s load error message instead of the raw PDF.js text', async () => {
+		mockState.loadError = new Error('Missing PDF "https://example.com/files/secret.pdf".');
+		render(PdfViewer, { src: SRC });
+
+		const alert = await screen.findByRole('alert');
+		expect(alert).toHaveTextContent(/^Unable to load the PDF preview\.$/);
+		expect(alert.textContent).not.toContain('secret.pdf');
 	});
 
 	it('applies pageClassName to the matching page wrapper', async () => {

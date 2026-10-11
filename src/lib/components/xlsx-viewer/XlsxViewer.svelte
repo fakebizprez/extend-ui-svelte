@@ -13,13 +13,19 @@
 	- Not ported: cell formatting (fonts, fills, borders, number formats, merged
 	  cells), frozen panes, column resize, zoom, search, sheet thumbnails, and
 	  the upload/download menu (showDownload, showUpload, toolbarActions).
+	- Exports: WorkbookSheetTabs is ported (it takes sheets, activeSheetIndex,
+	  and onActiveSheetIndexChange instead of workbookIdentity plus the
+	  react-xlsx context, and has no hover thumbnails). Not ported:
+	  renderXlsxScroller (a react-xlsx scroll-area render helper),
+	  WorkbookTableHeaderMenu (the column sort menu; the port has no sorting),
+	  and XlsxWorkbookSurface (a context surface; XlsxViewer is self-contained).
 -->
 <script lang="ts">
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { DarkModeProps } from '#lib/dark-mode.js';
-	import type { WorkBook } from '#lib/engines/xlsx/index.js';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import WorkbookSheetTabs from './WorkbookSheetTabs.svelte';
+	import type { WorkBook } from '../../engines/xlsx/index.js';
 
-	type EngineModule = typeof import('#lib/engines/xlsx/index.js');
+	type EngineModule = typeof import('../../engines/xlsx/index.js');
 
 	/** Zero-based column index to spreadsheet letters (0 is A, 26 is AA). */
 	function columnIndexToLetter(index: number): string {
@@ -30,7 +36,11 @@
 		return letters;
 	}
 
-	interface Props extends DarkModeProps {
+	interface Props {
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
 		/** Workbook URL. Loaded with fetch on the client. */
 		src?: string;
 		/** Workbook bytes. Takes precedence over src when both are given. */
@@ -131,7 +141,7 @@
 		errorMessage = '';
 		(async () => {
 			try {
-				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
 				if (cancelled) return;
 				let workbook = workbookCache?.key === sourceKey ? workbookCache.workbook : null;
 				if (!workbook) {
@@ -172,7 +182,7 @@
 		loadingSheet = true;
 		(async () => {
 			try {
-				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
 				const next = await engine.sheetToGrid(cached.workbook, sheetName);
 				if (cancelled) return;
 				rows = next.values;
@@ -235,22 +245,6 @@
 		<div class="xlsx-state">
 			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
-		{#if sheetNames.length > 0}
-			<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-				{#each sheetNames as name, i (name)}
-					<button
-						type="button"
-						role="tab"
-						data-testid="sheet-tab"
-						aria-selected={i === activeSheetIndex}
-						class:active={i === activeSheetIndex}
-						onclick={() => selectSheet(i)}
-					>
-						{name}
-					</button>
-				{/each}
-			</div>
-		{/if}
 	{:else}
 		<div class="xlsx-scroll">
 			<div class="xlsx-grid" role="table" aria-label={activeSheetName} style={`min-width: ${gridMinWidth}px;`}>
@@ -279,20 +273,14 @@
 				{/key}
 			</div>
 		</div>
-		<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-			{#each sheetNames as name, i (name)}
-				<button
-					type="button"
-					role="tab"
-					data-testid="sheet-tab"
-					aria-selected={i === activeSheetIndex}
-					class:active={i === activeSheetIndex}
-					onclick={() => selectSheet(i)}
-				>
-					{name}
-				</button>
-			{/each}
-		</div>
+	{/if}
+	<!-- Outside the state branches so the tabs (and their focus) survive sheet loads. -->
+	{#if status === 'ready'}
+		<WorkbookSheetTabs
+			sheets={sheetNames}
+			{activeSheetIndex}
+			onActiveSheetIndexChange={selectSheet}
+		/>
 	{/if}
 </div>
 
@@ -435,30 +423,5 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-
-	.xlsx-tabs {
-		display: flex;
-		gap: 0.25rem;
-		overflow-x: auto;
-		padding: 0.5rem 0.75rem;
-		border-top: 1px solid var(--xlsx-border);
-	}
-
-	.xlsx-tabs [role='tab'] {
-		flex: none;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid transparent;
-		border-radius: 0.375rem;
-		background: transparent;
-		color: var(--xlsx-muted);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.xlsx-tabs [role='tab'].active {
-		border-color: var(--xlsx-border);
-		color: var(--xlsx-tab-active);
-		font-weight: 600;
 	}
 </style>

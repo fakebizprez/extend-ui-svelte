@@ -17,6 +17,8 @@
 	- The thumbnail sidebar lists page numbers with text excerpts and is
 	  virtualized with the shared VirtualList instead of tanstack virtual; it
 	  stays inline instead of collapsing to an overlay on narrow widths.
+	- The engine keeps only http(s), mailto, tel, and #anchor link targets and
+	  strips scripts, frames, objects, embeds, and on* attributes.
 	- toolbarActions is a Snippet instead of a React node.
 	- Zoom is a CSS zoom on the rendered document. defaultZoom matches upstream
 	  (number | 'fit-page' | 'fit-width' | 'automatic', default 50); the fit
@@ -121,10 +123,10 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { DocxSource } from '#lib/engines/docx/index.js';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import type { DocxSource } from '../../engines/docx/index.js';
 
-	type EngineModule = typeof import('#lib/engines/docx/index.js');
+	type EngineModule = typeof import('../../engines/docx/index.js');
 	type Status = 'idle' | 'loading' | 'ready' | 'error';
 
 	interface Props {
@@ -217,7 +219,7 @@
 	// top level. Importing this component stays DOM-free.
 	onMount(() => {
 		let cancelled = false;
-		import('#lib/engines/docx/index.js').then(
+		import('../../engines/docx/index.js').then(
 			(loaded) => {
 				if (!cancelled) engine = loaded;
 			},
@@ -249,6 +251,8 @@
 		const element = containerEl;
 		const source = uploadedFile ?? src;
 		if (!source) {
+			// Invalidate any render still in flight so it cannot land after the clear.
+			generation += 1;
 			if (loaded && element) loaded.clearDocx(element);
 			pages = [];
 			activePage = 1;

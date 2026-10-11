@@ -21,6 +21,7 @@
 <section aria-labelledby="differences-from-upstream">
 	<h2 id="differences-from-upstream">Differences from upstream</h2>
 	<ul>
+		<li>Upstream exports only <code>DocxViewerPreview</code>; every upstream export is available here.</li>
 		<li>
 			Exported as both <code>DocxViewer</code> and the upstream name
 			<code>DocxViewerPreview</code>; <code>className</code> and <code>class</code> are both
@@ -46,6 +47,12 @@
 		<li>
 			The page number is editable like upstream; the Previous and Next page buttons are a port
 			addition.
+		</li>
+		<li>
+			Hyperlinks keep only <code>http</code>, <code>https</code>, <code>mailto</code>,
+			<code>tel</code>, and <code>#</code> targets; any other target is removed, so the link
+			shows as plain text. Scripts, frames, embedded objects, and event-handler attributes in
+			the rendered document are stripped.
 		</li>
 		<li><code>toolbarActions</code> is a Svelte snippet instead of a React node.</li>
 		<li>

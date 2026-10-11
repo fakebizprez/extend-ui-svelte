@@ -30,9 +30,9 @@
 	import {
 		FileThumbnail,
 		renderLoadedPdfThumbnail
-	} from '#lib/components/file-thumbnail/index.js';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
-	import { resolveIsDark } from '#lib/dark-mode.js';
+	} from '../file-thumbnail/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
+	import { resolveIsDark } from '../../dark-mode.js';
 	import {
 		addSplit,
 		areSplitGroupsEqual,
@@ -302,7 +302,7 @@
 		requestedPages.clear();
 		if (!url) return;
 		// Browser-only: the engine (and PDF.js behind it) loads on the client.
-		const loading = import('#lib/engines/pdf/index.js').then(async (module) => {
+		const loading = import('../../engines/pdf/index.js').then(async (module) => {
 			const engine = module.createPdfEngine();
 			return { engine, pageCount: await engine.load(url) };
 		});
