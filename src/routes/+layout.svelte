@@ -49,9 +49,9 @@
 <style>
 	:global(body) {
 		margin: 0;
-		background: var(--background);
-		color: var(--foreground);
-		font-family: system-ui, sans-serif;
+		background: var(--lh-bg);
+		color: var(--lh-text);
+		font-family: var(--lh-mono);
 	}
 
 	.docs-shell {
@@ -71,6 +71,13 @@
 		max-height: calc(100vh - var(--docs-header-height) - 2rem);
 		overflow-y: auto;
 	}
+	.side {
+		border-right: 1px solid var(--lh-border);
+	}
+	.toc {
+		border-left: 1px solid var(--lh-border);
+		padding-left: 1rem;
+	}
 
 	main {
 		min-width: 0;
@@ -78,8 +85,34 @@
 
 	.crumbs {
 		margin: 0 0 1rem;
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--lh-muted);
+	}
+
+	/*
+	 * Preview pages are plain headings and text straight under <main>. Only direct
+	 * children are styled, so the components inside the previews keep their own look.
+	 */
+	main > :global(h1) {
+		font-family: var(--lh-display);
+		font-size: clamp(2rem, 4.5vw, 3.5rem);
+		font-weight: 700;
+		line-height: 0.94;
+		letter-spacing: -0.025em;
+		text-transform: uppercase;
+	}
+	main > :global(h2),
+	main > :global(section > h2) {
+		font-family: var(--lh-display);
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+	main > :global(p) {
 		font-size: 0.8125rem;
-		color: var(--muted-foreground);
+		line-height: 1.8;
 	}
 
 	/* Long prop and file names in the docs text wrap instead of widening the page. */

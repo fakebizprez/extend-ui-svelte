@@ -35,11 +35,12 @@
 	}
 	h2 {
 		margin: 1rem 0 0.375rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		letter-spacing: 0.05em;
+		font-family: var(--lh-mono);
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
 		text-transform: uppercase;
-		color: var(--muted-foreground, #737373);
+		color: var(--lh-muted);
 	}
 	ul {
 		margin: 0;
@@ -49,21 +50,25 @@
 	a {
 		display: block;
 		padding: 0.375rem 0.5rem;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		color: var(--foreground, #0a0a0a);
+		border-radius: 0;
+		font-family: var(--lh-mono);
+		font-size: 0.75rem;
+		color: var(--lh-text);
 		text-decoration: none;
 		overflow-wrap: anywhere;
 	}
 	a:hover,
 	a[aria-current='page'] {
-		background: var(--accent, #f5f5f5);
+		background: var(--lh-hover);
 	}
 	a[aria-current='page'] {
-		font-weight: 600;
+		background: var(--lh-surface);
+		color: var(--lh-blue);
+		font-weight: 700;
+		outline: 1px solid var(--lh-border);
 	}
 	a:focus-visible {
-		outline: 2px solid var(--foreground, #0a0a0a);
+		outline: 2px solid var(--lh-blue);
 		outline-offset: 2px;
 	}
 </style>

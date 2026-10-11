@@ -31,21 +31,25 @@
 		flex-direction: column;
 		flex: 1;
 		padding: 0.75rem 1rem;
-		border: 1px solid var(--border, #e5e5e5);
-		border-radius: 0.5rem;
-		color: var(--foreground, #0a0a0a);
+		border: 1px solid var(--lh-border);
+		border-radius: 0;
+		background: var(--lh-surface);
+		font-family: var(--lh-mono);
+		font-size: 0.75rem;
+		color: var(--lh-text);
 		text-decoration: none;
 		overflow-wrap: anywhere;
 	}
 	a:hover {
-		background: var(--accent, #f5f5f5);
+		background: var(--lh-hover);
+		border-color: var(--lh-blue);
 	}
 	a:focus-visible {
-		outline: 2px solid var(--foreground, #0a0a0a);
+		outline: 2px solid var(--lh-blue);
 		outline-offset: 2px;
 	}
 	small {
-		color: var(--muted-foreground, #737373);
+		color: var(--lh-muted);
 	}
 	.next {
 		margin-left: auto;

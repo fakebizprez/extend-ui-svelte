@@ -64,11 +64,12 @@
 <style>
 	h2 {
 		margin: 0 0 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		letter-spacing: 0.05em;
+		font-family: var(--lh-mono);
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
 		text-transform: uppercase;
-		color: var(--muted-foreground, #737373);
+		color: var(--lh-muted);
 	}
 	ul {
 		margin: 0;
@@ -81,17 +82,21 @@
 	a {
 		display: block;
 		padding: 0.25rem 0;
-		font-size: 0.8125rem;
-		color: var(--muted-foreground, #737373);
+		font-family: var(--lh-mono);
+		font-size: 0.6875rem;
+		color: var(--lh-muted);
 		text-decoration: none;
 		overflow-wrap: anywhere;
 	}
-	a:hover,
+	a:hover {
+		color: var(--lh-text);
+	}
 	a[aria-current='location'] {
-		color: var(--foreground, #0a0a0a);
+		color: var(--lh-blue);
+		font-weight: 700;
 	}
 	a:focus-visible {
-		outline: 2px solid var(--foreground, #0a0a0a);
+		outline: 2px solid var(--lh-blue);
 		outline-offset: 2px;
 	}
 </style>

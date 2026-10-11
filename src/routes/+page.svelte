@@ -3,7 +3,7 @@
 </script>
 
 <article class="docs-prose">
-	<h1>Extend UI Svelte</h1>
+	<h1>Extend UI <span class="accent">Svelte</span></h1>
 	<p>
 		A Svelte 5 port of <a href="https://github.com/extend-hq/ui">extend-hq/ui</a>: viewers and
 		editors for PDF, DOCX, XLSX, PPTX and CSV, plus file upload, thumbnails, a file system, document
@@ -67,10 +67,10 @@
 	.home-card {
 		min-width: 0;
 		padding: 1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--card);
-		color: var(--card-foreground);
+		border: 1px solid var(--lh-border);
+		border-radius: 0;
+		background: var(--lh-surface);
+		color: var(--lh-text);
 	}
 	.home-card :global(h3) {
 		margin-top: 0;

@@ -24,7 +24,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 40;
-		background: rgb(0 0 0 / 0.4);
+		background: color-mix(in srgb, var(--lh-dark) 60%, transparent);
 	}
 	.panel {
 		position: fixed;
@@ -32,8 +32,8 @@
 		z-index: 50;
 		width: min(20rem, 85vw);
 		overflow-y: auto;
-		border-right: 1px solid var(--border, #e5e5e5);
-		background: var(--background, #fff);
-		color: var(--foreground, #0a0a0a);
+		border-right: 1px solid var(--lh-border);
+		background: var(--lh-bg);
+		color: var(--lh-text);
 	}
 </style>

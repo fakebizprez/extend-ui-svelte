@@ -36,12 +36,15 @@
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border, #e5e5e5);
-		background: var(--background, #fff);
-		color: var(--foreground, #0a0a0a);
+		border-bottom: 1px solid var(--lh-border);
+		background: var(--lh-bg);
+		color: var(--lh-text);
 	}
 	.brand {
-		font-weight: 600;
+		font-family: var(--lh-display);
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		text-transform: uppercase;
 		color: inherit;
 		text-decoration: none;
 	}
@@ -52,12 +55,16 @@
 		margin-left: auto;
 	}
 	.gh {
-		color: var(--muted-foreground, #737373);
+		color: var(--lh-muted);
 		text-decoration: none;
-		font-size: 0.875rem;
+		font-family: var(--lh-mono);
+		font-size: 0.6875rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
 	}
 	.gh:hover {
-		color: var(--foreground, #0a0a0a);
+		color: var(--lh-text);
 	}
 	.menu {
 		display: none;
@@ -65,8 +72,8 @@
 		justify-content: center;
 		min-width: 44px;
 		min-height: 44px;
-		border: 0;
-		border-radius: 0.375rem;
+		border: 1px solid var(--lh-border);
+		border-radius: 0;
 		background: transparent;
 		color: inherit;
 		cursor: pointer;
@@ -78,7 +85,7 @@
 	}
 	a:focus-visible,
 	.menu:focus-visible {
-		outline: 2px solid var(--foreground, #0a0a0a);
+		outline: 2px solid var(--lh-blue);
 		outline-offset: 2px;
 	}
 </style>
