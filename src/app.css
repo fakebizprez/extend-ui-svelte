@@ -112,11 +112,11 @@
 /* Dark is the system's inverted region: warm black paper, warm grey cards. */
 :root[data-theme='dark'] {
 	--lh-bg: #0c0c0a;
-	--lh-bg-alt: #2c2b27;
-	--lh-surface: #2c2b27;
+	--lh-bg-alt: #181816;
+	--lh-surface: #141412;
 	--lh-text: #f7f7f3;
 	--lh-muted: #98988e;
-	--lh-border: #3a3a34;
+	--lh-border: #2a2a26;
 	--lh-blue: #4d9fff;
 	--lh-hover: color-mix(in srgb, var(--lh-blue) 14%, var(--lh-bg));
 }
