@@ -100,6 +100,7 @@
 
 	const resolvedSpacing = $derived(spacing ?? 'default');
 	// Initial capture is intended: uncontrolled state starts from the default.
+	// svelte-ignore state_referenced_locally
 	let internalValue = $state([...defaultValue]);
 	const current = $derived(valueProp ?? internalValue);
 
