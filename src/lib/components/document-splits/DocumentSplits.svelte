@@ -302,20 +302,24 @@
 		requestedPages.clear();
 		if (!url) return;
 		// Browser-only: the engine (and PDF.js behind it) loads on the client.
+		let engine: PdfEngine | undefined;
+		let cancelled = false;
 		const loading = import('../../engines/pdf/index.js').then(async (module) => {
-			const engine = module.createPdfEngine();
+			if (cancelled) throw new Error('DocumentSplits: pdfUrl changed before loading started.');
+			engine = module.createPdfEngine();
 			return { engine, pageCount: await engine.load(url) };
 		});
+		// A failed or superseded load still owns an engine; release it.
+		loading.catch(() => void engine?.destroy());
 		pdfDocument = loading;
 		// Pages already near the viewport will not report again; render them now.
 		untrack(() => visiblePages.forEach(requestPageImage));
 		return () => {
 			pdfRun += 1;
 			pdfDocument = null;
-			void loading.then(
-				({ engine }) => engine.destroy(),
-				() => undefined
-			);
+			cancelled = true;
+			// destroy() also cancels a load still in flight.
+			void engine?.destroy();
 		};
 	});
 

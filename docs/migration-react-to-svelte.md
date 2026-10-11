@@ -100,6 +100,17 @@ Components that overlay custom UI (PDF page overlays, viewer sidebars,
 toggle groups) document which snippet they accept and what data it
 receives; the shape mirrors the React render-prop arguments.
 
+## Sidebar: `DocumentViewerSidebar` is now `DocumentViewerThumbnailSidebar`
+
+Early registry versions shipped a section/nav `DocumentViewerSidebar` with the
+`DocumentViewerSidebarItem` and `DocumentViewerSidebarSection` types. That
+component does not exist upstream, so it was replaced by
+`DocumentViewerThumbnailSidebar` (props: `open`, `inline`, `className`,
+`closedInlineClassName`, `widthClassName`, `children`), plus
+`DocumentViewerSidebarSkeleton` and the `useInlineThumbnailSidebar` helpers.
+This is a deliberate breaking change: update imports from
+`document-viewer-sidebar` when you re-run the registry install.
+
 ## Checklist
 
 1. Install each component with the registry command above.

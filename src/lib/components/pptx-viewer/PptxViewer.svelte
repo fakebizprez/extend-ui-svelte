@@ -80,6 +80,10 @@
 	// Like upstream, an upload applies only while `src` is unchanged; a new src wins.
 	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
 	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
+	// Drop a stale upload for good so returning to its old src does not revive it.
+	$effect(() => {
+		if (upload && upload.sourceUrl !== src) upload = null;
+	});
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	let preparingDownload = $state(false);
 
