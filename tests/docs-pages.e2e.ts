@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { PREVIEW_COMPONENTS } from '../src/routes/components';
 
 const SLUGS = [
 	'file-upload',
@@ -27,8 +28,8 @@ test('home page links to every component preview', async ({ page }) => {
 	await page.goto('/');
 	await expect(page.locator('h1')).toContainText('Extend UI Svelte');
 
-	for (const slug of SLUGS) {
-		await expect(page.getByRole('link', { name: slug }).first()).toBeVisible();
+	for (const { title } of PREVIEW_COMPONENTS) {
+		await expect(page.getByRole('link', { name: title, exact: true }).first()).toBeVisible();
 	}
 });
 

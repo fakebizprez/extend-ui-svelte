@@ -1,50 +1,85 @@
-<!-- Docs site shell: sidebar nav plus preview content. -->
+<!-- Docs site shell: header, grouped sidebar, preview content, on-this-page list. -->
 <script lang="ts">
 	import '../app.css';
+	import { page } from '$app/state';
 	import type { Snippet } from 'svelte';
-	import { PREVIEW_COMPONENTS } from './components';
+	import Header from './_shell/Header.svelte';
+	import MobileMenu from './_shell/MobileMenu.svelte';
+	import PageNav from './_shell/PageNav.svelte';
+	import Sidebar from './_shell/Sidebar.svelte';
+	import Toc from './_shell/Toc.svelte';
+	import { NAV_GROUPS, findComponent, groupOf, prevNext } from './_shell/nav';
 
 	let { children }: { children: Snippet } = $props();
+
+	let menuOpen = $state(false);
+	let main = $state<HTMLElement | null>(null);
+
+	const slug = $derived(page.url.pathname.split('/')[1] || null);
+	const current = $derived(slug ? findComponent(slug) : null);
+	const group = $derived(slug ? groupOf(slug) : null);
+	const neighbors = $derived(slug ? prevNext(slug) : { prev: null, next: null });
+
+	// Close the phone menu whenever the route changes.
+	$effect(() => {
+		void page.url.pathname;
+		menuOpen = false;
+	});
 </script>
 
+<Header bind:menuOpen />
+<MobileMenu bind:open={menuOpen} groups={NAV_GROUPS} currentSlug={slug} />
+
 <div class="docs-shell">
-	<nav aria-label="Components">
-		<p><a href="/">Extend UI Svelte</a></p>
-		<ul>
-			{#each PREVIEW_COMPONENTS as component (component.slug)}
-				<li><a href="/{component.slug}">{component.slug}</a></li>
-			{/each}
-		</ul>
-	</nav>
-	<main>
+	<aside class="side">
+		<Sidebar groups={NAV_GROUPS} currentSlug={slug} />
+	</aside>
+	<main bind:this={main}>
+		{#if current && group}
+			<p class="crumbs">Docs / {group.title} / {current.title}</p>
+		{/if}
 		{@render children()}
+		<PageNav prev={neighbors.prev} next={neighbors.next} />
 	</main>
+	<aside class="toc">
+		<Toc container={main} refreshKey={page.url.pathname} />
+	</aside>
 </div>
 
 <style>
-	/* The shell owns the page gutter; drop the browser's default body margin. */
 	:global(body) {
 		margin: 0;
-	}
-
-	.docs-shell {
-		display: flex;
-		gap: 2rem;
-		padding: 1.5rem;
+		background: var(--background);
+		color: var(--foreground);
 		font-family: system-ui, sans-serif;
 	}
 
-	ul {
-		list-style: none;
-		padding: 0;
+	.docs-shell {
 		display: grid;
-		gap: 0.25rem;
+		grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr) 14rem;
+		gap: 2rem;
+		max-width: 90rem;
+		margin: 0 auto;
+		padding: 1.5rem;
+	}
+
+	.side,
+	.toc {
+		position: sticky;
+		top: calc(var(--docs-header-height) + 1rem);
+		align-self: start;
+		max-height: calc(100vh - var(--docs-header-height) - 2rem);
+		overflow-y: auto;
 	}
 
 	main {
-		flex: 1;
-		/* Let wide previews shrink instead of pushing the page sideways. */
 		min-width: 0;
+	}
+
+	.crumbs {
+		margin: 0 0 1rem;
+		font-size: 0.8125rem;
+		color: var(--muted-foreground);
 	}
 
 	/* Long prop and file names in the docs text wrap instead of widening the page. */
@@ -52,18 +87,24 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* Phones: menu above the preview, links wrapped, 16px gutter. */
-	@media (max-width: 640px) {
+	/* No room for the on-this-page list below laptop width. */
+	@media (max-width: 1100px) {
 		.docs-shell {
-			flex-direction: column;
-			gap: 1rem;
+			grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr);
+		}
+		.toc {
+			display: none;
+		}
+	}
+
+	/* Phones and tablets: the menu button replaces the sidebar, 16px gutter. */
+	@media (max-width: 768px) {
+		.docs-shell {
+			grid-template-columns: minmax(0, 1fr);
 			padding: 1rem;
 		}
-
-		ul {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 0.25rem 0.75rem;
+		.side {
+			display: none;
 		}
 	}
 </style>
