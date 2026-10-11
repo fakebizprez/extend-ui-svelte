@@ -98,5 +98,9 @@
 	"author": "Anthony Fecarotta (https://linehaul.ai)",
 	"publishConfig": {
 		"access": "public"
+	},
+	"homepage": "https://github.com/fakebizprez/extend-ui-svelte#readme",
+	"bugs": {
+		"url": "https://github.com/fakebizprez/extend-ui-svelte/issues"
 	}
 }
