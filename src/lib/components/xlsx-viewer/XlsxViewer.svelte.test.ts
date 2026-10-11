@@ -104,6 +104,28 @@ describe('XlsxViewer', () => {
 		expect(rowCells(4)).toEqual(['', 'Austin-Reno', '3']);
 	});
 
+	it('shows error and boolean cells as text, like upstream', async () => {
+		const workbook = utils.book_new();
+		utils.book_append_sheet(
+			workbook,
+			{
+				'!ref': 'A1:C1',
+				A1: { t: 'e', v: 7, f: '1/0' },
+				B1: { t: 'b', v: true },
+				C1: { t: 'n', v: 3 }
+			},
+			'Errors'
+		);
+		const bytes = new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+		const { container } = render(XlsxViewer, { data: bytes });
+
+		await screen.findByRole('cell', { name: '3' });
+		const cells = within(container.querySelector('[data-row-index="0"]') as HTMLElement)
+			.getAllByRole('cell')
+			.map((cell) => cell.textContent);
+		expect(cells).toEqual(['#DIV/0!', 'TRUE', '3']);
+	});
+
 	it('reports the same row count as the editor for the same file', async () => {
 		const bytes = offsetBytes();
 		render(XlsxViewer, { data: bytes });

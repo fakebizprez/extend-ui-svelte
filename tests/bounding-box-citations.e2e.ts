@@ -129,3 +129,48 @@ test('block: clicking a citation box focuses its field card', async ({ page }) =
 	await expect(card).toHaveAttribute('data-active', 'true');
 	await expect(card).toBeInViewport();
 });
+
+test('panel demo: clicking another field after a grid edit keeps focus there', async ({ page }) => {
+	await openPage(page);
+	const demo = page.getByTestId('human-review-demo');
+	const expectedGrid = demo
+		.locator('[data-review-field="transactions"]')
+		.getByRole('grid', { name: 'Expected' })
+		.first();
+
+	await expectedGrid.locator('[data-row="0"][data-column="category"]').dblclick();
+	await expectedGrid.getByRole('textbox', { name: 'Edit cell' }).fill('Other');
+	const period = demo.getByLabel('Expected statement_period');
+	await period.click();
+	await page.keyboard.type('!');
+
+	await expect(period).toBeFocused();
+	await expect(period).toHaveValue(/!$/);
+	await expect(expectedGrid.locator('[data-row="0"][data-column="category"]')).toHaveText('Other');
+});
+
+test('block: focusing a field on page 3 centers its box in the viewer', async ({ page }) => {
+	await page.goto('/bounding-box-citations/multi-page');
+	await expect(page.getByTestId('pdf-page-indicator').first()).toContainText('Page 1 of 3', {
+		timeout: 30000
+	});
+	await page.waitForLoadState('networkidle');
+	const block = page.getByTestId('bounding-box-citations');
+
+	await block.getByLabel('Expected page_3').focus();
+	const highlight = block.getByTestId('citation-highlight');
+	await expect(highlight).toHaveAttribute('data-page', '3');
+	const viewport = block.getByTestId('pdf-viewport');
+	await expect
+		.poll(
+			async () => {
+				const view = await viewport.boundingBox();
+				const box = await highlight.boundingBox();
+				if (!view || !box) return Number.POSITIVE_INFINITY;
+				return Math.abs(box.y + box.height / 2 - (view.y + view.height / 2));
+			},
+			{ timeout: 10000 }
+		)
+		.toBeLessThan(4);
+	await expect(highlight).toBeInViewport();
+});

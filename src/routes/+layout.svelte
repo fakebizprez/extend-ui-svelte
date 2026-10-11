@@ -22,6 +22,11 @@
 </div>
 
 <style>
+	/* The shell owns the page gutter; drop the browser's default body margin. */
+	:global(body) {
+		margin: 0;
+	}
+
 	.docs-shell {
 		display: flex;
 		gap: 2rem;

@@ -232,6 +232,41 @@ describe('DocumentSplits', () => {
 		expect(groupTitles()).toEqual(['Body', 'Intro']);
 	});
 
+	it('reorders groups when a split is dropped on another split\'s page thumbnail', async () => {
+		const onSplitsChange = vi.fn();
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS, onSplitsChange });
+
+		await fireEvent.dragStart(
+			within(groupSection('split-1')).getByRole('button', { name: 'Reorder Intro' })
+		);
+		const thumbnail = screen.getByTestId('split-page-page-4');
+		await fireEvent.dragOver(thumbnail);
+		await fireEvent.drop(thumbnail);
+
+		expect(onSplitsChange).toHaveBeenCalledWith([SPLITS[1], SPLITS[0]]);
+		expect(groupTitles()).toEqual(['Body', 'Intro']);
+	});
+
+	it('reorders groups when a split is dropped on another split\'s dropzone', async () => {
+		const onSplitsChange = vi.fn();
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS, onSplitsChange });
+
+		await fireEvent.dragStart(
+			within(groupSection('split-2')).getByRole('button', { name: 'Reorder Body' })
+		);
+		const dropzone = within(groupSection('split-1')).getByTestId('split-dropzone');
+		await fireEvent.dragOver(dropzone);
+		await fireEvent.drop(dropzone);
+
+		expect(onSplitsChange).toHaveBeenCalledWith([SPLITS[1], SPLITS[0]]);
+	});
+
+	it('renders no split counter in the header, like upstream', () => {
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS });
+
+		expect(screen.queryByText(/^\s*\d+\s+splits?\s*$/)).not.toBeInTheDocument();
+	});
+
 	it('moves a page across groups with native drag-and-drop', async () => {
 		const onSplitsChange = vi.fn();
 		render(DocumentSplits, { ...REQUIRED, splits: SPLITS, onSplitsChange });

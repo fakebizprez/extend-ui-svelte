@@ -314,3 +314,99 @@ describe('estimateOcrBlockRowHeight', () => {
 		expect(estimateOcrBlockRowHeight({ ...base, type: 'figure', text: lines })).toBe(194);
 	});
 });
+
+describe('renderBlockMarkdown sanitizer (upstream: rehype-sanitize default schema)', () => {
+	it('blocks javascript: URLs even when entity-encoded or obfuscated', () => {
+		for (const href of [
+			'javascript:alert(1)',
+			'&#106;avascript:alert(1)',
+			'&#x6A;avascript:alert(1)',
+			'&#0000106&#0000097vascript:alert(1)',
+			'java&Tab;script:alert(1)',
+			'javascript&colon;alert(1)',
+			' JaVaScRiPt:alert(1)',
+			'vbscript:msgbox(1)',
+			'data:text/html,<script>alert(1)</script>'
+		]) {
+			const html = renderBlockMarkdown(`<a href="${href}">x</a>`);
+			expect(html, href).not.toMatch(/href=/i);
+			expect(html, href).toContain('>x</a>');
+		}
+	});
+
+	it('keeps http, https, mailto, and relative links', () => {
+		expect(renderBlockMarkdown('[a](https://example.com/x?y=1&z=2)')).toContain(
+			'href="https://example.com/x?y=1&amp;z=2"'
+		);
+		expect(renderBlockMarkdown('<a href="mailto:a@b.co">m</a>')).toContain('href="mailto:a@b.co"');
+		expect(renderBlockMarkdown('<a href="/docs#top">r</a>')).toContain('href="/docs#top"');
+	});
+
+	it('allows only http(s) image sources, like upstream', () => {
+		expect(renderBlockMarkdown('<img src="https://e.com/a.png" alt="a">')).toContain(
+			'src="https://e.com/a.png"'
+		);
+		expect(renderBlockMarkdown('<img src="data:image/png;base64,AAAA">')).not.toMatch(/src=/i);
+	});
+
+	it('drops dangerous elements and strips on* and srcdoc attributes', () => {
+		const html = renderBlockMarkdown(
+			[
+				'<script>alert(1)</script>',
+				'<style>body{display:none}</style>',
+				'<iframe srcdoc="<script>alert(1)</script>"></iframe>',
+				'<object data="x.swf"></object><embed src="x.swf">',
+				'<img src="https://e.com/a.png" onerror="alert(1)">',
+				'<p onclick="alert(1)" style="color:red" class="x" id="y">kept</p>',
+				'<svg onload="alert(1)"><script>alert(2)</script></svg>'
+			].join('\n\n')
+		);
+		expect(html).not.toMatch(/<(script|style|iframe|object|embed|svg)\b/i);
+		expect(html).not.toMatch(/\son\w+=|srcdoc|style=|alert/i);
+		// Like upstream's default schema: the id is kept behind the clobber prefix.
+		expect(html).toContain('<p id="user-content-y">kept</p>');
+	});
+
+	it('keeps the OCR figure tags upstream allows', () => {
+		const html = renderBlockMarkdown('<figure type="chart">Diagram<caption>Figure 1</caption></figure>');
+		expect(html).toContain('<figure type="chart">');
+		expect(html).toContain('<figcaption>Figure 1</figcaption>');
+	});
+
+	it('uses soft line breaks like upstream react-markdown (no breaks: true)', () => {
+		const html = renderBlockMarkdown('line one\nline two');
+		expect(html).not.toContain('<br');
+		expect(html).toContain('line one\nline two');
+	});
+});
+
+describe('renderBlockMarkdown matches upstream output', () => {
+	// Expected HTML is what upstream's react-markdown + remark-gfm + rehype-raw +
+	// rehype-sanitize(OCR_MARKDOWN_SCHEMA) pipeline renders. Whitespace between
+	// tags differs between markdown engines, so it is collapsed before comparing.
+	const collapse = (html: string) => html.replace(/>\s+</g, '><').trim();
+	const cases: Array<[string, string]> = [
+		['# Attention Is All You Need', '<h1>Attention Is All You Need</h1>'],
+		[
+			'The **Transformer** relies on *attention* and ~~recurrence~~.',
+			'<p>The <strong>Transformer</strong> relies on <em>attention</em> and <del>recurrence</del>.</p>'
+		],
+		['- first\n- second', '<ul><li>first</li><li>second</li></ul>'],
+		[
+			'| Model | BLEU |\n|---|---|\n| Transformer | 28.4 |',
+			'<table><thead><tr><th>Model</th><th>BLEU</th></tr></thead><tbody><tr><td>Transformer</td><td>28.4</td></tr></tbody></table>'
+		],
+		[
+			'<figure type="chart">Model architecture<caption>Figure 1: The Transformer</caption></figure>',
+			'<figure type="chart">Model architecture<figcaption>Figure 1: The Transformer</figcaption></figure>'
+		],
+		// Default schema clobbering: ids get the user-content- prefix.
+		['<span id="results">BLEU</span>', '<p><span id="user-content-results">BLEU</span></p>']
+	];
+
+	for (const [markdown, expected] of cases) {
+		it(`renders ${JSON.stringify(markdown.slice(0, 32))} like upstream`, () => {
+			expect(collapse(renderBlockMarkdown(markdown))).toBe(expected);
+		});
+	}
+});

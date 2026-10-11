@@ -9,6 +9,11 @@
 	  of @extend-ai/react-docx, which is React-only; comments, tracked changes,
 	  outline anchors, and canvas thumbnails are out of scope for this port.
 	  Legacy .doc uploads are accepted but docx-preview cannot render them.
+	- docx-preview builds every page's DOM; pages away from the viewport skip
+	  layout and paint through content-visibility: auto instead of upstream's
+	  windowed page rendering.
+	- The page number is editable like upstream; Previous/Next buttons are a
+	  port addition.
 	- The thumbnail sidebar lists page numbers with text excerpts and is
 	  virtualized with the shared VirtualList instead of tanstack virtual; it
 	  stays inline instead of collapsing to an overlay on narrow widths.
@@ -180,6 +185,18 @@
 
 	const currentSource = $derived<DocxSource | undefined>(uploadedFile ?? src);
 	const pageCount = $derived(pages.length);
+	const displayPage = $derived(pageCount ? activePage : 1);
+	let editingPage = $state(false);
+	let pageDraft = $state('1');
+
+	/** Upstream page-number input: whole numbers jump (clamped); anything else is ignored. */
+	function applyPageDraft(value: string): void {
+		const trimmed = value.trim();
+		if (!trimmed) return;
+		const parsed = Number(trimmed);
+		if (!Number.isInteger(parsed)) return;
+		selectPage(parsed);
+	}
 	const displayFileName = $derived(
 		uploadedFile?.name ?? (src ? formatDocumentName(fileName, src) : (fileName ?? 'document.docx'))
 	);
@@ -252,9 +269,14 @@
 		const sidebarFlag = untrack(() => sidebarOpen);
 		status = 'loading';
 		errorMessage = '';
-		loaded.renderDocx(source, element, { showThumbnails: sidebarFlag }).then(
+		// Last call wins down to the DOM (upstream's isCurrent import queue): each
+		// load renders into its own detached element, and only the newest load's
+		// output is moved into the visible container.
+		const staging = document.createElement('div');
+		loaded.renderDocx(source, staging, { showThumbnails: sidebarFlag }).then(
 			() => {
 				if (id !== generation) return;
+				element.replaceChildren(...Array.from(staging.childNodes));
 				pages = collectPages(element);
 				activePage = 1;
 				status = 'ready';
@@ -263,6 +285,7 @@
 			},
 			(failure: unknown) => {
 				if (id !== generation) return;
+				loaded.clearDocx(element);
 				pages = [];
 				status = 'error';
 				errorMessage = failure instanceof Error ? failure.message : String(failure);
@@ -403,16 +426,15 @@
 	data-dark={String(isDark)}
 	data-testid="docx-viewer"
 >
-	{#if showUpload}
-		<input
-			type="file"
-			data-testid="docx-file-input"
-			accept={DOCX_UPLOAD_ACCEPT}
-			hidden
-			bind:this={fileInputEl}
-			onchange={handleUpload}
-		/>
-	{/if}
+	<!-- Always mounted, like upstream: the empty-state button uses it even when showUpload is off. -->
+	<input
+		type="file"
+		data-testid="docx-file-input"
+		accept={DOCX_UPLOAD_ACCEPT}
+		hidden
+		bind:this={fileInputEl}
+		onchange={handleUpload}
+	/>
 	{#if showToolbar}
 		<div class="docx-toolbar" data-testid="docx-toolbar">
 			<div class="docx-toolbar-group">
@@ -432,8 +454,44 @@
 				>
 					‹
 				</button>
-				<span data-testid="docx-page-indicator">
-					Page {pageCount ? activePage : 1} of {pageCount || '-'}
+				<span class="docx-page-control" data-testid="docx-page-indicator">
+					Page
+					{#if editingPage}
+						<input
+							class="docx-page-input"
+							type="text"
+							aria-label="Page number"
+							inputmode="numeric"
+							pattern="[0-9]*"
+							value={pageDraft}
+							{@attach (node: HTMLInputElement) => {
+								node.focus();
+								node.select();
+							}}
+							onblur={() => (editingPage = false)}
+							oninput={(event) => {
+								pageDraft = event.currentTarget.value;
+								applyPageDraft(pageDraft);
+							}}
+							onkeydown={(event) => {
+								if (event.key === 'Enter' || event.key === 'Escape') event.currentTarget.blur();
+							}}
+						/>
+					{:else}
+						<button
+							type="button"
+							class="docx-page-button"
+							aria-label={`Current page ${displayPage}. Edit page number`}
+							disabled={status !== 'ready' || !pageCount}
+							onclick={() => {
+								pageDraft = String(displayPage);
+								editingPage = true;
+							}}
+						>
+							{displayPage}
+						</button>
+					{/if}
+					of {pageCount || '-'}
 				</span>
 				<button
 					type="button"
@@ -552,11 +610,12 @@
 					<p class="docx-state-hint">
 						Pass a DOCX URL with the <code>src</code> prop or upload a file.
 					</p>
-					{#if showUpload}
-						<button type="button" onclick={() => fileInputEl?.click()}>
-							Upload Word document
-						</button>
-					{/if}
+					<p class="docx-state-hint">
+						Legacy <code>.doc</code> files cannot be rendered here; convert them to DOCX.
+					</p>
+					<button type="button" onclick={() => fileInputEl?.click()}>
+						Upload Word document
+					</button>
 				</div>
 			{:else if status === 'error'}
 				<div class="docx-state" role="alert" data-testid="docx-error">
@@ -646,6 +705,24 @@
 		cursor: default;
 	}
 
+	.docx-page-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		white-space: nowrap;
+	}
+
+	.docx-page-input {
+		width: 3.5rem;
+		padding: 0.25rem;
+		border: 1px solid var(--docx-border);
+		border-radius: 0.375rem;
+		background: var(--docx-bg);
+		color: inherit;
+		font: inherit;
+		text-align: center;
+	}
+
 	.docx-body {
 		display: flex;
 		min-height: 0;
@@ -731,6 +808,14 @@
 	.docx-state-hint {
 		margin: 0;
 		color: var(--docx-muted);
+	}
+
+	/* Page virtualization (upstream pageVirtualization): docx-preview builds every
+	   page, so pages away from the viewport skip layout and paint. The intrinsic
+	   size (US Letter until a page has rendered once) keeps the scroll height. */
+	.docx-viewer :global(.docx-wrapper > section) {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 816px auto 1056px;
 	}
 
 	/* docx-preview injects its page styles into the head; these overrides keep

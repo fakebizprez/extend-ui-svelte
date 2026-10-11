@@ -102,3 +102,45 @@ test('docs page lists the differences from upstream', async ({ page }) => {
 	await expect(differences).toContainText('dnd-kit');
 	await expect(differences).toContainText('activePage');
 });
+
+test('dropping a split on another split\'s page thumbnail reorders the splits', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	const before = await splitTitles(page);
+
+	const handle = page.getByTestId('split-group').first().getByRole('button', { name: /^Reorder / });
+	const thumbnail = page.getByTestId('split-group').nth(1).getByTestId(/^split-page-/).first();
+	await handle.dragTo(thumbnail);
+
+	await expect.poll(() => splitTitles(page)).toEqual([before[1], before[0], before[2]]);
+});
+
+test('dropping a split on another split\'s dropzone reorders the splits', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	const before = await splitTitles(page);
+
+	const handle = page.getByTestId('split-group').nth(2).getByRole('button', { name: /^Reorder / });
+	const dropzone = page.getByTestId('split-group').first().getByTestId('split-dropzone');
+	await handle.dragTo(dropzone, { targetPosition: { x: 4, y: 4 } });
+
+	await expect.poll(() => splitTitles(page)).toEqual([before[2], before[0], before[1]]);
+});
+
+for (const [width, side] of [
+	[1280, 'left'],
+	[390, 'top']
+] as const) {
+	test(`the frame divider sits on the ${side} at ${width}px, like upstream`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await gotoLoadedSplits(page);
+
+		const root = page.getByTestId('document-splits').first();
+		const other = side === 'left' ? 'top' : 'left';
+		await expect(root).toHaveCSS(`border-${side}-width`, '1px');
+		await expect(root).toHaveCSS(`border-${other}-width`, '0px');
+	});
+}
+
+test('the header shows no split counter, like upstream', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	await expect(page.getByTestId('document-splits').getByText(/^\s*\d+\s+splits?\s*$/)).toHaveCount(0);
+});

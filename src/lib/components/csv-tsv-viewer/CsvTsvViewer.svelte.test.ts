@@ -62,17 +62,48 @@ describe('CsvTsvViewer', () => {
 		expect(screen.getByTestId('search-result-label')).toHaveTextContent('No search');
 	});
 
-	it('finds matching cells, highlights them, and keeps every row', async () => {
+	it('selects only the active match and keeps every row, like upstream', async () => {
 		const { container } = render(CsvTsvViewer, { data: SAMPLE_CSV, search: true });
 		await search('approved', '1 / 2');
 
 		// Rows are not filtered: upstream searches cells in place.
 		expect(dataRows(container)).toHaveLength(3);
-		const matches = container.querySelectorAll('td[data-search-match]');
-		expect([...matches].map((cell) => cell.textContent)).toEqual(['Approved', 'Approved']);
-		const active = container.querySelector('td[data-search-active]');
-		expect(active).toBe(matches[0]);
+		// Upstream selects the active result's cell; other matches are not marked.
+		const active = container.querySelectorAll('td[data-search-active]');
+		expect([...active].map((cell) => cell.textContent?.trim())).toEqual(['Approved']);
+		expect(active[0]?.closest('tr')?.dataset.rowIndex).toBe('0');
+		expect(container.querySelectorAll('td.match, td[data-search-match]')).toHaveLength(0);
 		expect(screen.getByTestId('search-result-address')).toHaveTextContent('Status!C1');
+	});
+
+	it('closes the find popover on an outside click, like upstream', async () => {
+		render(CsvTsvViewer, { data: SAMPLE_CSV, search: true });
+		const panel = await search('approved', '1 / 2');
+
+		// A click inside keeps it open.
+		await fireEvent.pointerDown(within(panel).getByRole('button', { name: 'Next result' }));
+		expect(screen.getByRole('dialog', { name: 'Search CSV' })).toBeVisible();
+
+		await fireEvent.pointerDown(screen.getByRole('cell', { name: 'INV-1002' }));
+		expect(screen.queryByRole('dialog', { name: 'Search CSV' })).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Search CSV' })).toHaveAttribute(
+			'aria-expanded',
+			'false'
+		);
+	});
+
+	it('closes the find popover and resets the search when data changes', async () => {
+		const { container, rerender } = render(CsvTsvViewer, { data: SAMPLE_CSV, search: true });
+		await search('approved', '1 / 2');
+
+		await rerender({ data: 'Load,Status\nL-1,Approved' });
+		expect(await screen.findByRole('cell', { name: 'L-1' })).toBeVisible();
+		expect(screen.queryByRole('dialog', { name: 'Search CSV' })).not.toBeInTheDocument();
+		expect(container.querySelector('td[data-search-active]')).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Search CSV' }));
+		expect(screen.getByRole('searchbox', { name: 'Search CSV' })).toHaveValue('');
+		expect(screen.getByTestId('search-result-label')).toHaveTextContent('No search');
 	});
 
 	it('steps through results with next and previous, wrapping around', async () => {
@@ -108,7 +139,7 @@ describe('CsvTsvViewer', () => {
 		await fireEvent.click(within(panel).getByRole('button', { name: 'Clear' }));
 		expect(within(panel).getByRole('searchbox', { name: 'Search CSV' })).toHaveValue('');
 		expect(screen.getByTestId('search-result-label')).toHaveTextContent('No search');
-		expect(container.querySelector('td[data-search-match]')).toBeNull();
+		expect(container.querySelector('td[data-search-active]')).toBeNull();
 	});
 
 	it('scrolls the active match into view in a long table', async () => {

@@ -132,10 +132,12 @@
 	let viewportWidth = $state(0);
 	let viewportHeight = $state(0);
 	let scrollTop = $state(0);
-	let uploadUrl: string | null = $state(null);
+	/** An uploaded file shows until `src` changes, like upstream. */
+	let upload = $state.raw<{ url: string; forSrc: string | undefined } | null>(null);
 	let downloading = $state(false);
 	let viewport: HTMLDivElement | null = $state(null);
 
+	const uploadUrl = $derived(upload && upload.forSrc === src ? upload.url : null);
 	const effectiveSrc = $derived(uploadUrl ?? src);
 	const rootClass = $derived(
 		['pdf-viewer', isDark && 'dark', classProp, className].filter(Boolean).join(' ')
@@ -231,8 +233,6 @@
 			unsubscribe = null;
 			const created = engine;
 			engine = null;
-			if (uploadUrl) URL.revokeObjectURL(uploadUrl);
-			uploadUrl = null;
 			void created?.destroy();
 		};
 	});
@@ -262,6 +262,8 @@
 				if (cancelled) return;
 				pageSizes = sizes;
 				numPages = count;
+				// Each new document starts at defaultZoom, like upstream.
+				zoomLevel = defaultZoom;
 				status = 'ready';
 				scrollTop = 0;
 				if (viewport) viewport.scrollTop = 0;
@@ -277,6 +279,15 @@
 		);
 		return () => {
 			cancelled = true;
+		};
+	});
+
+	// Revoke an upload's object URL once a new upload or a new src replaces it.
+	$effect(() => {
+		const url = uploadUrl;
+		if (!url && upload) upload = null;
+		return () => {
+			if (url) URL.revokeObjectURL(url);
 		};
 	});
 
@@ -344,8 +355,7 @@
 		const file = input.files?.[0];
 		if (!file) return;
 		onPdfUpload?.(file);
-		if (uploadUrl) URL.revokeObjectURL(uploadUrl);
-		uploadUrl = URL.createObjectURL(file);
+		upload = { url: URL.createObjectURL(file), forSrc: src };
 		input.value = '';
 	}
 

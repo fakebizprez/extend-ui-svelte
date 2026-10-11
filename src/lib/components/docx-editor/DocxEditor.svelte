@@ -14,6 +14,8 @@
 	  import, export, and the theme switch. Undo/redo buttons, fonts, color,
 	  highlight, links, alignment, borders, comments, tracked changes, tables,
 	  images, and page thumbnails are out of scope for this port.
+	- The document is one contenteditable surface: no page split, no page
+	  virtualization, and no "Page N of M" indicator. Uploads accept .docx only.
 	- Export is lossy: it rebuilds a minimal .docx package from the editor
 	  blocks with jszip (see ./export.js) instead of the react-docx controller
 	  API, so source tables, images, styles, headers, and footers are dropped.
@@ -27,9 +29,8 @@
 	export const DOCX_MIME_TYPE =
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-	export const DOCX_UPLOAD_ACCEPT = ['.doc', '.docx', 'application/msword', DOCX_MIME_TYPE].join(
-		','
-	);
+	/** Upload filter, matching upstream: .docx only (no legacy .doc). */
+	export const DOCX_UPLOAD_ACCEPT = ['.docx', DOCX_MIME_TYPE].join(',');
 
 	/** Zoom steps offered by the toolbar, in percent, matching upstream. */
 	export const ZOOM_OPTIONS = [50, 75, 90, 100, 110, 125, 150, 175, 200] as const;
@@ -223,9 +224,16 @@
 	let status = $state<Status>('idle');
 	let errorMessage = $state('');
 	let exporting = $state(false);
-	let uploadedFile = $state.raw<File | null>(null);
+	// Like upstream's remount on key={src}: an upload applies only while src is unchanged.
+	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
+	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
 	let blockStyle = $state('p');
 	let zoomScale = $state(untrack(() => normalizeZoomScale(defaultZoomScale)));
+	// Like upstream, zoom returns to defaultZoomScale when it or src changes.
+	$effect.pre(() => {
+		void src;
+		zoomScale = normalizeZoomScale(defaultZoomScale);
+	});
 	const zoomIndex = $derived((ZOOM_OPTIONS as readonly number[]).indexOf(zoomScale));
 	let generation = 0;
 
@@ -332,7 +340,7 @@
 		const file = input.files?.[0] ?? null;
 		input.value = '';
 		if (!file) return;
-		uploadedFile = file;
+		upload = { file, sourceUrl: src };
 	}
 
 	function downloadBlob(blob: Blob, name: string): void {
@@ -456,10 +464,11 @@
 	/>
 	{#if status === 'idle'}
 		<div class="docx-editor-empty">
-			<p>Upload a Word document to edit</p>
+			<p>Upload a DOCX to edit</p>
 			<p class="docx-state-hint">
 				Pass a DOCX URL with the <code>src</code> prop or upload a file.
 			</p>
+			<button type="button" onclick={() => fileInputEl?.click()}>Upload DOCX</button>
 		</div>
 	{:else if status === 'loading'}
 		<div class="docx-editor-empty" data-testid="docx-editor-loading">

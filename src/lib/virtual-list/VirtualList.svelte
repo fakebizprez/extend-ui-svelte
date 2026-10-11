@@ -10,7 +10,7 @@
 	  height (like @tanstack/react-virtual's measureElement).
 -->
 <script lang="ts" generics="T">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import {
 		computeVariableWindow,
 		computeWindow,
@@ -48,16 +48,23 @@
 
 	let scrollTop = $state(0);
 	let viewport: HTMLDivElement | undefined = $state();
-	// Measured row heights by index; reset whenever the item list changes.
-	let measured = $state.raw<Map<number, number>>(new Map());
+	// Measured row heights keyed by item, so a reassigned array of the same
+	// items keeps its measurements. Entries for items no longer present are
+	// dropped when the list changes. ponytail: equal primitive items (two
+	// identical strings) share one measurement; pass objects if that matters.
+	let measured = $state.raw<Map<T, number>>(new Map());
 	$effect.pre(() => {
-		void items;
-		measured = new Map();
+		const present = new Set(items);
+		const kept = new Map<T, number>();
+		for (const [item, size] of untrack(() => measured)) {
+			if (present.has(item)) kept.set(item, size);
+		}
+		measured = kept;
 	});
 
 	const offsets = $derived(
 		estimateSize
-			? prefixOffsets(items.map((_, index) => measured.get(index) ?? estimateSize(index)))
+			? prefixOffsets(items.map((item, index) => measured.get(item) ?? estimateSize(index)))
 			: null
 	);
 
@@ -83,29 +90,45 @@
 		if (target instanceof HTMLElement) scrollTop = target.scrollTop;
 	}
 
+	function measureRows(rows: Iterable<Element>): void {
+		let next: Map<T, number> | null = null;
+		let shiftAbove = 0;
+		for (const element of rows) {
+			const row = element as HTMLElement;
+			const index = Number(row.dataset.virtualIndex);
+			if (!(index in items)) continue;
+			const item = items[index] as T;
+			const size = row.offsetHeight;
+			// A hidden list reports 0 for every row; keep the last good size.
+			if (size === 0) continue;
+			const previous = measured.get(item) ?? estimateSize?.(index) ?? size;
+			if (size === previous && measured.has(item)) continue;
+			next ??= new Map(measured);
+			next.set(item, size);
+			// Keep the visible content still when a row above it resizes.
+			if (offsets && (offsets[index] ?? 0) < scrollTop) shiftAbove += size - previous;
+		}
+		if (!next) return;
+		measured = next;
+		if (shiftAbove && viewport) viewport.scrollTop += shiftAbove;
+	}
+
 	const observer =
 		typeof ResizeObserver === 'undefined'
 			? null
-			: new ResizeObserver((entries) => {
-					let next: Map<number, number> | null = null;
-					let shiftAbove = 0;
-					for (const entry of entries) {
-						const row = entry.target as HTMLElement;
-						const index = Number(row.dataset.virtualIndex);
-						const size = row.offsetHeight;
-						const previous = measured.get(index) ?? estimateSize?.(index) ?? size;
-						if (size === previous && measured.has(index)) continue;
-						next ??= new Map(measured);
-						next.set(index, size);
-						// Keep the visible content still when a row above it resizes.
-						if (offsets && (offsets[index] ?? 0) < scrollTop) shiftAbove += size - previous;
-					}
-					if (!next) return;
-					measured = next;
-					if (shiftAbove && viewport) viewport.scrollTop += shiftAbove;
-				});
+			: new ResizeObserver((entries) => measureRows(entries.map((entry) => entry.target)));
 
 	$effect(() => () => observer?.disconnect());
+
+	// Rows are keyed by index, so after a reassignment a mounted row can show a
+	// new item at the same size, which the observer never reports. Measure the
+	// mounted rows once the new items have rendered.
+	$effect(() => {
+		void items;
+		if (!estimateSize || !observer || !viewport) return;
+		const rows = viewport.querySelectorAll('[data-virtual-index]');
+		untrack(() => measureRows(rows));
+	});
 
 	function measure(row: HTMLElement) {
 		if (!estimateSize || !observer) return;

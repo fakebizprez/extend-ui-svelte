@@ -19,6 +19,8 @@
 	let bold = $state(false);
 	let alignment = $state(['left']);
 	let formatting = $state(['bold']);
+	let consumerClicks = $state(0);
+	let lastKey = $state('none');
 </script>
 
 <h1>Toggle</h1>
@@ -104,6 +106,33 @@
 	<ToggleGroupItem value="grid" aria-label="Grid view" {isDark}>Grid</ToggleGroupItem>
 </ToggleGroup>
 
+<h2>Consumer handlers</h2>
+<p>
+	Your own <code>onclick</code> or <code>onkeydown</code> runs first and the built-in behavior
+	still runs.
+</p>
+<Toggle
+	variant="outline"
+	aria-label="Toggle italic"
+	onclick={() => consumerClicks++}
+	{isDark}
+>
+	<em>I</em>
+</Toggle>
+<p data-testid="consumer-clicks">Consumer clicks: {consumerClicks}</p>
+<ToggleGroup
+	aria-label="Font size"
+	defaultValue={['small']}
+	onkeydown={(event: KeyboardEvent) => (lastKey = event.key)}
+	{isDark}
+>
+	<ToggleGroupItem value="small" aria-label="Small text" onclick={() => consumerClicks++} {isDark}>
+		Small
+	</ToggleGroupItem>
+	<ToggleGroupItem value="large" aria-label="Large text" {isDark}>Large</ToggleGroupItem>
+</ToggleGroup>
+<p data-testid="font-size-key">Last key: {lastKey}</p>
+
 <h2>Disabled group</h2>
 <ToggleGroup aria-label="Disabled group" disabled defaultValue={['a']} {isDark}>
 	<ToggleGroupItem value="a" {isDark}>A</ToggleGroupItem>
@@ -121,6 +150,12 @@
 			<code>value</code>, <code>defaultValue</code>, <code>onValueChange</code>,
 			<code>multiple</code> (default <code>false</code>), <code>loopFocus</code>,
 			<code>disabled</code>, <code>orientation</code>, plus upstream's <code>spacing</code>.
+		</li>
+		<li>
+			A consumer <code>onclick</code> or <code>onkeydown</code> runs before the built-in
+			handler, like Base UI. To skip the built-in behavior, call
+			<code>event.preventDefault()</code>; Base UI's <code>event.preventBaseUIHandler()</code>
+			does not exist on DOM events.
 		</li>
 		<li>
 			<code>onValueChange</code> receives only the new value, without Base UI's event details.

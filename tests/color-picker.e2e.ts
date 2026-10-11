@@ -128,3 +128,34 @@ test('at phone width the panel wraps its fields under the plane and every picker
 	const wideHex = await panel.getByLabel('Color value').boundingBox();
 	expect(wideHex!.y).toBeLessThan(widePlane!.y + widePlane!.height);
 });
+
+test('the picker panel behaves like a popover: focus in, Escape, focus back', async ({ page }) => {
+	const trigger = page.getByRole('button', { name: 'Highlight color' });
+	await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+	await trigger.click();
+	const dialog = page.getByRole('dialog', { name: 'Highlight color panel' });
+	await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+	await expect(trigger).toHaveAttribute('aria-controls', (await dialog.getAttribute('id'))!);
+	await expect(dialog.getByRole('button', { name: 'Chroma and lightness' })).toBeFocused();
+
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+	await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	await expect(trigger).toBeFocused();
+});
+
+test('a click outside closes the picker panel and returns focus to the trigger', async ({ page }) => {
+	const trigger = page.getByRole('button', { name: 'Brand color', exact: true });
+	await trigger.click();
+	const dialog = page.getByRole('dialog', { name: 'Brand color panel' });
+	await expect(dialog).toBeVisible();
+
+	// A press inside the panel keeps it open.
+	await dialog.getByRole('slider', { name: 'Hue' }).click();
+	await expect(dialog).toBeVisible();
+
+	await page.getByRole('heading', { name: 'Color Picker' }).click();
+	await expect(dialog).toBeHidden();
+	await expect(trigger).toBeFocused();
+});

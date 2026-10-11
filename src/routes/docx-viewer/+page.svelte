@@ -38,6 +38,15 @@
 			<code>defaultZoom</code> takes the same values (default 50). The fit modes are resolved
 			from the first page; <code>"automatic"</code> fits the width but never enlarges past 100%.
 		</li>
+		<li>
+			docx-preview builds the DOM for every page. Pages away from the viewport skip layout and
+			paint through <code>content-visibility: auto</code>, instead of upstream's windowed page
+			rendering.
+		</li>
+		<li>
+			The page number is editable like upstream; the Previous and Next page buttons are a port
+			addition.
+		</li>
 		<li><code>toolbarActions</code> is a Svelte snippet instead of a React node.</li>
 		<li>
 			Legacy <code>.doc</code> files are accepted by the upload input, but docx-preview cannot

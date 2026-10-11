@@ -16,17 +16,24 @@
 
 	let {
 		itemClassName,
+		itemOnclick,
 		items = [
 			{ value: 'bold', label: 'Bold' },
 			{ value: 'italic', label: 'Italic' }
 		],
 		...rest
-	}: ToggleGroupProps & { itemClassName?: string; items?: HarnessItem[] } = $props();
+	}: ToggleGroupProps & {
+		itemClassName?: string;
+		itemOnclick?: (event: MouseEvent) => void;
+		items?: HarnessItem[];
+	} = $props();
 </script>
 
 <ToggleGroup {...rest}>
 	{#each items as item (item.value)}
-		<ToggleGroupItem value={item.value} disabled={item.disabled} className={itemClassName}>
+		<ToggleGroupItem value={item.value} disabled={item.disabled} className={itemClassName}
+			onclick={itemOnclick}
+		>
 			{item.label}
 		</ToggleGroupItem>
 	{/each}

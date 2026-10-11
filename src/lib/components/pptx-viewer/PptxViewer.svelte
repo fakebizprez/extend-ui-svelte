@@ -197,16 +197,15 @@
 </script>
 
 <div class={rootClass} data-dark={String(isDark)} data-testid="pptx-viewer">
-	{#if showUpload}
-		<input
-			type="file"
-			data-testid="pptx-file-input"
-			accept={PPTX_UPLOAD_ACCEPT}
-			hidden
-			bind:this={fileInputEl}
-			onchange={handleUpload}
-		/>
-	{/if}
+	<!-- Always mounted, like upstream: the empty-state button uses it even when showUpload is off. -->
+	<input
+		type="file"
+		data-testid="pptx-file-input"
+		accept={PPTX_UPLOAD_ACCEPT}
+		hidden
+		bind:this={fileInputEl}
+		onchange={handleUpload}
+	/>
 	{#if showToolbar}
 		<div class="pptx-toolbar" data-testid="pptx-toolbar">
 			<span class="pptx-name" data-testid="presentation-name">{displayName}</span>
@@ -236,13 +235,25 @@
 
 	{#if status === 'empty'}
 		<div class="pptx-state">
-			<p class="pptx-state-title">No presentation to preview</p>
-			<p class="pptx-state-hint">Pass a deck URL with the src prop.</p>
+			<p class="pptx-state-title">Upload a PowerPoint presentation to preview</p>
+			<p class="pptx-state-hint">
+				Pass a PPTX URL with the <code>src</code> prop or upload a PPTX file.
+			</p>
+			<button type="button" class="pptx-button" onclick={() => fileInputEl?.click()}>
+				Upload PowerPoint
+			</button>
 		</div>
 	{:else if status === 'loading'}
 		<div class="pptx-state" role="status">Loading presentation…</div>
 	{:else if status === 'error'}
-		<div class="pptx-state pptx-error" role="alert">{error}</div>
+		<div class="pptx-state" role="alert">
+			<p class="pptx-state-title pptx-error">Unable to display PowerPoint</p>
+			<p class="pptx-state-hint">{error}</p>
+		</div>
+	{:else if slideCount === 0}
+		<div class="pptx-state">
+			<p class="pptx-state-hint">This presentation has no slides.</p>
+		</div>
 	{:else if deck !== null}
 		{@const readyDeck = deck}
 		<VirtualList items={slideIndexes} itemHeight={slideHeight} {height} {overscan}>

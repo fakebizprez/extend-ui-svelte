@@ -60,6 +60,37 @@ function mockManyPages(pageCount: number): void {
 	});
 }
 
+/** Every later render writes one page with the given text. */
+function mockSinglePage(text: string): void {
+	mockedRenderDocx.mockImplementation(async (_source, container) => {
+		container.innerHTML = `<div class="docx-wrapper"><section class="docx">${text}</section></div>`;
+		return { container, showThumbnails: false };
+	});
+}
+
+/**
+ * The next render stays pending until released, then writes its page into the
+ * container it was given, like a slow fetch finishing late.
+ */
+function deferredRender(text: string): { release: () => void; settled: Promise<unknown> } {
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => (release = resolve));
+	let settled!: Promise<unknown>;
+	mockedRenderDocx.mockImplementationOnce((_source, container) => {
+		settled = gate.then(() => {
+			container.innerHTML = `<div class="docx-wrapper"><section class="docx">${text}</section></div>`;
+			return { container, showThumbnails: false };
+		});
+		return settled as ReturnType<typeof renderDocx>;
+	});
+	return {
+		release: () => release(),
+		get settled() {
+			return settled.then(() => new Promise((resolve) => setTimeout(resolve, 0)));
+		}
+	};
+}
+
 function sidebarOptions(container: HTMLElement): NodeListOf<HTMLElement> {
 	return container.querySelectorAll('[data-testid="docx-thumbnails"] [role="option"]');
 }
@@ -87,8 +118,9 @@ describe('DocxViewer', () => {
 		expect(screen.getByText(SECOND_TEXT)).toBeVisible();
 		expect(mockedRenderDocx).toHaveBeenCalledTimes(1);
 		expect(mockedRenderDocx.mock.calls[0][0]).toBe('https://example.com/doc.docx');
-		const renderedInto = mockedRenderDocx.mock.calls[0][1];
-		expect(container.contains(renderedInto)).toBe(true);
+		expect(container.querySelector('[data-testid="docx-container"]')).toHaveTextContent(
+			FIXTURE_TEXT
+		);
 		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of 3');
 	});
 
@@ -261,7 +293,7 @@ describe('DocxViewer', () => {
 			// Natural (unzoomed) page size and viewport size; jsdom has no layout.
 			Object.defineProperty(section, 'offsetWidth', { value: 400 });
 			Object.defineProperty(section, 'offsetHeight', { value: 500 });
-			const viewport = container.parentElement as HTMLElement;
+			const viewport = screen.getByTestId('docx-viewport');
 			Object.defineProperty(viewport, 'clientWidth', { value: 600, configurable: true });
 			Object.defineProperty(viewport, 'clientHeight', { value: 300, configurable: true });
 			wrapper.appendChild(section);
@@ -300,7 +332,43 @@ describe('DocxViewer', () => {
 		await screen.findByText(FIXTURE_TEXT);
 		expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Upload' })).not.toBeInTheDocument();
-		expect(screen.queryByTestId('docx-file-input')).not.toBeInTheDocument();
+		// Like upstream, the hidden file input stays mounted for the empty-state button.
+		expect(screen.getByTestId('docx-file-input')).toHaveAttribute('type', 'file');
+	});
+
+	it('always offers the empty-state upload button, even with showUpload false, like upstream', async () => {
+		render(DocxViewer, { ...DARK, showUpload: false });
+
+		expect(await screen.findByRole('button', { name: 'Upload Word document' })).toBeVisible();
+		expect(screen.getByTestId('docx-file-input')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Upload' })).not.toBeInTheDocument();
+	});
+
+	it('jumps to a page typed into the upstream editable page number', async () => {
+		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Current page 1. Edit page number' })
+		);
+		const input = screen.getByRole('textbox', { name: 'Page number' }) as HTMLInputElement;
+		expect(input).toHaveFocus();
+		expect(input.value).toBe('1');
+
+		await fireEvent.input(input, { target: { value: '2' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 2 of 3');
+		expect(screen.queryByRole('textbox', { name: 'Page number' })).not.toBeInTheDocument();
+
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Current page 2. Edit page number' })
+		);
+		const again = screen.getByRole('textbox', { name: 'Page number' });
+		await fireEvent.input(again, { target: { value: '9' } });
+		await fireEvent.input(again, { target: { value: '1.5' } });
+		await fireEvent.blur(again);
+		// Out-of-range input clamps to the last page; non-integers are ignored.
+		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 3 of 3');
 	});
 
 	it('downloads a URL source by fetching it as a blob, like upstream', async () => {
@@ -330,18 +398,41 @@ describe('DocxViewer', () => {
 		}
 	});
 
-	it('a new src replaces an uploaded document, like upstream', async () => {
+	it('a new src replaces an uploaded document even when the upload renders last', async () => {
 		const { rerender } = render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
 		await screen.findByText(FIXTURE_TEXT);
+		const upload = deferredRender('UPLOADED DOC');
 		const file = new File(['fake'], 'upload.docx');
 		await fireEvent.change(screen.getByTestId('docx-file-input'), { target: { files: [file] } });
 		await vi.waitFor(() => expect(mockedRenderDocx.mock.lastCall?.[0]).toBe(file));
 
+		mockSinglePage('NEXT SRC DOC');
 		await rerender({ ...DARK, src: 'https://example.com/next.docx' });
+		await screen.findByText('NEXT SRC DOC');
+		upload.release();
+		await upload.settled;
 
-		await vi.waitFor(() =>
-			expect(mockedRenderDocx.mock.lastCall?.[0]).toBe('https://example.com/next.docx')
-		);
+		const documentEl = screen.getByTestId('docx-container');
+		expect(documentEl).toHaveTextContent('NEXT SRC DOC');
+		expect(documentEl).not.toHaveTextContent('UPLOADED DOC');
+	});
+
+	it('an upload made while the src is still loading wins over the late src render', async () => {
+		const slowSrc = deferredRender('STALE SRC DOC');
+		render(DocxViewer, { ...DARK, src: 'https://example.com/slow.docx' });
+		await vi.waitFor(() => expect(mockedRenderDocx).toHaveBeenCalledTimes(1));
+
+		mockSinglePage('UPLOADED DOC');
+		const file = new File(['fake'], 'upload.docx');
+		await fireEvent.change(screen.getByTestId('docx-file-input'), { target: { files: [file] } });
+		await screen.findByText('UPLOADED DOC');
+		slowSrc.release();
+		await slowSrc.settled;
+
+		const documentEl = screen.getByTestId('docx-container');
+		expect(documentEl).toHaveTextContent('UPLOADED DOC');
+		expect(documentEl).not.toHaveTextContent('STALE SRC DOC');
+		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of 1');
 	});
 
 	it('accepts Word documents in the upload input', async () => {

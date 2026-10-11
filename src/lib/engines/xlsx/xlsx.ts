@@ -72,9 +72,37 @@ export async function sheetToRows<T extends XlsxRow = XlsxRow>(
 	return XLSX.utils.sheet_to_json<T>(worksheet, { defval: '', ...options });
 }
 
+/** Excel error codes as SheetJS stores them in an error cell's `v`. */
+export const XLSX_ERROR_CODES: Readonly<Record<string, number>> = {
+	'#NULL!': 0x00,
+	'#DIV/0!': 0x07,
+	'#VALUE!': 0x0f,
+	'#REF!': 0x17,
+	'#NAME?': 0x1d,
+	'#NUM!': 0x24,
+	'#N/A': 0x2a,
+	'#GETTING_DATA': 0x2b
+};
+
+/**
+ * An error-valued cell (#DIV/0!, #N/A, ...). Kept as its own type so it is
+ * never confused with text that happens to start with `#`; it prints as its
+ * code, so `String(value)` is what spreadsheets show.
+ */
+export class XlsxCellError {
+	constructor(readonly code: string) {}
+
+	toString(): string {
+		return this.code;
+	}
+}
+
 /** A sheet read cell by cell from A1, the way spreadsheet apps address it. */
 export interface XlsxSheetGrid {
-	/** Cell values (formula cells hold their cached result), blanks as null. */
+	/**
+	 * Cell values (formula cells hold their cached result), blanks as null,
+	 * error cells as XlsxCellError.
+	 */
 	values: unknown[][];
 	/** Formula text without the leading `=`, keyed by zero-based `row:col`. */
 	formulas: Record<string, string>;
@@ -109,8 +137,17 @@ export async function sheetToGrid(workbook: WorkBook, sheetName: string): Promis
 	const formulas: Record<string, string> = {};
 	for (let r = used.s.r; r <= used.e.r; r += 1) {
 		for (let c = used.s.c; c <= used.e.c; c += 1) {
-			const formula = worksheet[XLSX.utils.encode_cell({ r, c })]?.f;
-			if (typeof formula === 'string' && formula) formulas[`${r}:${c}`] = formula;
+			const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+			if (typeof cell?.f === 'string' && cell.f) formulas[`${r}:${c}`] = cell.f;
+			// sheet_to_json reads error cells as blank; keep the error instead.
+			if (cell?.t === 'e') {
+				const code =
+					typeof cell.w === 'string' && cell.w.startsWith('#')
+						? cell.w
+						: (Object.keys(XLSX_ERROR_CODES).find((key) => XLSX_ERROR_CODES[key] === cell.v) ??
+							'#N/A');
+				(values[r] as unknown[])[c] = new XlsxCellError(code);
+			}
 		}
 	}
 	return { values, formulas };

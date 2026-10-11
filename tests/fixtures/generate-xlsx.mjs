@@ -59,6 +59,23 @@ utils.sheet_add_aoa(
 lanes['!ref'] = 'B2:D6';
 utils.book_append_sheet(workbook, lanes, 'Lanes');
 
+// Cells that must keep their types: text starting with =, a boolean, numeric
+// text, formulas whose saved results are a number (one stale, as saved with
+// manual calculation), a boolean, and an error, plus a literal error.
+const checks = {
+	'!ref': 'A1:I1',
+	A1: { t: 's', v: '=abc' },
+	B1: { t: 'n', v: 10 },
+	C1: { t: 'b', v: true },
+	D1: { t: 's', v: '5' },
+	E1: { t: 'n', v: 10, f: 'SUM(B1:D1)' },
+	F1: { t: 'n', v: 999, f: 'B1*2' },
+	G1: { t: 'b', v: true, f: '1=1' },
+	H1: { t: 'e', v: 0x07, f: '1/0' },
+	I1: { t: 'e', v: 0x2a }
+};
+utils.book_append_sheet(workbook, checks, 'Checks');
+
 const bytes = write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
 const targets = [

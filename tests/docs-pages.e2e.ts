@@ -53,3 +53,10 @@ for (const slug of SLUGS) {
 		expect(overflow).toBeLessThanOrEqual(0);
 	});
 }
+
+test('docs pages keep a 16px side gutter at phone width', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/toggle');
+	const left = await page.locator('h1').first().evaluate((h1) => h1.getBoundingClientRect().left);
+	expect(left).toBe(16);
+});

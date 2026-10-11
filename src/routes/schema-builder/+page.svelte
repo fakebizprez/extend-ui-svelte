@@ -31,7 +31,7 @@
 </p>
 
 <SchemaBuilder
-	bind:schema
+	{schema}
 	{isDark}
 	onSchemaChange={(next) => (schema = next)}
 	onSerializedSchemaChange={(next) => (serialized = next)}
@@ -65,9 +65,13 @@
 			collapsing nested editors are not ported.
 		</li>
 		<li>
-			Port additions: a per-field <code>required</code> flag (serialized as
-			<code>required</code>), <code>onSerializedSchemaChange</code>, and
-			<code>bind:schema</code>.
+			The add buttons read <code>Add field</code> and <code>Add nested field</code> instead of
+			upstream's <code>Add property</code>.
+		</li>
+		<li>
+			Port additions: a per-field <code>required</code> flag (upstream has none), serialized as a
+			<code>required</code> list on its parent object at every level, including array item
+			objects; and <code>onSerializedSchemaChange</code>.
 		</li>
 	</ul>
 </section>

@@ -33,7 +33,7 @@
 	import {
 		DEFAULT_THUMBNAIL_PAGE,
 		DEFAULT_THUMBNAIL_WIDTH,
-		renderPdfThumbnail
+		renderLoadedPdfThumbnail
 	} from './pdf-thumbnail.js';
 
 	interface Props {
@@ -185,7 +185,10 @@
 				const source = sourceFile ? await sourceFile.arrayBuffer() : (sourceUrl as string);
 				if (run !== pdfRun) return;
 				const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-				const result = await renderPdfThumbnail(engine, source, canvas, {
+				const pageCount = await engine.load(source);
+				// A newer source may have started while this one loaded; never draw a stale page.
+				if (run !== pdfRun) return;
+				const result = await renderLoadedPdfThumbnail(engine, pageCount, canvas, {
 					pageNumber: page,
 					width: targetWidth,
 					dpr

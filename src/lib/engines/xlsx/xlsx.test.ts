@@ -8,8 +8,10 @@ import {
 	loadWorkbookFromBytes,
 	loadWorkbookFromUrl,
 	sheetToGrid,
-	sheetToRows
+	sheetToRows,
+	XlsxCellError
 } from './xlsx.js';
+import { utils, write } from 'xlsx';
 
 const FIXTURE_PATH = join(__dirname, '..', '..', '..', '..', 'tests', 'fixtures', 'sample.xlsx');
 
@@ -21,14 +23,14 @@ describe('xlsx engine', () => {
 	it('loads a workbook from bytes and lists its sheet names', async () => {
 		const workbook = await loadWorkbookFromBytes(fixtureBytes());
 
-		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes', 'Lanes']);
+		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes', 'Lanes', 'Checks']);
 	});
 
 	it('loads a workbook from a URL', async () => {
 		const base64 = Buffer.from(fixtureBytes()).toString('base64');
 		const workbook = await loadWorkbookFromUrl(`data:application/octet-stream;base64,${base64}`);
 
-		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes', 'Lanes']);
+		expect(listSheetNames(workbook)).toEqual(['Inventory', 'Summary', 'Notes', 'Lanes', 'Checks']);
 	});
 
 	it('converts a sheet to rows with sheet_to_json', async () => {
@@ -87,6 +89,23 @@ describe('xlsx engine', () => {
 		const summary = await sheetToGrid(workbook, 'Summary');
 		expect(summary.formulas['2:1']).toBe('SUM(Inventory!C2:C6)');
 		expect(summary.values[2]).toEqual(['Total units', 787]);
+	});
+
+	it('reads error cells as typed errors that show their code', async () => {
+		const book = utils.book_new();
+		utils.book_append_sheet(
+			book,
+			{ '!ref': 'A1:B1', A1: { t: 'e', v: 7 }, B1: { t: 'e', v: 0x2a, f: 'NA()' } },
+			'Errors'
+		);
+		const workbook = await loadWorkbookFromBytes(
+			new Uint8Array(write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer)
+		);
+		const { values, formulas } = await sheetToGrid(workbook, 'Errors');
+
+		expect(values[0]).toEqual([new XlsxCellError('#DIV/0!'), new XlsxCellError('#N/A')]);
+		expect(String(values[0]?.[0])).toBe('#DIV/0!');
+		expect(formulas).toEqual({ '0:1': 'NA()' });
 	});
 
 	it('reads an empty sheet as an empty grid', async () => {

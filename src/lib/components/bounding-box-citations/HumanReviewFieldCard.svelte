@@ -102,6 +102,17 @@
 		syncedSelection = { activeSide: cell ? side : null, depth, cell };
 	}
 
+	/**
+	 * Writes the value into a number input only when it differs from what the
+	 * user typed, so partial text like "-0" or "-" survives (String(-0) is "0").
+	 */
+	function numberText(current: JsonPrimitive) {
+		return (input: HTMLInputElement) => {
+			const typed = input.value === '' ? null : Number(input.value);
+			if (typed !== current) input.value = current === null ? '' : String(current);
+		};
+	}
+
 	function childField(propertyKey: string, schema: ReviewFieldSchema): ReviewField {
 		return {
 			key: `${field.key}.${propertyKey}`,
@@ -134,7 +145,7 @@
 			type="number"
 			aria-label={label}
 			readonly={readOnly}
-			value={current === null ? '' : String(current)}
+			{@attach numberText(current)}
 			oninput={(event) => {
 				const next = event.currentTarget.value;
 				onChange(next === '' ? null : Number(next));

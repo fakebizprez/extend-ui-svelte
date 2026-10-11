@@ -36,6 +36,11 @@
 			ported.
 		</li>
 		<li>
+			The whole document is one editable surface: pages are not split out or virtualized, and
+			there is no "Page N of M" indicator. Uploads accept <code>.docx</code> only, like
+			upstream.
+		</li>
+		<li>
 			Export is lossy: it rebuilds a minimal .docx from paragraphs, headings, lists, and
 			bold/italic runs. Tables, images, styles, headers, and footers from the source are
 			dropped.

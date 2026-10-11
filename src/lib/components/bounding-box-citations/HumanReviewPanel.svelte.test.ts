@@ -1,6 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI bounding-box-citations. Upstream: extend-hq/ui (MIT).
 // Component tests: run in the Vitest client (jsdom) project.
 import { describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import HumanReviewPanel from './HumanReviewPanel.svelte';
 import { REVIEW_FIELDS } from './review.js';
@@ -99,6 +100,23 @@ describe('HumanReviewPanel', () => {
 		await fireEvent.click(falseButton);
 		expect(falseButton).toHaveAttribute('aria-pressed', 'true');
 		expect(overdraft).toHaveAttribute('data-modified', 'true');
+	});
+
+	it('keeps a typed minus sign in the expected number input', async () => {
+		render(HumanReviewPanel);
+
+		const balanceCard = card('ending_balance');
+		const balance = within(balanceCard).getByLabelText('Expected ending_balance') as HTMLInputElement;
+		await fireEvent.input(balance, { target: { value: '-0' } });
+		expect(balance.value).toBe('-0');
+		await fireEvent.input(balance, { target: { value: '-0.5' } });
+		expect(balance.value).toBe('-0.5');
+		expect(jsonPanel().textContent).toContain('"ending_balance": -0.5');
+
+		await fireEvent.click(within(balanceCard).getByRole('button', { name: 'Undo ending_balance' }));
+		expect(balance.value).toBe('12858.18');
+		await fireEvent.click(within(balanceCard).getByRole('button', { name: 'Set ending_balance to null' }));
+		expect(balance.value).toBe('');
 	});
 
 	it('switches between the Form and JSON tabs', async () => {
@@ -209,6 +227,34 @@ describe('HumanReviewPanel', () => {
 		await fireEvent.keyDown(editor, { key: 'Escape' });
 		expect(cell(expected, 0, 'category')).toHaveTextContent('Deposit');
 		expect(card('transactions')).toHaveAttribute('data-modified', 'false');
+	});
+
+	it('keeps focus on the field clicked after a grid edit', async () => {
+		render(HumanReviewPanel);
+
+		const expected = grid('transactions', 'Expected');
+		await fireEvent.dblClick(cell(expected, 0, 'category'));
+		const editor = within(expected).getByRole('textbox', { name: 'Edit cell' });
+		await fireEvent.input(editor, { target: { value: 'Other' } });
+
+		const other = within(card('statement_period')).getByLabelText('Expected statement_period');
+		other.focus();
+		await tick();
+
+		expect(document.activeElement).toBe(other);
+		expect(cell(expected, 0, 'category')).toHaveTextContent('Other');
+	});
+
+	it('returns focus to the grid when an edit ends from the keyboard', async () => {
+		render(HumanReviewPanel);
+
+		const expected = grid('transactions', 'Expected');
+		await fireEvent.dblClick(cell(expected, 0, 'category'));
+		await fireEvent.keyDown(within(expected).getByRole('textbox', { name: 'Edit cell' }), {
+			key: 'Enter'
+		});
+		expect(document.activeElement).toBe(expected);
+		expect(cell(expected, 1, 'category')).toHaveAttribute('aria-selected', 'true');
 	});
 
 	it('keeps the actual grid read-only', async () => {

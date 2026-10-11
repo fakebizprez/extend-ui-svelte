@@ -1,5 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI docx-viewer. Upstream: extend-hq/ui (MIT).
-import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { expect, test, type Page, type Route } from '@playwright/test';
+import JSZip from 'jszip';
 
 const EXPECTED_TEXT = 'Hello from the DOCX fixture';
 const SECOND_TEXT = 'Second paragraph for the thumbnail sidebar.';
@@ -78,4 +80,100 @@ test('docs page lists the differences from upstream', async ({ page }) => {
 	const differences = page.getByRole('region', { name: 'Differences from upstream' });
 	await expect(differences).toContainText('DocxViewerPreview');
 	await expect(differences).toContainText('className');
+});
+
+/** The fixture with its text swapped, so the upload is distinguishable from src. */
+async function replacementDocx(text: string): Promise<Buffer> {
+	const zip = await JSZip.loadAsync(readFileSync('tests/fixtures/sample.docx'));
+	const xml = await zip.file('word/document.xml')!.async('string');
+	zip.file('word/document.xml', xml.replace(EXPECTED_TEXT, text).replace(SECOND_TEXT, text));
+	return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+/** Resolves once the page has gone a full second without navigating. */
+async function waitForSettledNavigation(page: Page): Promise<void> {
+	let lastNavigation = Date.now();
+	page.on('framenavigated', (frame) => {
+		if (frame === page.mainFrame()) lastNavigation = Date.now();
+	});
+	await expect.poll(() => Date.now() - lastNavigation, { timeout: 20000 }).toBeGreaterThan(1000);
+}
+
+test('an upload made while the src is still loading is not overwritten by the late src', async ({
+	page
+}) => {
+	const held: Route[] = [];
+	await page.route('**/fixtures/sample.docx', (route) => {
+		held.push(route);
+	});
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	await expect(page.getByRole('status')).toContainText('Loading document', { timeout: 20000 });
+
+	const uploaded = 'Uploaded replacement document';
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'replacement.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await replacementDocx(uploaded)
+	});
+	const documentEl = page.getByTestId('docx-container');
+	await expect(documentEl).toContainText(uploaded, { timeout: 20000 });
+
+	// Release the slow src fetch now; its late render must not reach the DOM.
+	const srcResponse = page.waitForResponse('**/fixtures/sample.docx');
+	await page.unroute('**/fixtures/sample.docx');
+	for (const route of held) await route.continue().catch(() => {});
+	await srcResponse;
+	// No visible signal marks the stale render finishing, so give it time to land.
+	await page.waitForTimeout(1500);
+
+	await expect(documentEl).toContainText(uploaded);
+	await expect(documentEl).not.toContainText(EXPECTED_TEXT);
+});
+
+/** The fixture rebuilt with one paragraph per page, separated by page breaks. */
+async function multiPageDocx(pageCount: number): Promise<Buffer> {
+	const zip = await JSZip.loadAsync(readFileSync('tests/fixtures/sample.docx'));
+	const pagesXml = Array.from({ length: pageCount }, (_, index) => {
+		const pageBreak = index < pageCount - 1 ? '<w:r><w:br w:type="page"/></w:r>' : '';
+		return `<w:p><w:r><w:t>Generated page ${index + 1}</w:t></w:r>${pageBreak}</w:p>`;
+	}).join('');
+	const xml = await zip.file('word/document.xml')!.async('string');
+	zip.file('word/document.xml', xml.replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${pagesXml}$1`));
+	return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+test('large documents only lay out and paint the pages near the viewport', async ({ page }) => {
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	await expect(page.getByTestId('docx-container')).toContainText(EXPECTED_TEXT, {
+		timeout: 20000
+	});
+
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'long.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await multiPageDocx(30)
+	});
+	await expect(page.getByTestId('docx-page-indicator')).toContainText('of 30', { timeout: 20000 });
+
+	// checkVisibility on a page's content reports whether the browser skips rendering it.
+	const renderedPages = () =>
+		page.evaluate(
+			() =>
+				Array.from(document.querySelectorAll<HTMLElement>('[data-docx-page]'))
+					.filter((section) =>
+						section.firstElementChild?.checkVisibility({ contentVisibilityAuto: true })
+					)
+					.map((section) => Number(section.dataset.docxPage))
+		);
+	// Wait for the first page to paint before counting, or an empty list passes too early.
+	await expect.poll(renderedPages).toContain(1);
+	expect((await renderedPages()).length).toBeLessThan(8);
+
+	await page.getByTestId('docx-viewport').evaluate((viewport) => {
+		viewport.scrollTop = viewport.scrollHeight;
+	});
+	await expect.poll(renderedPages).toContain(30);
+	expect(await renderedPages()).not.toContain(1);
 });

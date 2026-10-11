@@ -10,7 +10,10 @@
 	  `overscan` (default 6 like upstream) props.
 	- Exported as LayoutBlocks and as the upstream name OcrBlocksPanel. The
 	  upstream OcrBlocks demo (panel preloaded with the bundled Attention
-	  sample) is not ported.
+	  sample) is not ported, and neither is OcrBlockOverlay (overlays on the
+	  rendered PDF page); blockToArea/blockToHighlightArea are exported for that.
+	- Block markdown is sanitized with hast-util-sanitize (the library behind
+	  upstream's rehype-sanitize) and upstream's schema; see sanitizeBlockHtml.
 	- `class` is accepted alongside `className`; both merge onto the root.
 	- Markdown renders with marked instead of react-markdown; see
 	  renderBlockMarkdown in layout-blocks.ts.

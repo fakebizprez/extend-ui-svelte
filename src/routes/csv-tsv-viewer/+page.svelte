@@ -74,8 +74,8 @@ A-9004\tJumper wires\t340\tAustin`;
 	</li>
 	<li>
 		The grid is a native table windowed locally instead of glide-data-grid. Search works like
-		upstream: a find popover that highlights matches, steps through them, and scrolls the
-		active match into view.
+		upstream: a find popover that steps through matches, selects the active match's cell and
+		scrolls it into view, and closes on an outside click or when the data changes.
 	</li>
 	<li>
 		Added props: <code>delimiter</code>, <code>isDark</code>, <code>onIsDarkChange</code>,

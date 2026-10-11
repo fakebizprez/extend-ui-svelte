@@ -43,6 +43,26 @@ export class DocxRenderError extends Error {
 	}
 }
 
+/**
+ * Rejection for a render that a newer renderDocx or clearDocx call on the same
+ * container superseded. Its output never reaches the DOM; callers can ignore it.
+ */
+export class DocxRenderCancelledError extends DocxRenderError {
+	constructor() {
+		super('DOCX render superseded by a newer render of the same container.');
+		this.name = 'DocxRenderCancelledError';
+	}
+}
+
+// Latest render ticket per container: renders are last-call-wins down to the DOM.
+const renderTickets = new WeakMap<object, number>();
+
+function takeTicket(container: object): number {
+	const ticket = (renderTickets.get(container) ?? 0) + 1;
+	renderTickets.set(container, ticket);
+	return ticket;
+}
+
 /** Default render options: no thumbnail sidebar, default wrapper class, paged output. */
 export const DEFAULT_DOCX_OPTIONS: ResolvedDocxRenderOptions = {
 	showThumbnails: false,
@@ -99,7 +119,7 @@ async function toBlob(source: DocxSource): Promise<Blob> {
 		return source;
 	}
 	if (source instanceof ArrayBuffer || source instanceof Uint8Array) {
-		return new Blob([source], {
+		return new Blob([source as BlobPart], {
 			type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 		});
 	}
@@ -123,24 +143,40 @@ export async function renderDocx(
 	if (!isBrowser()) {
 		throw new DocxRenderError('renderDocx requires a browser DOM (window/document are missing).');
 	}
+	const ticket = takeTicket(container);
+	const isCurrent = () => renderTickets.get(container) === ticket;
 	const resolved = resolveDocxOptions(options);
-	const blob = await toBlob(source);
-	const { renderAsync } = await import('docx-preview');
-
-	clearDocx(container);
+	let blob: Blob;
 	try {
-		await renderAsync(blob, container, undefined, {
-			className: resolved.className,
-			breakPages: resolved.breakPages,
-			useBase64URL: true
-		});
+		blob = await toBlob(source);
 	} catch (error) {
+		if (!isCurrent()) throw new DocxRenderCancelledError();
+		throw error;
+	}
+	const { parseAsync, renderDocument } = await import('docx-preview');
+	const renderOptions = {
+		className: resolved.className,
+		breakPages: resolved.breakPages,
+		useBase64URL: true
+	};
+
+	// renderAsync's steps, with a staleness check before the only DOM write, so
+	// a slow older render can never overwrite a newer document.
+	let nodes: Node[];
+	try {
+		nodes = await renderDocument(await parseAsync(blob, renderOptions), renderOptions);
+	} catch (error) {
+		if (!isCurrent()) throw new DocxRenderCancelledError();
 		throw new DocxRenderError('Failed to render the DOCX document.', { cause: error });
 	}
+	if (!isCurrent()) throw new DocxRenderCancelledError();
+	container.innerHTML = '';
+	for (const node of nodes) container.appendChild(node);
 	return { container, showThumbnails: resolved.showThumbnails };
 }
 
-/** Removes previously rendered DOCX output from the container. */
+/** Removes previously rendered DOCX output and cancels any render still in flight. */
 export function clearDocx(container: Pick<HTMLElement, 'innerHTML'>): void {
+	takeTicket(container);
 	container.innerHTML = '';
 }

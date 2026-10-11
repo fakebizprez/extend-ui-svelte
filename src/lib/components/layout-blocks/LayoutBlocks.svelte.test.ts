@@ -190,4 +190,38 @@ describe('LayoutBlocks', () => {
 	it('exports the upstream OcrBlocksPanel name', () => {
 		expect(OcrBlocksPanel).toBe(LayoutBlocks);
 	});
+
+	it('renders no executable markup from hostile block text', () => {
+		const payloads = [
+			'<a href="&#106;avascript:alert(1)">a</a>',
+			'<a href="java\tscript:alert(1)">b</a>',
+			'[c](javascript:alert(1))',
+			'<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>',
+			'<img src=x onerror=alert(1)>',
+			'<details open ontoggle=alert(1)>d</details>',
+			'<object data="javascript:alert(1)"></object>',
+			'<embed src="javascript:alert(1)">',
+			'<math><mtext><img src=x onerror=alert(1)></mtext></math>',
+			'<form action="javascript:alert(1)"><button>e</button></form>',
+			'<a href="x" style="position:fixed;inset:0">f</a>'
+		];
+		const blocks = payloads.map((text, index) => makeBlock(index, { id: `x-${index}`, text }));
+		const { container } = render(LayoutBlocks, { blocks, height: 2000 });
+
+		const body = container.querySelectorAll('.layout-block-body *');
+		expect(body.length).toBeGreaterThan(0);
+		for (const element of body) {
+			expect(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'MATH', 'SVG']).not.toContain(
+				element.tagName.toUpperCase()
+			);
+			for (const attribute of element.attributes) {
+				expect(attribute.name).not.toMatch(/^on|^srcdoc$|^style$|^action$/i);
+				if (['href', 'src'].includes(attribute.name)) {
+					expect(attribute.value.replace(/[\s\u0000-\u001f]/g, '')).not.toMatch(
+						/^(javascript|vbscript|data):/i
+					);
+				}
+			}
+		}
+	});
 });

@@ -92,7 +92,7 @@
 		signatureWidth = $bindable(DEFAULT_SIGNATURE_WIDTH),
 		signatureHeight = $bindable(DEFAULT_SIGNATURE_HEIGHT),
 		scale = $bindable(DEFAULT_SCALE),
-		penColor = '#111827',
+		penColor = '#000000',
 		backgroundColor = 'rgba(0,0,0,0)',
 		showDownload = true,
 		isDark = false,
@@ -110,6 +110,8 @@
 		isEmpty(): boolean;
 		clear(): void;
 		toDataURL(type?: string): string;
+		toData(): unknown[];
+		fromData(data: unknown[]): void;
 		off(): void;
 		addEventListener(type: string, listener: () => void): void;
 		removeEventListener(type: string, listener: () => void): void;
@@ -136,10 +138,21 @@
 	const canPlace = $derived(pdfReady && hasSignature && !placing);
 	const canDownload = $derived(pdfReady && signedBytes !== null);
 
+	// Match the backing store to the displayed size so ink lands under the pointer.
+	function syncPadSize(canvas: HTMLCanvasElement): void {
+		const ratio = Math.max(window.devicePixelRatio || 1, 1);
+		canvas.width = Math.floor(Math.max(canvas.offsetWidth, 1) * ratio);
+		canvas.height = Math.floor(Math.max(canvas.offsetHeight, 1) * ratio);
+		const context = canvas.getContext('2d');
+		context?.setTransform?.(1, 0, 0, 1, 0, 0);
+		context?.scale?.(ratio, ratio);
+	}
+
 	// Browser-only: signature_pad and the PDF engine load on the client.
 	onMount(() => {
 		let cancelled = false;
 		let handleStroke: (() => void) | null = null;
+		let resizeObserver: ResizeObserver | null = null;
 
 		(async () => {
 			const [{ default: SignaturePad }, { createPdfEngine }] = await Promise.all([
@@ -150,35 +163,35 @@
 			const created = createPdfEngine();
 			engine = created;
 			const canvas = padCanvas;
-			if (canvas) {
-				const context = canvas.getContext('2d');
-				if (context) {
-					const ratio =
-						typeof window !== 'undefined' && window.devicePixelRatio > 1
-							? window.devicePixelRatio
-							: 1;
-					if (ratio !== 1 && typeof context.scale === 'function') {
-						canvas.width *= ratio;
-						canvas.height *= ratio;
-						context.scale(ratio, ratio);
+			if (canvas && canvas.getContext('2d')) {
+				const instance = new SignaturePad(canvas, { penColor, backgroundColor });
+				syncPadSize(canvas);
+				handleStroke = () => {
+					const drawn = !instance.isEmpty();
+					if (drawn !== hasSignature) {
+						hasSignature = drawn;
+						onSignatureChange?.(drawn);
 					}
-					const instance = new SignaturePad(canvas, { penColor, backgroundColor });
-					handleStroke = () => {
-						const drawn = !instance.isEmpty();
-						if (drawn !== hasSignature) {
-							hasSignature = drawn;
-							onSignatureChange?.(drawn);
-						}
-					};
-					instance.addEventListener('endStroke', handleStroke);
-					pad = instance;
-					padReady = true;
+				};
+				instance.addEventListener('endStroke', handleStroke);
+				// signature_pad's resize pattern: resize the backing store, then
+				// replay the stroke data so the drawing survives layout changes.
+				if (typeof ResizeObserver !== 'undefined') {
+					resizeObserver = new ResizeObserver(() => {
+						const strokes = instance.toData();
+						syncPadSize(canvas);
+						instance.fromData(strokes);
+					});
+					resizeObserver.observe(canvas);
 				}
+				pad = instance;
+				padReady = true;
 			}
 		})();
 
 		return () => {
 			cancelled = true;
+			resizeObserver?.disconnect();
 			if (pad && handleStroke) {
 				pad.removeEventListener('endStroke', handleStroke);
 				pad.off();
@@ -345,8 +358,6 @@
 				class="es-pad"
 				data-pad-ready={String(padReady)}
 				data-testid="e-signature-pad"
-				width="560"
-				height="200"
 			></canvas>
 			<p class="es-status" data-testid="e-signature-status">
 				{hasSignature ? 'Signature ready' : 'Draw your signature above'}
@@ -540,9 +551,11 @@
 		touch-action: none;
 	}
 
+	/* Upstream keeps the signature pad white in both themes. */
 	.es-pad {
 		height: 200px;
 		cursor: crosshair;
+		background: #ffffff;
 	}
 
 	.es-status {

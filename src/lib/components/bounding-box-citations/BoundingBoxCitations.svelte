@@ -137,17 +137,52 @@
 		return resolveLocation?.(metadataPath) ?? getMetadataLocation(metadata, metadataPath);
 	}
 
-	function scrollToPageArea(location: ReviewLocation, behavior: ScrollBehavior): void {
+	/** Content offset (scrollTop space) of an element inside the PDF viewport. */
+	function offsetInViewport(viewport: HTMLElement, element: HTMLElement): number {
+		return (
+			viewport.scrollTop +
+			element.getBoundingClientRect().top -
+			viewport.getBoundingClientRect().top
+		);
+	}
+
+	/**
+	 * Centers a page area in the PDF viewport, measuring the rendered page so
+	 * the viewer's gaps and per-page sizes are respected. Pages outside the
+	 * viewer's render window are reached in two steps: jump to an estimate from
+	 * a rendered page, then aim exactly once the target page renders.
+	 */
+	function scrollToPageArea(location: ReviewLocation, behavior: ScrollBehavior, retry = true): void {
 		const viewport = root?.querySelector<HTMLElement>('[data-testid="pdf-viewport"]');
-		const page = root?.querySelector<HTMLElement>('[data-page-number]');
-		const slot = page?.parentElement;
-		if (!viewport || !page || !slot) return;
-		const pageTop = (location.page - 1) * slot.offsetHeight;
-		const areaCenter = ((location.area.top + location.area.height / 2) / 100) * page.offsetHeight;
+		if (!viewport) return;
+		const page = viewport.querySelector<HTMLElement>(`[data-page-number="${location.page}"]`);
+		if (page) {
+			const areaCenter = ((location.area.top + location.area.height / 2) / 100) * page.offsetHeight;
+			viewport.scrollTo?.({
+				top: Math.max(0, offsetInViewport(viewport, page) + areaCenter - viewport.clientHeight / 2),
+				behavior
+			});
+			return;
+		}
+
+		const rendered = [...viewport.querySelectorAll<HTMLElement>('[data-page-number]')];
+		if (!retry || !rendered.length) return;
+		const first = rendered[0];
+		const last = rendered[rendered.length - 1];
+		const firstNumber = Number(first.dataset.pageNumber);
+		const lastNumber = Number(last.dataset.pageNumber);
+		const pitch =
+			lastNumber > firstNumber
+				? (offsetInViewport(viewport, last) - offsetInViewport(viewport, first)) /
+					(lastNumber - firstNumber)
+				: first.offsetHeight;
 		viewport.scrollTo?.({
-			top: Math.max(0, pageTop + areaCenter - viewport.clientHeight / 2),
-			behavior
+			top: Math.max(0, offsetInViewport(viewport, first) + (location.page - firstNumber) * pitch),
+			behavior: 'auto'
 		});
+		requestAnimationFrame(() =>
+			requestAnimationFrame(() => scrollToPageArea(location, behavior, false))
+		);
 	}
 
 	function focusField(field: ReviewField): void {

@@ -74,8 +74,10 @@
 			<code>loadChildren</code>, and the built-in viewer dialog.
 		</li>
 		<li>
-			<code>onFileOpen</code> is called when a file is double-clicked, with its
-			<code>url</code> or the <code>getFileUrl</code> result. Without it, nothing opens.
+			<code>onFileOpen</code> is called when a file is double-clicked or opened with Enter, with
+			its <code>url</code> or the <code>getFileUrl</code> result. Without it, nothing opens
+			(upstream falls back to its built-in viewer). Double-click or Enter on a folder expands it
+			in place instead of navigating into it.
 		</li>
 		<li>
 			Upstream preview fields on file items (<code>previewImageUrl</code>,

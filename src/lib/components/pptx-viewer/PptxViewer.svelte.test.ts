@@ -121,19 +121,34 @@ describe('PptxViewer', () => {
 		).toBeInTheDocument();
 	});
 
-	it('shows an empty state and loads nothing when no src is given', async () => {
-		render(PptxViewer, {});
+	it('shows the upstream empty state with an Upload PowerPoint button when no src is given', async () => {
+		render(PptxViewer, { showUpload: false });
 
-		expect(await screen.findByText('No presentation to preview')).toBeVisible();
+		expect(
+			await screen.findByText('Upload a PowerPoint presentation to preview')
+		).toBeVisible();
 		expect(mockLoadDeck).not.toHaveBeenCalled();
 		expect(screen.queryByTestId('slide-count')).not.toBeInTheDocument();
+		// Like upstream, the empty-state button works even when the toolbar hides Upload.
+		const input = screen.getByTestId('pptx-file-input') as HTMLInputElement;
+		const click = vi.spyOn(input, 'click').mockImplementation(() => {});
+		await fireEvent.click(screen.getByRole('button', { name: 'Upload PowerPoint' }));
+		expect(click).toHaveBeenCalledTimes(1);
+	});
+
+	it('says a deck with zero slides has no slides, like upstream', async () => {
+		mockLoadDeck.mockResolvedValueOnce(fakeDeck(0));
+		render(PptxViewer, { src: '/empty.pptx' });
+
+		expect(await screen.findByText('This presentation has no slides.')).toBeVisible();
 	});
 
 	it('shows an error when the deck fails to load', async () => {
 		mockLoadDeck.mockRejectedValueOnce(new Error('not a presentation'));
 		render(PptxViewer, { src: '/sample.pptx' });
 
-		expect(await screen.findByRole('alert')).toHaveTextContent('not a presentation');
+		expect(await screen.findByRole('alert')).toHaveTextContent('Unable to display PowerPoint');
+		expect(screen.getByRole('alert')).toHaveTextContent('not a presentation');
 		expect(screen.queryByTestId('slide-count')).not.toBeInTheDocument();
 	});
 
@@ -257,7 +272,8 @@ describe('PptxViewer', () => {
 		expect(await screen.findByTestId('slide-count')).toHaveTextContent('2');
 		expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Upload' })).not.toBeInTheDocument();
-		expect(screen.queryByTestId('pptx-file-input')).not.toBeInTheDocument();
+		// The hidden input stays mounted for the empty-state button, like upstream.
+		expect(screen.getByTestId('pptx-file-input')).toHaveAttribute('type', 'file');
 	});
 
 	it('loads an uploaded presentation in place of the src', async () => {

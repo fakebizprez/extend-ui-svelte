@@ -210,6 +210,89 @@ describe('FileSystem', () => {
 		expect(url).toBe('https://cdn.example.com/contract.pdf');
 	});
 
+	it('Enter on a file opens it through onFileOpen, like upstream', async () => {
+		const onFileOpen = vi.fn();
+		const items: FileSystemItem[] = [
+			{ kind: 'file', path: 'contract.pdf', url: 'https://cdn.example.com/contract.pdf' }
+		];
+		render(FileSystem, { items, onFileOpen });
+
+		await fireEvent.keyDown(treeitem('contract.pdf'), { key: 'Enter' });
+
+		await vi.waitFor(() =>
+			expect(onFileOpen).toHaveBeenCalledWith(
+				expect.objectContaining({ path: 'contract.pdf' }),
+				'https://cdn.example.com/contract.pdf'
+			)
+		);
+	});
+
+	it('Enter on a folder opens it like a double-click instead of opening a file', async () => {
+		const onFileOpen = vi.fn();
+		render(FileSystem, { items: ITEMS, onFileOpen });
+
+		await fireEvent.keyDown(treeitem('invoices'), { key: 'Enter' });
+
+		expect(treeitem('invoices')).toHaveAttribute('aria-expanded', 'true');
+		expect(onFileOpen).not.toHaveBeenCalled();
+	});
+
+	it('reports a selection only when it changes, like upstream', async () => {
+		const onSelectionChange = vi.fn();
+		render(FileSystem, { items: ITEMS, onSelectionChange });
+
+		await fireEvent.click(treeitem('readme.txt'));
+		await fireEvent.click(treeitem('readme.txt'));
+		await fireEvent.keyDown(treeitem('readme.txt'), { key: 'Enter' });
+
+		expect(onSelectionChange).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports null when the selected entry leaves the manifest', async () => {
+		const onSelectionChange = vi.fn();
+		const { rerender } = render(FileSystem, { items: ITEMS, onSelectionChange });
+
+		await fireEvent.click(treeitem('readme.txt'));
+		await rerender({ items: ITEMS.filter((item) => item.path !== 'readme.txt') });
+
+		expect(onSelectionChange).toHaveBeenLastCalledWith(null);
+		expect(onSelectionChange).toHaveBeenCalledTimes(2);
+		expect(screen.queryByRole('treeitem', { selected: true })).not.toBeInTheDocument();
+	});
+
+	it('type-ahead focuses the next visible entry by name prefix, like upstream', async () => {
+		vi.useFakeTimers();
+		try {
+			const items: FileSystemItem[] = [
+				{ kind: 'folder', path: 'reports/' },
+				{ kind: 'file', path: 'readme.txt' },
+				{ kind: 'file', path: 'receipt.pdf' },
+				{ kind: 'file', path: 'zeta.csv' }
+			];
+			render(FileSystem, { items });
+			const start = treeitem('zeta.csv');
+			start.focus();
+
+			// Letters build a buffer that refines the match in place.
+			await fireEvent.keyDown(start, { key: 'r' });
+			expect(document.activeElement).toBe(treeitem('reports'));
+			await fireEvent.keyDown(document.activeElement!, { key: 'e' });
+			expect(document.activeElement).toBe(treeitem('reports'));
+			await fireEvent.keyDown(document.activeElement!, { key: 'a' });
+			expect(document.activeElement).toBe(treeitem('readme.txt'));
+
+			// After the 700ms idle reset, a single letter advances past the focused row.
+			vi.advanceTimersByTime(800);
+			await fireEvent.keyDown(document.activeElement!, { key: 'r' });
+			expect(document.activeElement).toBe(treeitem('receipt.pdf'));
+			vi.advanceTimersByTime(800);
+			await fireEvent.keyDown(document.activeElement!, { key: 'r' });
+			expect(document.activeElement).toBe(treeitem('reports'));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('resolves a missing file url through upstream getFileUrl before onFileOpen', async () => {
 		const onFileOpen = vi.fn();
 		const getFileUrl = vi.fn(async (file: FileSystemFileItem) => `https://signed/${file.path}`);

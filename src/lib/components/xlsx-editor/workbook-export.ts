@@ -2,24 +2,41 @@
 // Workbook export for the XLSX editor: edited grids back to .xlsx bytes via
 // SheetJS, plus a browser download trigger. SheetJS is loaded with a dynamic
 // import so it only loads on the client.
-import { evaluateCell } from './formulas.js';
+import { XLSX_ERROR_CODES, XlsxCellError } from '#lib/engines/xlsx/xlsx.js';
+import type { CellValue } from './formulas.js';
 
-/** One editable sheet: its name plus raw grid values (`=...` strings are formulas). */
+/** One editable sheet: cell values plus its formula cells. */
 export interface EditableSheet {
 	name: string;
-	grid: (string | number | boolean | null)[][];
 	/**
-	 * Values saved in the source file for formula cells, keyed by zero-based
-	 * `row:col`. Used as the cached value when local evaluation fails (for
-	 * example cross-sheet references), so the export keeps the file's result.
+	 * Cell values by zero-based row and column. For a formula cell this is the
+	 * result to save with it. Text starting with `=` is text, not a formula.
 	 */
-	savedResults?: Record<string, string | number | boolean | null>;
+	grid: CellValue[][];
+	/** Formula text without the leading `=`, keyed by zero-based `row:col`. */
+	formulas?: Record<string, string>;
+}
+
+type SheetCell = { t: 'n' | 's' | 'b' | 'e'; v: number | string | boolean; w?: string; f?: string };
+
+/** A SheetJS cell keeping the value's type: number, text, boolean, or error. */
+function toSheetCell(value: CellValue): SheetCell | null {
+	if (value === null) return null;
+	if (typeof value === 'number') return { t: 'n', v: value };
+	if (typeof value === 'boolean') return { t: 'b', v: value };
+	if (value instanceof XlsxCellError) {
+		const code = XLSX_ERROR_CODES[value.code];
+		// Errors Excel has no code for (e.g. #CIRC!) are saved as their text.
+		return code === undefined ? { t: 's', v: value.code } : { t: 'e', v: code, w: value.code };
+	}
+	return { t: 's', v: value };
 }
 
 /**
- * Serializes edited sheets to .xlsx bytes. Strings starting with `=` are
- * stored as real formulas ({ f }) so spreadsheet apps evaluate them on open.
- * Rejects with a clear error when no sheets are given.
+ * Serializes edited sheets to .xlsx bytes, every cell at its own address.
+ * Formula cells are written as real formulas ({ f }) with their result, so
+ * spreadsheet apps show the value before recalculating. Rejects with a clear
+ * error when no sheets are given.
  */
 export async function sheetsToXlsxBytes(sheets: EditableSheet[]): Promise<Uint8Array> {
 	if (sheets.length === 0) {
@@ -29,29 +46,25 @@ export async function sheetsToXlsxBytes(sheets: EditableSheet[]): Promise<Uint8A
 	const XLSX = await import('xlsx');
 	const workbook = XLSX.utils.book_new();
 	for (const sheet of sheets) {
-		const grid = sheet.grid.length === 0 ? [[]] : sheet.grid;
-		const worksheet = XLSX.utils.aoa_to_sheet(grid);
-		// aoa_to_sheet writes formula strings as literal text; rewrite them as
-		// formula cells so Excel/LibreOffice evaluate them. The SheetJS writer
-		// drops formula cells without a cached value, so evaluate locally.
-		for (let row = 0; row < grid.length; row += 1) {
-			const gridRow = grid[row] ?? [];
+		const worksheet: Record<string, unknown> = {};
+		let lastRow = 0;
+		let lastCol = 0;
+		const rowCount = sheet.grid.length;
+		for (let row = 0; row < rowCount; row += 1) {
+			const gridRow = sheet.grid[row] ?? [];
 			for (let col = 0; col < gridRow.length; col += 1) {
-				const value = gridRow[col];
-				if (typeof value === 'string' && value.startsWith('=') && value.length > 1) {
-					const address = XLSX.utils.encode_cell({ r: row, c: col });
-					let cached = evaluateCell(value, (r, c) => (grid[r] ?? [])[c] ?? null);
-					const saved = sheet.savedResults?.[`${row}:${col}`];
-					if (typeof cached === 'string' && cached.startsWith('#') && saved !== undefined) {
-						cached = saved;
-					}
-					worksheet[address] =
-						typeof cached === 'number'
-							? { t: 'n', v: cached, f: value.slice(1) }
-							: { t: 's', v: String(cached ?? ''), f: value.slice(1) };
-				}
+				const formula = sheet.formulas?.[`${row}:${col}`];
+				const value = gridRow[col] ?? null;
+				// A formula cell needs a value for the SheetJS writer to keep it.
+				const cell = formula !== undefined ? (toSheetCell(value) ?? { t: 's', v: '' }) : toSheetCell(value);
+				if (!cell) continue;
+				if (formula !== undefined) cell.f = formula;
+				worksheet[XLSX.utils.encode_cell({ r: row, c: col })] = cell;
+				lastRow = Math.max(lastRow, row);
+				lastCol = Math.max(lastCol, col);
 			}
 		}
+		worksheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: lastCol } });
 		XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
 	}
 	return new Uint8Array(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);

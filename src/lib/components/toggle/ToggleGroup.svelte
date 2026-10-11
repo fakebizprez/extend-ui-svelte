@@ -9,7 +9,9 @@
 	theme), and no `ToggleGroupPrimitive` re-export (Base UI is React-only).
 	Like Base UI, the group is one Tab stop (the focused, pressed, or first
 	enabled item) and arrow keys, Home, and End move focus inside it.
-	`onValueChange` gets no event details.
+	`onValueChange` gets no event details. A consumer `onkeydown` runs before
+	the built-in navigation; `event.preventDefault()` stands in for Base UI's
+	`preventBaseUIHandler()`.
 -->
 <script lang="ts" module>
 	export type ToggleGroupOrientation = 'horizontal' | 'vertical';
@@ -83,6 +85,7 @@
 		class: className = '',
 		className: classNameAlias = '',
 		children,
+		onkeydown,
 		isDark = false,
 		// Shared-contract parity; intentionally unused, the parent owns the theme.
 		onIsDarkChange: _onIsDarkChange,
@@ -103,7 +106,11 @@
 
 	// Arrow keys move focus between enabled items along the group's axis, like
 	// Base UI's composite toggle group. Home and End jump to the ends.
+	// The consumer handler runs first, like Base UI's mergeProps; preventDefault()
+	// stands in for preventBaseUIHandler() to skip ours.
 	function handleKeyDown(event: KeyboardEvent) {
+		(onkeydown as ((event: KeyboardEvent) => void) | undefined)?.(event);
+		if (event.defaultPrevented) return;
 		const root = event.currentTarget as HTMLElement;
 		const items = Array.from(
 			root.querySelectorAll<HTMLButtonElement>('[data-slot="toggle-group-item"]:not(:disabled)')

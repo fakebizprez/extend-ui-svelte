@@ -36,10 +36,10 @@ test('csv-tsv-viewer search highlights matches and steps through them', async ({
 	const label = csv.getByTestId('search-result-label');
 	await expect(label).toHaveText('1 / 2');
 	await expect(csv.getByTestId('search-result-address')).toHaveText('Status!C2');
-	// Every row stays visible; matches are highlighted in place.
+	// Every row stays visible; like upstream only the active match is selected.
 	await expect(csv.locator('tbody tr[data-row-index]')).toHaveCount(10);
-	await expect(csv.locator('td[data-search-match]')).toHaveCount(2);
 	const active = csv.locator('td[data-search-active]');
+	await expect(active).toHaveCount(1);
 	await expect(active).toHaveText('Needs review');
 	await expect(active.locator('xpath=..')).toHaveAttribute('data-row-index', '1');
 
@@ -55,7 +55,26 @@ test('csv-tsv-viewer search highlights matches and steps through them', async ({
 
 	await panel.getByRole('button', { name: 'Clear' }).click();
 	await expect(label).toHaveText('No search');
-	await expect(csv.locator('td[data-search-match]')).toHaveCount(0);
+	await expect(active).toHaveCount(0);
+});
+
+test('csv-tsv-viewer find popover closes on an outside click', async ({ page }) => {
+	const { csv } = await openPage(page);
+	const trigger = csv.getByRole('button', { name: 'Search CSV' });
+	await trigger.click();
+	const panel = csv.getByRole('dialog', { name: 'Search CSV' });
+	await page.keyboard.type('approved');
+	await expect(csv.getByTestId('search-result-label')).toHaveText('1 / 5');
+
+	// Clicks inside keep it open.
+	await panel.getByRole('button', { name: 'Next result' }).click();
+	await expect(panel).toBeVisible();
+
+	await page.locator('h1').click();
+	await expect(panel).toHaveCount(0);
+	await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	// The active match stays selected, as upstream's grid selection does.
+	await expect(csv.locator('td[data-search-active]')).toHaveCount(1);
 });
 
 test('csv-tsv-viewer search scrolls the active match into view', async ({ page }) => {

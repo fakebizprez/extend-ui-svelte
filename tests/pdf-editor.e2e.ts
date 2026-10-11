@@ -55,7 +55,6 @@ test('pdf editor starts at fit width', async ({ page }) => {
 
 test('pdf editor previews an uploaded page at its real size', async ({ page }) => {
 	const editor = await openEditor(page);
-	await editor.getByRole('combobox', { name: 'Zoom level' }).selectOption('0.5');
 	const mixed = await PDFDocument.create();
 	mixed.addPage([612, 792]);
 	mixed.addPage([792, 612]);
@@ -65,6 +64,8 @@ test('pdf editor previews an uploaded page at its real size', async ({ page }) =
 		buffer: Buffer.from(await mixed.save())
 	});
 	await expect(page.getByTestId('pdf-editor-docs-loaded')).toContainText('Loaded mixed.pdf, 2 pages');
+	// A new document resets zoom to defaultZoom, so pick 50% after it loads.
+	await editor.getByRole('combobox', { name: 'Zoom level' }).selectOption('0.5');
 
 	await editor.getByRole('button', { name: 'Select page 2' }).click();
 	const previewPage = editor.getByTestId('pdf-editor-preview').getByTestId('pdf-page');

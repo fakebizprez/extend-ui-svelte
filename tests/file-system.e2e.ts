@@ -70,3 +70,24 @@ test('file-system has no theme toggle of its own; docs list the differences', as
 	await expect(differences).toContainText('gallery');
 	await expect(differences).toContainText('onFileOpen');
 });
+
+test('file-system opens a file with Enter, like upstream', async ({ page }) => {
+	await openFileSystem(page);
+
+	await page.getByRole('treeitem', { name: /readme\.txt/ }).press('Enter');
+
+	await expect(page.getByTestId('file-system-open')).toHaveText(
+		'Last opened: readme.txt -> /files/readme.txt'
+	);
+});
+
+test('file-system type-ahead focuses the entry whose name starts with the typed letters', async ({
+	page
+}) => {
+	await openFileSystem(page);
+
+	await page.getByRole('treeitem', { name: /invoices/ }).focus();
+	await page.keyboard.type('rea');
+
+	await expect(page.getByRole('treeitem', { name: /readme\.txt/ })).toBeFocused();
+});

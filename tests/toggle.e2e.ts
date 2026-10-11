@@ -130,3 +130,23 @@ test('each toggle group is one Tab stop that lands on the pressed item and follo
 	await page.keyboard.press('Tab');
 	await expect(alignment.getByRole('button', { name: 'Align center' })).toBeFocused();
 });
+
+test('a consumer onclick or onkeydown runs and the built-in behavior still runs', async ({ page }) => {
+	const italic = page.getByRole('button', { name: 'Toggle italic' });
+	await italic.click();
+	await expect(page.getByTestId('consumer-clicks')).toHaveText('Consumer clicks: 1');
+	await expect(italic).toHaveAttribute('aria-pressed', 'true');
+
+	const group = page.getByRole('group', { name: 'Font size' });
+	const small = group.getByRole('button', { name: 'Small text' });
+	const large = group.getByRole('button', { name: 'Large text' });
+	await large.click();
+	await expect(large).toHaveAttribute('aria-pressed', 'true');
+	await small.click();
+	await expect(page.getByTestId('consumer-clicks')).toHaveText('Consumer clicks: 2');
+	await expect(small).toHaveAttribute('aria-pressed', 'true');
+
+	await page.keyboard.press('ArrowRight');
+	await expect(page.getByTestId('font-size-key')).toHaveText('Last key: ArrowRight');
+	await expect(large).toBeFocused();
+});

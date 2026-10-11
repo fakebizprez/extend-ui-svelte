@@ -131,3 +131,52 @@ test('docs page lists the differences from upstream', async ({ page }) => {
 	await expect(differences).toContainText('ESignatureBlock');
 	await expect(differences).toContainText('signed-document.pdf');
 });
+
+for (const width of [1280, 390]) {
+	test(`ink lands under the pointer at ${width}px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/e-signature');
+
+		const pad = page.getByTestId('e-signature').first().getByTestId('e-signature-pad');
+		await expect(pad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });
+		const box = await pad.boundingBox();
+		expect(box).not.toBeNull();
+		if (!box) return;
+
+		// Known points, in CSS pixels from the pad's top-left corner.
+		const points = [
+			{ x: Math.round(box.width * 0.8), y: 60 },
+			{ x: Math.round(box.width * 0.3), y: 140 }
+		];
+		for (const point of points) {
+			await page.mouse.move(box.x + point.x - 12, box.y + point.y);
+			await page.mouse.down();
+			await page.mouse.move(box.x + point.x + 12, box.y + point.y, { steps: 6 });
+			await page.mouse.up();
+		}
+
+		const inked = await pad.evaluate((element, targets) => {
+			const canvas = element as HTMLCanvasElement;
+			const rect = canvas.getBoundingClientRect();
+			const context = canvas.getContext('2d');
+			if (!context) return targets.map(() => false);
+			return targets.map(({ x, y }) => {
+				const bx = Math.round((x * canvas.width) / rect.width);
+				const by = Math.round((y * canvas.height) / rect.height);
+				const { data } = context.getImageData(bx - 2, by - 2, 5, 5);
+				for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+				return false;
+			});
+		}, points);
+		expect(inked).toEqual([true, true]);
+	});
+}
+
+test('the signature pad stays white in dark mode, like upstream', async ({
+	page
+}) => {
+	await page.goto('/e-signature');
+	const darkPad = page.getByTestId('e-signature').nth(1).getByTestId('e-signature-pad');
+	await expect(darkPad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });
+	await expect(darkPad).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+});

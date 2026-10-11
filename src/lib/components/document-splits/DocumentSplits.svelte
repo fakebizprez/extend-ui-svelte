@@ -153,12 +153,14 @@
 		dropTargetPage = pageId;
 	}
 
+	// Split drags fall through to the group's drop handler, so only page drags stop here.
 	function onPageDrop(event: DragEvent, targetPageId: DocumentSplitPageId): void {
+		const dragged = draggedPageId(event);
+		if (!dragged) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const dragged = draggedPageId(event);
 		clearDragState();
-		if (!dragged || dragged === targetPageId) return;
+		if (dragged === targetPageId) return;
 
 		const sourceGroupId = findGroupId(splits, dragged);
 		const targetGroupId = findGroupId(splits, targetPageId);
@@ -190,11 +192,11 @@
 	}
 
 	function onDropzoneDrop(event: DragEvent, groupId: string): void {
+		const dragged = draggedPageId(event);
+		if (!dragged) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const dragged = draggedPageId(event);
 		clearDragState();
-		if (!dragged) return;
 
 		const sourceGroupId = findGroupId(splits, dragged);
 		if (!sourceGroupId) return;
@@ -361,9 +363,6 @@
 	class:with-frame-divider={withFrameDivider}
 >
 	<div class="splits-header">
-		<span class="splits-summary" aria-live="polite">
-			{splits.length} {splits.length === 1 ? 'split' : 'splits'}
-		</span>
 		<button
 			type="button"
 			class="add-split"
@@ -570,23 +569,27 @@
 		--splits-accent: #3f3f46;
 	}
 
+	/* Like upstream: the divider sits on top when stacked, on the left from md up. */
 	.document-splits.with-frame-divider {
-		border-left: 1px solid var(--splits-border);
+		border-top: 1px solid var(--splits-border);
+	}
+
+	@media (min-width: 768px) {
+		.document-splits.with-frame-divider {
+			border-top: 0;
+			border-left: 1px solid var(--splits-border);
+		}
 	}
 
 	.splits-header {
 		display: flex;
+		min-height: 3rem;
 		align-items: center;
-		justify-content: space-between;
+		justify-content: flex-end;
 		gap: 0.75rem;
 		border-bottom: 1px solid var(--splits-border);
 		background: var(--splits-bg);
 		padding: 0.5rem 0.75rem;
-	}
-
-	.splits-summary {
-		font-size: 0.75rem;
-		color: var(--splits-subtle);
 	}
 
 	.add-split {

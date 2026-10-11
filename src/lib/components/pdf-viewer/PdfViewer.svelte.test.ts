@@ -11,7 +11,8 @@ type Size = { width: number; height: number };
 const mockState = vi.hoisted(() => ({
 	pageCount: 3,
 	// Page sizes reported by the engine; null leaves getPageSizes off the mock.
-	sizes: null as Size[] | null
+	sizes: null as Size[] | null,
+	loads: [] as unknown[]
 }));
 
 vi.mock('#lib/engines/pdf/index.js', () => ({
@@ -20,7 +21,8 @@ vi.mock('#lib/engines/pdf/index.js', () => ({
 		const engine = {
 			pageCount: 0,
 			currentPage: 0,
-			load: async () => {
+			load: async (source: unknown) => {
+				mockState.loads.push(source);
 				engine.pageCount = mockState.pageCount;
 				engine.currentPage = mockState.pageCount > 0 ? 1 : 0;
 				for (const listener of listeners) listener(engine.currentPage);
@@ -55,6 +57,7 @@ const SRC = 'https://example.com/files/bank.pdf';
 beforeEach(() => {
 	mockState.pageCount = 3;
 	mockState.sizes = null;
+	mockState.loads = [];
 });
 
 afterEach(() => {
@@ -141,7 +144,9 @@ describe('PdfViewer', () => {
 	it('changes the zoom label through the zoom controls', async () => {
 		render(PdfViewer, { src: SRC });
 
-		expect(await screen.findByTestId('pdf-zoom-label')).toHaveTextContent('100%');
+		// Zoom resets to defaultZoom when the document loads, so wait for it first.
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		expect(screen.getByTestId('pdf-zoom-label')).toHaveTextContent('100%');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
 		expect(screen.getByTestId('pdf-zoom-label')).toHaveTextContent('125%');
@@ -390,6 +395,35 @@ describe('PdfViewer', () => {
 		expect(onPdfUpload).toHaveBeenCalledTimes(1);
 		expect(onPdfUpload).toHaveBeenCalledWith(file);
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+	});
+
+	it('lets a new src replace an uploaded file, like upstream', async () => {
+		Object.defineProperty(URL, 'createObjectURL', {
+			value: vi.fn(() => 'blob:mock-upload'),
+			writable: true
+		});
+		Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true });
+		const { rerender } = render(PdfViewer, { src: SRC });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+
+		const file = new File(['fake-pdf'], 'upload.pdf', { type: 'application/pdf' });
+		await fireEvent.change(screen.getByLabelText('Upload PDF'), { target: { files: [file] } });
+		await vi.waitFor(() => expect(mockState.loads.at(-1)).toBe('blob:mock-upload'));
+
+		await rerender({ src: 'https://example.com/files/next.pdf' });
+		await vi.waitFor(() => expect(mockState.loads.at(-1)).toBe('https://example.com/files/next.pdf'));
+		expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-upload');
+	});
+
+	it('resets zoom to defaultZoom when a new document loads, like upstream', async () => {
+		const { rerender } = render(PdfViewer, { src: SRC, defaultZoom: 1 });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(screen.getByTestId('pdf-zoom-label')).toHaveTextContent('125%');
+
+		await rerender({ src: 'https://example.com/files/next.pdf', defaultZoom: 1 });
+		await vi.waitFor(() => expect(mockState.loads).toHaveLength(2));
+		await vi.waitFor(() => expect(screen.getByTestId('pdf-zoom-label')).toHaveTextContent('100%'));
 	});
 
 	it('virtualizes many pages instead of rendering them all', async () => {

@@ -88,3 +88,23 @@ test('the drop area has no dark-mode control and file rows use FileThumbnail', a
 	await expect(root).toHaveClass(/\bdark\b/);
 	await expect(thumbnails.first()).toHaveClass(/\bdark\b/);
 });
+
+test('idle drop area shows upstream dashed border; the beam appears only while dragging', async ({
+	page
+}) => {
+	await page.goto('/file-upload');
+	await page.waitForLoadState('networkidle');
+
+	const dropzone = page.locator('.dropzone').first();
+	const beam = page.locator('.beam').first();
+	// Upstream idle: border border-dashed border-foreground/20, no beam.
+	await expect(dropzone).toHaveCSS('border-top-style', 'dashed');
+	const idleBorder = await dropzone.evaluate((node) => getComputedStyle(node).borderTopColor);
+	expect(idleBorder).not.toBe('rgba(0, 0, 0, 0)');
+	await expect(beam).toHaveCSS('background-image', 'none');
+
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await dropzone.dispatchEvent('dragenter', { dataTransfer });
+	await expect(beam).toHaveCSS('background-image', /conic-gradient/);
+	await expect(dropzone).toHaveCSS('border-top-style', 'dashed');
+});

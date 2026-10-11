@@ -33,7 +33,12 @@ export interface PdfEngine {
 	readonly pageCount: number;
 	/** Current page (1-based), or 0 when no document is loaded. */
 	readonly currentPage: number;
-	/** Load a document from a URL or raw bytes. Resolves with the page count. */
+	/**
+	 * Load a document from a URL or raw bytes. Resolves with the page count.
+	 * Last call wins: a load that a newer load() or destroy() supersedes
+	 * destroys its own loading task, leaves the engine state alone, and rejects
+	 * with an error for which isPdfLoadSuperseded() is true.
+	 */
 	load(source: PdfSource): Promise<number>;
 	/**
 	 * Size of every page at scale 1, in CSS pixels, with each page's own
@@ -51,6 +56,20 @@ export interface PdfEngine {
 }
 
 type PdfjsModule = typeof import('pdfjs-dist');
+
+/** Error name of a load() that a newer load() or destroy() superseded. */
+const SUPERSEDED = 'AbortError';
+
+function supersededError(): Error {
+	const error = new Error('PdfEngine.load: superseded by a newer load or destroy.');
+	error.name = SUPERSEDED;
+	return error;
+}
+
+/** True when a load() rejected only because a newer load() or destroy() replaced it. */
+export function isPdfLoadSuperseded(error: unknown): boolean {
+	return error instanceof Error && error.name === SUPERSEDED;
+}
 
 let workerSrcOverride: string | null = null;
 let pdfjsPromise: Promise<PdfjsModule> | null = null;
@@ -111,6 +130,22 @@ export function createPdfEngine(): PdfEngine {
 	// render, while different canvases (several pages in view) render in parallel.
 	const renderTasks = new Map<HTMLCanvasElement, { cancel(): void }>();
 	const listeners = new Set<PdfPageChangeHandler>();
+	let loadGeneration = 0;
+	let pendingTask: PDFDocumentLoadingTask | null = null;
+
+	/** Drop the loaded document and any load still in flight, destroying their tasks. */
+	function releaseDocument(): Promise<unknown> {
+		for (const task of renderTasks.values()) {
+			task.cancel();
+		}
+		renderTasks.clear();
+		const tasks = [loadingTask, pendingTask];
+		loadingTask = null;
+		pendingTask = null;
+		doc = null;
+		pageCount = 0;
+		return Promise.all(tasks.map((task) => task?.destroy()));
+	}
 
 	function notify(page: number): void {
 		for (const handler of listeners) {
@@ -136,17 +171,29 @@ export function createPdfEngine(): PdfEngine {
 
 		async load(source: PdfSource): Promise<number> {
 			const params = toDocumentSource(source);
+			// Last call wins: a newer load() or destroy() supersedes this one.
+			const generation = ++loadGeneration;
+			void releaseDocument();
 			const pdfjs = await loadPdfjs();
-			const previousTask = loadingTask;
-			loadingTask = null;
-			doc = null;
+			if (generation !== loadGeneration) throw supersededError();
 			const task = pdfjs.getDocument(params);
-			doc = await task.promise;
-			loadingTask = task;
-			if (previousTask) {
-				await previousTask.destroy();
+			pendingTask = task;
+			let loaded: PDFDocumentProxy;
+			try {
+				loaded = await task.promise;
+			} catch (failure) {
+				if (generation !== loadGeneration) throw supersededError();
+				throw failure;
+			} finally {
+				if (pendingTask === task) pendingTask = null;
 			}
-			pageCount = doc.numPages;
+			if (generation !== loadGeneration) {
+				void task.destroy();
+				throw supersededError();
+			}
+			loadingTask = task;
+			doc = loaded;
+			pageCount = loaded.numPages;
 			setPage(pageCount > 0 ? 1 : 0);
 			return pageCount;
 		},
@@ -223,18 +270,10 @@ export function createPdfEngine(): PdfEngine {
 		},
 
 		async destroy(): Promise<void> {
-			for (const task of renderTasks.values()) {
-				task.cancel();
-			}
-			renderTasks.clear();
-			if (loadingTask) {
-				const previousTask = loadingTask;
-				loadingTask = null;
-				doc = null;
-				await previousTask.destroy();
-			}
-			pageCount = 0;
+			loadGeneration += 1;
+			await releaseDocument();
 			currentPage = 0;
 		}
+
 	};
 }

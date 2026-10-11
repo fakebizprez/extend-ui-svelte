@@ -57,11 +57,61 @@ beforeEach(() => {
 });
 
 describe('DocxEditor', () => {
-	it('renders an empty state when no src is given', async () => {
+	it('renders the upstream empty state with an Upload DOCX button when no src is given', async () => {
 		render(DocxEditor, { ...DARK });
 
-		expect(await screen.findByText('Upload a Word document to edit')).toBeVisible();
+		expect(await screen.findByText('Upload a DOCX to edit')).toBeVisible();
 		expect(mockedRenderDocx).not.toHaveBeenCalled();
+		const input = screen.getByTestId('docx-editor-upload-input') as HTMLInputElement;
+		const click = vi.spyOn(input, 'click').mockImplementation(() => {});
+		await fireEvent.click(screen.getByRole('button', { name: 'Upload DOCX' }));
+		expect(click).toHaveBeenCalledTimes(1);
+	});
+
+	it('accepts .docx only in the upload input, like upstream', () => {
+		render(DocxEditor, { ...DARK });
+
+		expect(screen.getByTestId('docx-editor-upload-input')).toHaveAttribute(
+			'accept',
+			'.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+		);
+	});
+
+	it('a new src replaces an uploaded document, like upstream remounting on src', async () => {
+		mockedRenderDocx.mockImplementation(async (source, container) => {
+			const text = source instanceof File ? 'UPLOADED TEXT' : `TEXT OF ${String(source)}`;
+			container.innerHTML = `<div class="docx-wrapper"><section class="docx"><article><p>${text}</p></article></section></div>`;
+			return { container, showThumbnails: false };
+		});
+		const { rerender } = render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		const content = () => screen.getByTestId('docx-editor-content');
+		await vi.waitFor(() => expect(content()).toHaveTextContent('TEXT OF https://example.com/a.docx'));
+		const input = screen.getByTestId('docx-editor-upload-input');
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'up.docx')] } });
+		await vi.waitFor(() => expect(content()).toHaveTextContent('UPLOADED TEXT'));
+
+		await rerender({ ...DARK, src: 'https://example.com/b.docx' });
+
+		await vi.waitFor(() => expect(content()).toHaveTextContent('TEXT OF https://example.com/b.docx'));
+		expect(content()).not.toHaveTextContent('UPLOADED TEXT');
+	});
+
+	it('resets zoom when defaultZoomScale or src changes, like upstream', async () => {
+		const { rerender } = render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		const select = screen.getByRole('combobox', { name: 'Zoom level' }) as HTMLSelectElement;
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(select.value).toBe('110');
+
+		await rerender({ ...DARK, src: 'https://example.com/a.docx', defaultZoomScale: 150 });
+		expect(select.value).toBe('150');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(select.value).toBe('175');
+		await rerender({ ...DARK, src: 'https://example.com/b.docx', defaultZoomScale: 150 });
+		expect((screen.getByRole('combobox', { name: 'Zoom level' }) as HTMLSelectElement).value).toBe(
+			'150'
+		);
 	});
 
 	it('loads docx text through the docx engine', async () => {

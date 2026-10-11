@@ -11,6 +11,8 @@ const sigMock = vi.hoisted(() => ({ instances: [] as MockPad[] }));
 interface MockPad {
 	empty: boolean;
 	options: unknown;
+	data: unknown[];
+	restored: unknown[][];
 	emit(type: string): void;
 }
 
@@ -18,6 +20,8 @@ vi.mock('signature_pad', () => {
 	class MockSignaturePad {
 		empty = true;
 		options: unknown;
+		data: unknown[] = [];
+		restored: unknown[][] = [];
 		private listeners = new Map<string, Set<() => void>>();
 
 		constructor(
@@ -38,6 +42,15 @@ vi.mock('signature_pad', () => {
 
 		toDataURL(): string {
 			return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+		}
+
+		toData(): unknown[] {
+			return this.data;
+		}
+
+		fromData(data: unknown[]): void {
+			this.restored.push(data);
+			this.data = data;
 		}
 
 		on(): void {}
@@ -318,6 +331,66 @@ describe('ESignature', () => {
 			'from-class',
 			'from-class-name'
 		);
+	});
+
+	it('sizes the pad backing store to its displayed size times devicePixelRatio', async () => {
+		vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(318);
+		vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200);
+		vi.stubGlobal('devicePixelRatio', 2);
+		const scaleCalls: number[][] = [];
+		vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue({
+			setTransform: () => {},
+			scale: (x: number, y: number) => scaleCalls.push([x, y])
+		} as unknown as CanvasRenderingContext2D);
+		render(ESignature, { src: SRC });
+
+		const pad = (await screen.findByTestId('e-signature-pad')) as HTMLCanvasElement;
+		await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+		expect(pad.width).toBe(636);
+		expect(pad.height).toBe(400);
+		expect(scaleCalls.at(-1)).toEqual([2, 2]);
+	});
+
+	it('resizes the pad on layout changes and keeps the drawn signature', async () => {
+		let width = 478;
+		vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => width);
+		vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200);
+		vi.stubGlobal('devicePixelRatio', 1);
+		const observers: Array<() => void> = [];
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				constructor(callback: () => void) {
+					observers.push(callback);
+				}
+				observe(): void {}
+				disconnect(): void {}
+			}
+		);
+		render(ESignature, { src: SRC });
+
+		const pad = (await screen.findByTestId('e-signature-pad')) as HTMLCanvasElement;
+		await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+		expect(pad.width).toBe(478);
+		const instance = lastPad();
+		if (!instance) throw new Error('signature pad was not constructed');
+		const strokes = [{ points: [{ x: 10, y: 10 }] }];
+		instance.data = strokes;
+		simulateStroke();
+
+		width = 318;
+		for (const callback of observers) callback();
+
+		expect(pad.width).toBe(318);
+		expect(instance.restored.at(-1)).toEqual(strokes);
+	});
+
+	it('draws with the upstream black pen by default', async () => {
+		render(ESignature, { src: SRC, isDark: true });
+
+		const pad = await screen.findByTestId('e-signature-pad');
+		await waitFor(() => expect(pad).toHaveAttribute('data-pad-ready', 'true'));
+		expect(lastPad()?.options).toMatchObject({ penColor: '#000000' });
 	});
 
 	it('is exported under the upstream name ESignatureBlock', () => {

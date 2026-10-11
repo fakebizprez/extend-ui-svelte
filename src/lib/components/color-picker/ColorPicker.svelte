@@ -5,8 +5,10 @@
 	- `class` and `className` are both accepted and merged onto the root.
 	- `icon` is a Svelte snippet instead of a React component type.
 	- The format picker is a native `select` (no Select primitive ported yet).
-	- The popover is an inline disclosure panel (no Popover/floating port yet);
-	  it toggles from the trigger and closes on Escape.
+	- The popover renders inline below the trigger (no floating positioning or
+	  portal). It keeps upstream's Popover behavior: aria-expanded on the
+	  trigger, focus moves in on open, Escape / outside press / tabbing out
+	  close it, and focus returns to the trigger.
 	- Copy buttons, focus-reselect, and alpha scrub-dragging are omitted.
 	- The panel wraps its fields column under the plane when its container is
 	  narrower than the panel (upstream keeps one row and overflows).
@@ -255,7 +257,12 @@
 	}
 
 	const hsva = $derived({ ...picker.plane, a: picker.a });
-	const displayHsv = $derived(rgbToHsv(picker.rgb, picker.plane.h));
+	// Preserve the sRGB hue for achromatic colors, like upstream's `srgbHue`.
+	let srgbHue = $state(0);
+	const displayHsv = $derived(rgbToHsv(picker.rgb, srgbHue));
+	$effect.pre(() => {
+		srgbHue = displayHsv.h;
+	});
 	const hsl = $derived(hsvToHsl(displayHsv));
 	const rawOklch = $derived(rgbToOklch(picker.rgb, hsva.h));
 	const oklch = $derived(withHueContinuity(rawOklch, hsva.h, rawOklch.c / 0.33));
@@ -369,8 +376,45 @@
 		if (!disabled) open = !open;
 	}
 
-	function closeOnEscape(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
+	// Popover behavior, like upstream's Base UI Popover: focus moves to the first
+	// tabbable element on open; Escape, an outside press, or tabbing out closes
+	// it; focus returns to the trigger unless it already moved elsewhere.
+	const panelId = $props.id();
+	let triggerEl = $state<HTMLButtonElement | undefined>(undefined);
+	let popupEl = $state<HTMLDivElement | undefined>(undefined);
+	const TABBABLE =
+		'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+	$effect(() => {
+		const popup = popupEl;
+		if (!open || !popup) return;
+		popup.querySelector<HTMLElement>(TABBABLE)?.focus();
+		// Bubble phase, so a text field's Escape (which only reverts its draft) stops here.
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape' || event.defaultPrevented) return;
+			open = false;
+			triggerEl?.focus();
+		};
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (popup.contains(target) || triggerEl?.contains(target)) return;
+			open = false;
+			// After the press settles: return focus only if nothing else took it.
+			setTimeout(() => {
+				if (!document.activeElement || document.activeElement === document.body) triggerEl?.focus();
+			});
+		};
+		document.addEventListener('keydown', onKeyDown);
+		document.addEventListener('pointerdown', onPointerDown, true);
+		return () => {
+			document.removeEventListener('keydown', onKeyDown);
+			document.removeEventListener('pointerdown', onPointerDown, true);
+		};
+	});
+
+	function closeOnFocusOut(event: FocusEvent) {
+		const next = event.relatedTarget as Node | null;
+		if (next && !popupEl?.contains(next) && next !== triggerEl) open = false;
 	}
 
 	function handleFormatChange(event: Event) {
@@ -620,6 +664,11 @@
 				type="button"
 				aria-label={label}
 				disabled={disabled}
+				aria-expanded={open}
+				aria-haspopup="dialog"
+				aria-controls={open ? panelId : undefined}
+				data-popup-open={open || undefined}
+				bind:this={triggerEl}
 				data-color-picker-trigger=""
 				class={cn(
 					SWATCH_TRIGGER_BASE,
@@ -677,6 +726,11 @@
 					type="button"
 					aria-label={label}
 					disabled={disabled}
+					aria-expanded={open}
+					aria-haspopup="dialog"
+					aria-controls={open ? panelId : undefined}
+					data-popup-open={open || undefined}
+					bind:this={triggerEl}
 					class="relative ml-2 size-6 shrink-0 overflow-hidden rounded-[calc(var(--radius-md)-2px)]"
 					onclick={toggleOpen}
 				>
@@ -711,7 +765,14 @@
 			</div>
 		{/if}
 		{#if open}
-			<div role="dialog" aria-label="{label} panel" tabindex={-1} onkeydown={closeOnEscape}>
+			<div
+				bind:this={popupEl}
+				id={panelId}
+				role="dialog"
+				aria-label="{label} panel"
+				tabindex={-1}
+				onfocusout={closeOnFocusOut}
+			>
 				{@render panel()}
 			</div>
 		{/if}

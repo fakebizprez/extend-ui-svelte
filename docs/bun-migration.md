@@ -26,6 +26,6 @@ Baseline before the change: 44 unit test files, 489 tests, all passing.
 
 Revert the branch. `pnpm-lock.yaml` returns with it.
 
-## Known flake (not caused by this migration)
+## Fixed flake (not caused by this migration)
 
-The original pnpm commit exits 1 in about 4 of 6 unit runs: "EnvironmentTeardownError" while loading `pdfjs-dist/build/pdf.worker.mjs?url` after a test file finishes. All tests still pass. Bun runs behave the same.
+The original pnpm commit exited 1 in about 4 of 6 unit runs: "EnvironmentTeardownError" while loading `pdfjs-dist/build/pdf.worker.mjs?url` after a test file finished. Components import the PDF engine in `onMount`, and a test file could end before that import resolved. `vitest-setup-client.ts` now loads the engine module up front, so those imports resolve from the cache (0 errors in 8 client runs after the change, against 2 in 4 before).

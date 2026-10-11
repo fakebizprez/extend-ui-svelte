@@ -1,13 +1,16 @@
 // MIT License — Svelte 5 port of Extend UI xlsx-editor. Upstream: extend-hq/ui (MIT).
 // Unit tests for the local formula evaluator: run in the Vitest node project.
 import { describe, expect, it } from 'vitest';
+import { XlsxCellError } from '#lib/engines/xlsx/index.js';
 import {
 	columnIndexToLetter,
 	columnLetterToIndex,
+	createSheetEvaluator,
 	evaluateCell,
 	expandRange,
 	parseCellRef,
-	type CellGetter
+	type CellGetter,
+	type CellValue
 } from './formulas.js';
 
 function getterFromGrid(grid: (string | number | boolean | null)[][]): CellGetter {
@@ -127,10 +130,10 @@ describe('evaluateCell', () => {
 
 	it('returns Excel-style errors for bad formulas', () => {
 		const get = getterFromGrid(GRID);
-		expect(evaluateCell('=BOGUSFN(B2)', get)).toBe('#NAME?');
-		expect(evaluateCell('=SUM(', get)).toBe('#ERROR');
-		expect(evaluateCell('=1/0', get)).toBe('#DIV/0!');
-		expect(evaluateCell('=NOSUCHCELL', get)).toBe('#NAME?');
+		expect(String(evaluateCell('=BOGUSFN(B2)', get))).toBe('#NAME?');
+		expect(String(evaluateCell('=SUM(', get))).toBe('#NAME?');
+		expect(evaluateCell('=1/0', get)).toEqual(new XlsxCellError('#DIV/0!'));
+		expect(String(evaluateCell('=NOSUCHCELL', get))).toBe('#NAME?');
 	});
 
 	it('returns zero for references outside the grid', () => {
@@ -142,6 +145,132 @@ describe('evaluateCell', () => {
 	it('detects circular references instead of recursing forever', () => {
 		const grid: (string | number | boolean | null)[][] = [['=B1', '=A1']];
 		const get = getterFromGrid(grid);
-		expect(evaluateCell('=A1', get)).toBe('#CIRC!');
+		expect(String(evaluateCell('=A1', get))).toBe('#CIRC!');
+	});
+});
+
+/** A sheet from literal values plus formulas keyed `row:col` (text without `=`). */
+function sheet(
+	values: CellValue[][],
+	formulas: Record<string, string> = {},
+	edited: string[] = []
+) {
+	return createSheetEvaluator({
+		value: (row, col) => values[row]?.[col],
+		formula: (row, col) => formulas[`${row}:${col}`],
+		formulaKeys: () => Object.keys(formulas),
+		edited: new Set(edited)
+	});
+}
+
+describe('Excel range semantics', () => {
+	// A1=10, B1=TRUE, A2="5" (text), B2=20
+	const values: CellValue[][] = [
+		[10, true],
+		['5', 20]
+	];
+	const at = (formula: string) => sheet([...values, [null]], { '2:0': formula })(2, 0);
+
+	it('ignores booleans and numeric text inside ranges', () => {
+		expect(at('SUM(A1:B2)')).toBe(30);
+		expect(at('COUNT(A1:B2)')).toBe(2);
+		expect(at('AVERAGE(A1:B2)')).toBe(15);
+		expect(at('MIN(A1:B2)')).toBe(10);
+		expect(at('MAX(A1:B2)')).toBe(20);
+		expect(at('PRODUCT(A1:B2)')).toBe(200);
+	});
+
+	it('treats a single referenced cell like a range', () => {
+		expect(at('SUM(B1, A2)')).toBe(0);
+		expect(at('COUNT(B1, A2, A1)')).toBe(1);
+	});
+
+	it('counts booleans and numeric text typed as direct arguments', () => {
+		expect(at('SUM(1, TRUE, "3")')).toBe(5);
+		expect(at('COUNT(1, TRUE, "3", "x")')).toBe(3);
+		expect(at('SUM(B1+0, 1)')).toBe(2);
+		expect(at('SUM(1, "x")')).toEqual(new XlsxCellError('#VALUE!'));
+	});
+
+	it('returns Excel results when no numbers are found', () => {
+		expect(at('SUM(B1:B1)')).toBe(0);
+		expect(at('MIN(B1:B1)')).toBe(0);
+		expect(at('MAX(B1:B1)')).toBe(0);
+		expect(at('PRODUCT(B1:B1)')).toBe(0);
+		expect(at('COUNT(B1:B1)')).toBe(0);
+		expect(at('AVERAGE(B1:B1)')).toEqual(new XlsxCellError('#DIV/0!'));
+	});
+
+	it('propagates errors from ranges except in COUNT', () => {
+		const withError = sheet([[1, new XlsxCellError('#DIV/0!')], [null]], {
+			'1:0': 'SUM(A1:B1)',
+			'1:1': 'COUNT(A1:B1)'
+		});
+		expect(withError(1, 0)).toEqual(new XlsxCellError('#DIV/0!'));
+		expect(withError(1, 1)).toBe(1);
+	});
+
+	it('coerces booleans and numeric text in arithmetic', () => {
+		expect(at('A1+B1')).toBe(11);
+		expect(at('A2+1')).toBe(6);
+		expect(at('TRUE+TRUE')).toBe(2);
+	});
+
+	it('shows 0 for a formula that points at a blank cell', () => {
+		expect(at('C9')).toBe(0);
+	});
+});
+
+describe('sheet evaluator', () => {
+	it('keeps text that starts with = as text, in the cell and in references', () => {
+		const evaluate = sheet([['=abc', null]], { '0:1': 'A1' });
+		expect(evaluate(0, 0)).toBe('=abc');
+		expect(evaluate(0, 1)).toBe('=abc');
+	});
+
+	it("shows the file's saved value for an unedited formula", () => {
+		// The saved value wins even where local evaluation would differ.
+		const evaluate = sheet([[1, 2, 999]], { '0:2': 'SUM(A1:B1)' });
+		expect(evaluate(0, 2)).toBe(999);
+	});
+
+	it('recalculates when an input is edited, including through other formulas', () => {
+		const values: CellValue[][] = [[5, 6, 12, 99]];
+		const formulas = { '0:1': 'A1+1', '0:2': 'B1*2', '0:3': 'SUM(C1:C1)' };
+		expect(sheet(values, formulas)(0, 3)).toBe(99);
+		const edited = sheet(values, formulas, ['0:0']);
+		expect(edited(0, 1)).toBe(6);
+		expect(edited(0, 2)).toBe(12);
+		expect(edited(0, 3)).toBe(12);
+		const edited2 = sheet([[10, 6, 12, 99]], formulas, ['0:0']);
+		expect(edited2(0, 3)).toBe(22);
+	});
+
+	it('does not recalculate for edits outside a formula\'s inputs', () => {
+		const evaluate = sheet([[1, 2, 999, 7]], { '0:2': 'SUM(A1:B1)' }, ['0:3']);
+		expect(evaluate(0, 2)).toBe(999);
+	});
+
+	it('recalculates a formula that was itself re-entered', () => {
+		const evaluate = sheet([[1, 2, 999]], { '0:2': 'SUM(A1:B1)' }, ['0:2']);
+		expect(evaluate(0, 2)).toBe(3);
+	});
+
+	it('falls back to the saved value for formulas it cannot compute', () => {
+		const cross = { '0:1': 'SUM(Inventory!C2:C6)' };
+		expect(sheet([[1, 787]], cross)(0, 1)).toBe(787);
+		expect(sheet([[1, 787]], cross, ['0:1'])(0, 1)).toEqual(new XlsxCellError('#NAME?'));
+		expect(sheet([[1, null]], { '0:1': 'VLOOKUP(A1, A1:A1, 1)' })(0, 1)).toEqual(
+			new XlsxCellError('#NAME?')
+		);
+	});
+
+	it('keeps boolean and error results typed', () => {
+		const evaluate = sheet([[true, new XlsxCellError('#N/A')]], { '0:0': 'X', '0:1': 'Y' });
+		expect(evaluate(0, 0)).toBe(true);
+		expect(evaluate(0, 1)).toEqual(new XlsxCellError('#N/A'));
+		expect(sheet([[0, null]], { '0:1': '1/A1' }, ['0:1'])(0, 1)).toEqual(
+			new XlsxCellError('#DIV/0!')
+		);
 	});
 });

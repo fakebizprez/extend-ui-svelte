@@ -6,10 +6,11 @@
 	the formula bar, and export writes cells back at the same addresses.
 	Differences from upstream (keep in sync with the docs page,
 	src/routes/xlsx-editor/+page.svelte):
-	- Formulas (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT plus arithmetic over
-	  same-sheet A1 references) are evaluated locally instead of through
-	  @extend-ai/react-xlsx. Other formulas (cross-sheet, unsupported
-	  functions) show the file's saved value and do not recalculate.
+	- Formulas show the file's saved value until they or an input is edited,
+	  then recalculate locally (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT with Excel's
+	  argument rules, TRUE/FALSE, arithmetic over same-sheet A1 references)
+	  instead of through @extend-ai/react-xlsx. Other formulas (cross-sheet,
+	  other functions, comparisons) keep the saved value.
 	- Styling is limited to bold, horizontal alignment, and fill, kept as editor
 	  state; the community SheetJS writer drops styles on export.
 	- Added props: data, showToolbar, rowHeight, height, overscan, onCellChange,
@@ -43,8 +44,8 @@
 <script lang="ts">
 	import { VirtualList } from '#lib/virtual-list/index.js';
 	import type { DarkModeProps } from '#lib/dark-mode.js';
-	import type { WorkBook } from '#lib/engines/xlsx/index.js';
-	import { columnIndexToLetter, evaluateCell } from './formulas.js';
+	import { XlsxCellError, type WorkBook } from '#lib/engines/xlsx/index.js';
+	import { columnIndexToLetter, createSheetEvaluator } from './formulas.js';
 	import {
 		downloadXlsxBytes,
 		sheetsToXlsxBytes,
@@ -104,12 +105,13 @@
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
 	let grids = $state.raw<Record<string, CellValue[][]>>({});
 	let styles = $state.raw<Record<string, Record<string, XlsxCellStyle>>>({});
-	// Values saved in the file for each loaded formula cell, keyed by sheet then
-	// `row:col`. Shown (and exported) when the local evaluator cannot compute a
-	// formula that is still unchanged, e.g. cross-sheet references.
-	let savedResults = $state.raw<Record<string, Record<string, { formula: string; value: CellValue }>>>(
-		{}
-	);
+	// Grids hold cell values; for a formula cell, the result saved in the file.
+	// Formulas live here (text without `=`, keyed by sheet then `row:col`), so
+	// text that starts with `=` stays text.
+	let formulas = $state.raw<Record<string, Record<string, string>>>({});
+	// Cells edited since load, by sheet. Formulas keep the file's saved value
+	// until they or their inputs are edited.
+	let edited = $state.raw<Record<string, ReadonlySet<string>>>({});
 	let revision = $state(0);
 	let loadingSheet = $state(false);
 	let exporting = $state(false);
@@ -118,6 +120,7 @@
 	let selected = $state<{ row: number; col: number } | null>(null);
 	let editing = $state(false);
 	let draft = $state('');
+	let draftInitial = '';
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 130;
@@ -152,30 +155,46 @@
 	const exportFileName = $derived(
 		displayName.toLowerCase().endsWith('.xlsx') ? displayName : `${displayName}.xlsx`
 	);
-	const rowCountLabel = $derived(`${activeGrid.length} rows`);
+	const rowCountLabel = $derived(`${activeGrid.length} ${activeGrid.length === 1 ? 'row' : 'rows'}`);
 
 	function rawAt(row: number, col: number): CellValue {
 		return activeGrid[row]?.[col] ?? null;
 	}
 
-	function isFormulaError(value: CellValue): boolean {
-		return typeof value === 'string' && value.startsWith('#');
+	function evaluatorFor(sheet: string) {
+		const grid = grids[sheet] ?? [];
+		const sheetFormulas = formulas[sheet] ?? {};
+		return createSheetEvaluator({
+			value: (row, col) => grid[row]?.[col],
+			formula: (row, col) => sheetFormulas[`${row}:${col}`],
+			formulaKeys: () => Object.keys(sheetFormulas),
+			edited: edited[sheet]
+		});
 	}
 
-	/** Saved file value for an unchanged formula cell, when local evaluation fails. */
-	function savedResultFor(sheet: string, row: number, col: number, evaluated: CellValue) {
-		const saved = savedResults[sheet]?.[styleKey(row, col)];
-		const raw = (grids[sheet] ?? [])[row]?.[col];
-		return saved && saved.formula === raw && isFormulaError(evaluated) ? saved : undefined;
+	// ponytail: cross-sheet and unsupported formulas keep the file's saved value
+	// and do not recalculate; a full formula engine would be needed for that.
+	const activeEvaluator = $derived.by(() => {
+		void revision;
+		return evaluatorFor(activeSheetName);
+	});
+
+	/** A value as spreadsheets print it: TRUE/FALSE, error codes, blanks empty. */
+	function valueText(value: CellValue): string {
+		if (value === null) return '';
+		if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+		return String(value);
 	}
 
 	function displayAt(row: number, col: number): string {
-		let evaluated = evaluateCell(rawAt(row, col), (r, c) => activeGrid[r]?.[c]);
-		// ponytail: cross-sheet and unsupported functions show the saved value and
-		// do not recalculate; a full formula engine would be needed for that.
-		const saved = savedResultFor(activeSheetName, row, col, evaluated);
-		if (saved) evaluated = saved.value;
-		return evaluated === null || evaluated === undefined ? '' : String(evaluated);
+		return valueText(activeEvaluator(row, col));
+	}
+
+	/** What the formula bar and cell editor show: `=formula`, or the value. */
+	function cellText(row: number, col: number): string {
+		void revision;
+		const formula = formulas[activeSheetName]?.[styleKey(row, col)];
+		return formula !== undefined ? `=${formula}` : valueText(rawAt(row, col));
 	}
 
 	function styleKey(row: number, col: number): string {
@@ -199,14 +218,10 @@
 	const selectedAddress = $derived(
 		selected ? `${columnIndexToLetter(selected.col)}${selected.row + 1}` : '—'
 	);
-	const selectedRawText = $derived(selected ? rawToText(rawAt(selected.row, selected.col)) : '');
+	const selectedRawText = $derived(selected ? cellText(selected.row, selected.col) : '');
 	const selectedStyle = $derived(
 		selected ? (styleAt(selected.row, selected.col) ?? {}) : ({} as XlsxCellStyle)
 	);
-
-	function rawToText(value: CellValue): string {
-		return value === null || value === undefined ? '' : String(value);
-	}
 
 	function touch(): void {
 		revision += 1;
@@ -214,7 +229,12 @@
 
 	function normalizeCell(value: unknown): CellValue {
 		if (value === null || value === undefined) return null;
-		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+		if (
+			typeof value === 'string' ||
+			typeof value === 'number' ||
+			typeof value === 'boolean' ||
+			value instanceof XlsxCellError
+		) {
 			return value;
 		}
 		return String(value);
@@ -243,6 +263,32 @@
 		touch();
 	}
 
+	/**
+	 * Commits typed text to a cell. Unchanged text is a no-op, so opening and
+	 * closing the editor never turns `=text` into a formula. Like upstream,
+	 * text starting with `=` becomes a formula; anything else is a value.
+	 */
+	function commitText(row: number, col: number, text: string, initial: string): void {
+		if (text === initial) return;
+		const sheet = activeSheetName;
+		const key = styleKey(row, col);
+		const sheetFormulas = { ...(formulas[sheet] ?? {}) };
+		let value: CellValue;
+		if (text.trim().startsWith('=')) {
+			value = text.trim();
+			sheetFormulas[key] = value.slice(1);
+			setRaw(row, col, null);
+		} else {
+			value = coerceDraft(text);
+			delete sheetFormulas[key];
+			setRaw(row, col, value);
+		}
+		formulas = { ...formulas, [sheet]: sheetFormulas };
+		edited = { ...edited, [sheet]: new Set(edited[sheet]).add(key) };
+		touch();
+		onCellChange?.({ sheet, row, col, value });
+	}
+
 	function selectCell(row: number, col: number): void {
 		if (editing) commitEdit();
 		selected = { row, col };
@@ -250,7 +296,8 @@
 
 	function startEdit(): void {
 		if (!selected || status !== 'ready') return;
-		draft = rawToText(rawAt(selected.row, selected.col));
+		draft = cellText(selected.row, selected.col);
+		draftInitial = draft;
 		editing = true;
 	}
 
@@ -260,13 +307,8 @@
 			return;
 		}
 		const { row, col } = selected;
-		const previous = rawAt(row, col);
-		const next = coerceDraft(draft);
 		editing = false;
-		if (next !== previous) {
-			setRaw(row, col, next);
-			onCellChange?.({ sheet: activeSheetName, row, col, value: next });
-		}
+		commitText(row, col, draft, draftInitial);
 	}
 
 	function cancelEdit(): void {
@@ -281,13 +323,7 @@
 
 	function commitFormulaBar(value: string): void {
 		if (!selected) return;
-		const { row, col } = selected;
-		const previous = rawAt(row, col);
-		const next = coerceDraft(value);
-		if (next !== previous) {
-			setRaw(row, col, next);
-			onCellChange?.({ sheet: activeSheetName, row, col, value: next });
-		}
+		commitText(selected.row, selected.col, value, cellText(selected.row, selected.col));
 	}
 
 	function updateSelectedStyle(mutator: (style: XlsxCellStyle) => XlsxCellStyle): void {
@@ -331,13 +367,15 @@
 		exportError = '';
 		try {
 			const sheets: EditableSheet[] = sheetNames.map((name) => {
-				const grid = grids[name] ?? [[]];
-				const results: Record<string, CellValue> = {};
-				for (const [key, saved] of Object.entries(savedResults[name] ?? {})) {
+				// Formula cells are saved with the value the grid shows.
+				const evaluate = evaluatorFor(name);
+				const sheetFormulas = formulas[name] ?? {};
+				const grid = (grids[name] ?? []).map((row) => [...row]);
+				for (const key of Object.keys(sheetFormulas)) {
 					const [row, col] = key.split(':').map(Number) as [number, number];
-					if (grid[row]?.[col] === saved.formula) results[key] = saved.value;
+					(grid[row] ??= [])[col] = evaluate(row, col);
 				}
-				return { name, grid, savedResults: results };
+				return { name, grid, formulas: sheetFormulas };
 			});
 			const bytes = await sheetsToXlsxBytes(sheets);
 			downloadXlsxBytes(bytes, exportFileName);
@@ -353,16 +391,19 @@
 	// (with SheetJS inside it) is loaded through a dynamic import.
 	$effect(() => {
 		const sourceKey: unknown = data ?? src ?? null;
+		// A new source is a new workbook: drop every per-workbook edit, style,
+		// and selection, as upstream does by remounting with key={src}.
+		sheetNames = [];
+		activeSheetIndex = 0;
+		grids = {};
+		formulas = {};
+		edited = {};
+		styles = {};
+		selected = null;
+		editing = false;
+		errorMessage = '';
 		if (sourceKey === null || sourceKey === undefined) {
 			workbookCache = null;
-			sheetNames = [];
-			activeSheetIndex = 0;
-			grids = {};
-			styles = {};
-			savedResults = {};
-			selected = null;
-			editing = false;
-			errorMessage = '';
 			status = 'empty';
 			return;
 		}
@@ -415,23 +456,16 @@
 			try {
 				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
 				const next: Record<string, CellValue[][]> = {};
-				const nextSaved: typeof savedResults = {};
+				const nextFormulas: typeof formulas = {};
 				for (const name of names) {
 					// A1-anchored with blank rows kept, so addresses match the file.
-					const { values, formulas } = await engine.sheetToGrid(cached.workbook, name);
-					const grid = values.map((row) => row.map(normalizeCell));
-					const saved: Record<string, { formula: string; value: CellValue }> = {};
-					for (const [key, formula] of Object.entries(formulas)) {
-						const [row, col] = key.split(':').map(Number) as [number, number];
-						const gridRow = grid[row] as CellValue[];
-						saved[key] = { formula: `=${formula}`, value: gridRow[col] ?? null };
-						gridRow[col] = `=${formula}`;
-					}
-					next[name] = grid;
-					nextSaved[name] = saved;
+					// Only real formula cells (cell.f) become formulas.
+					const sheet = await engine.sheetToGrid(cached.workbook, name);
+					next[name] = sheet.values.map((row) => row.map(normalizeCell));
+					nextFormulas[name] = sheet.formulas;
 				}
 				if (cancelled) return;
-				savedResults = nextSaved;
+				formulas = nextFormulas;
 				grids = next;
 				touch();
 			} catch (failure) {

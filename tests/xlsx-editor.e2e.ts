@@ -188,3 +188,64 @@ test('xlsx-editor export keeps cell addresses, blank rows, and formulas', async 
 	const summary = workbook.Sheets['Summary'] as Record<string, { v?: unknown; f?: string }>;
 	expect(summary['B3']).toMatchObject({ f: 'SUM(Inventory!C2:C6)', v: 787 });
 });
+
+test('xlsx-editor keeps cell types: =text stays text, saved results until an input changes', async ({
+	page
+}) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	await expect(editor.getByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
+	await editor.getByRole('tab', { name: 'Checks' }).click();
+
+	const row = editor.locator('[data-row-index="0"] [role="gridcell"]');
+	await expect(row).toHaveText(['=abc', '10', 'TRUE', '5', '10', '999', 'TRUE', '#DIV/0!', '#N/A']);
+	await row.nth(0).click();
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('=abc');
+	await row.nth(4).click();
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('=SUM(B1:D1)');
+
+	// Editing B1 recalculates its dependents with Excel's rules.
+	await row.nth(1).dblclick();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('20');
+	await page.keyboard.press('Enter');
+	await expect(row.nth(4)).toHaveText('20');
+	await expect(row.nth(5)).toHaveText('40');
+
+	const downloadPromise = page.waitForEvent('download');
+	await editor.getByTestId('export-button').click();
+	const download = await downloadPromise;
+	const workbook = read(readFileSync((await download.path()) as string), { type: 'buffer' });
+	const checks = workbook.Sheets['Checks'] as Record<string, { t?: string; v?: unknown; f?: string; w?: string }>;
+	expect(checks['A1']).toMatchObject({ t: 's', v: '=abc' });
+	expect(checks['A1']?.f).toBeUndefined();
+	expect(checks['C1']).toMatchObject({ t: 'b', v: true });
+	expect(checks['E1']).toMatchObject({ t: 'n', v: 20, f: 'SUM(B1:D1)' });
+	expect(checks['F1']).toMatchObject({ t: 'n', v: 40, f: 'B1*2' });
+	expect(checks['G1']).toMatchObject({ t: 'b', v: true, f: '1=1' });
+	expect(checks['H1']).toMatchObject({ t: 'e', w: '#DIV/0!', f: '1/0' });
+	expect(checks['I1']).toMatchObject({ t: 'e', w: '#N/A' });
+});
+
+test('xlsx-editor drops styles and edits when the parent loads another file', async ({ page }) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	const cell = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
+	await expect(cell).toBeVisible();
+
+	await cell.click();
+	await editor.getByRole('button', { name: 'Bold' }).click();
+	await expect(cell).toHaveCSS('font-weight', '700');
+	await editor.getByRole('gridcell', { name: 'Reno' }).first().dblclick();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('Elko');
+	await page.keyboard.press('Enter');
+	await expect(editor.getByRole('gridcell', { name: 'Elko' })).toBeVisible();
+
+	await page.getByTestId('reload-workbook').click();
+	const reloaded = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
+	await expect(reloaded).toBeVisible();
+	await expect(reloaded).toHaveCSS('font-weight', '400');
+	await expect(editor.getByRole('gridcell', { name: 'Elko' })).toHaveCount(0);
+	await expect(editor.getByTestId('active-cell-address')).toHaveText('—');
+});

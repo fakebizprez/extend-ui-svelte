@@ -8,6 +8,9 @@ Framework-free wrapper around PDF.js (`pdfjs-dist`) for phase 5 of
 
 - `createPdfEngine()` returns a `PdfEngine`:
   - `load(source)` — load from a URL string, `URL`, `ArrayBuffer`, or `Uint8Array`; resolves with the page count.
+    Last call wins: a load superseded by a newer `load()` or `destroy()` destroys its own task,
+    leaves the engine unchanged, and rejects with an error for which `isPdfLoadSuperseded(error)` is true.
+  - `getPageSizes()` — every page's size at scale 1, including the page's own rotation.
   - `pageCount` / `currentPage` — numbers (0 when unloaded).
   - `renderPage(pageNumber, canvas, { scale, rotation })` — render a 1-based page to canvas; resolves with the page size.
   - `setCurrentPage(page)` — clamped navigation; fires page-change listeners.

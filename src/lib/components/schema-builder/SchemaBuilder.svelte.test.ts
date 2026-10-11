@@ -343,6 +343,73 @@ describe('SchemaBuilder', () => {
 	});
 });
 
+describe('SchemaBuilder round-2 fixes', () => {
+	it('emits plain, cloneable schemas from uncontrolled mode', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, { onSchemaChange });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const nestedKey = within(getFieldRows()[2]).getAllByLabelText('Field key')[1];
+		await fireEvent.input(nestedKey, { target: { value: 'owner_name' } });
+
+		for (const [emitted] of onSchemaChange.mock.calls) {
+			expect(() => structuredClone(emitted)).not.toThrow();
+		}
+		const last = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
+		expect(last.properties[2].properties?.[0].key).toBe('owner_name');
+	});
+
+	it('controlled mode renders only what the parent passes, like upstream', async () => {
+		const onSchemaChange = vi.fn();
+		const schema: SchemaBuilderSchema = {
+			properties: [{ id: 'x', key: 'controlled', type: 'boolean', description: '' }]
+		};
+		const { rerender } = render(SchemaBuilder, { schema, onSchemaChange });
+
+		// The parent ignores the change: nothing new renders.
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		expect(onSchemaChange).toHaveBeenCalledTimes(1);
+		expect(getFieldRows()).toHaveLength(1);
+		await fireEvent.input(within(getFieldRows()[0]).getByLabelText('Field key'), {
+			target: { value: 'rejected' }
+		});
+		expect(screen.getByTestId('schema-builder-output')).toHaveTextContent('"controlled"');
+		expect(screen.getByTestId('schema-builder-output')).not.toHaveTextContent('"rejected"');
+
+		// The parent accepts the change: it renders.
+		await rerender({ schema: onSchemaChange.mock.calls[0][0] as SchemaBuilderSchema });
+		expect(getFieldRows()).toHaveLength(2);
+	});
+
+	it('serializes Required on nested object fields and array item fields', async () => {
+		const onSerializedSchemaChange = vi.fn();
+		render(SchemaBuilder, { onSerializedSchemaChange });
+
+		const holder = getFieldRows()[2];
+		await fireEvent.click(within(holder).getAllByLabelText('Required')[1]);
+		const transactions = getFieldRows()[3];
+		await fireEvent.click(within(transactions).getAllByLabelText('Required')[1]);
+
+		const emitted = onSerializedSchemaChange.mock.calls.at(-1)![0] as SerializedSchema;
+		expect(emitted.required).toBeUndefined();
+		expect(emitted.properties.account_holder.required).toEqual(['name']);
+		expect(emitted.properties.transactions.items?.required).toEqual(['date']);
+	});
+
+	it('adds properties inside array-of-object items, like upstream', async () => {
+		const onSchemaChange = vi.fn();
+		render(SchemaBuilder, { onSchemaChange });
+
+		const editor = within(getFieldRows()[3]).getByTestId('schema-builder-array-editor');
+		expect(within(editor).getAllByTestId('schema-builder-nested-field')).toHaveLength(3);
+		await fireEvent.click(within(editor).getByRole('button', { name: 'Add nested field' }));
+
+		expect(within(editor).getAllByTestId('schema-builder-nested-field')).toHaveLength(4);
+		const last = onSchemaChange.mock.calls.at(-1)![0] as SchemaBuilderSchema;
+		expect(last.properties[3].items?.properties).toHaveLength(4);
+	});
+});
+
 describe('serializeSchema', () => {
 	it('serializes nested objects, arrays, and enum descriptions', () => {
 		expect(
@@ -391,6 +458,50 @@ describe('serializeSchema', () => {
 				}
 			},
 			required: ['address']
+		});
+	});
+
+	it('serializes required at every object level', () => {
+		expect(
+			serializeSchema({
+				properties: [
+					{
+						id: 'o',
+						key: 'address',
+						type: 'object',
+						description: '',
+						properties: [
+							{ id: 'c', key: 'city', type: 'string', description: '', required: true },
+							{ id: 'z', key: 'zip', type: 'string', description: '' }
+						]
+					},
+					{
+						id: 'arr',
+						key: 'rows',
+						type: 'array',
+						description: '',
+						items: {
+							type: 'object',
+							properties: [
+								{ id: 'd', key: 'date', type: 'string', description: '', required: true }
+							]
+						}
+					}
+				]
+			})
+		).toEqual({
+			type: 'object',
+			properties: {
+				address: {
+					type: 'object',
+					properties: { city: { type: 'string' }, zip: { type: 'string' } },
+					required: ['city']
+				},
+				rows: {
+					type: 'array',
+					items: { type: 'object', properties: { date: { type: 'string' } }, required: ['date'] }
+				}
+			}
 		});
 	});
 

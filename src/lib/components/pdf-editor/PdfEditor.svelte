@@ -263,6 +263,8 @@
 			loaded = source;
 			pageSizes = sizes;
 			numPages = count;
+			// Each new document starts at defaultZoom, like upstream.
+			zoomLevel = defaultZoom;
 			editState = createEditState(count);
 			selectedIndex = 0;
 			status = 'ready';

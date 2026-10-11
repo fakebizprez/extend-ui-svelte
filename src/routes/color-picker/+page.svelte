@@ -77,9 +77,14 @@
 		</li>
 		<li><code>icon</code> is a Svelte snippet instead of a React component type.</li>
 		<li>
-			The format picker is a native <code>select</code>, and the popover is an inline panel that
-			opens from the trigger and closes on Escape (no Select, Popover, or Tooltip primitives are
+			The format picker is a native <code>select</code> (no Select or Tooltip primitives are
 			ported).
+		</li>
+		<li>
+			The popover opens inline below the trigger instead of floating in a portal. It behaves
+			like upstream's Popover otherwise: the trigger reports <code>aria-expanded</code>, focus
+			moves into the panel on open, Escape, a click outside, or tabbing out closes it, and focus
+			returns to the trigger.
 		</li>
 		<li>Copy buttons, focus-reselect, and opacity scrub-dragging are not ported.</li>
 		<li>

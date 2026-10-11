@@ -53,6 +53,53 @@ function lanesBytes(): Uint8Array {
 	return new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 }
 
+/**
+ * One row of tricky cells, as Excel saves them:
+ * A1 text "=abc" · B1 10 · C1 TRUE · D1 text "5" ·
+ * E1 =SUM(B1:D1) saved 10 · F1 =B1*2 saved 999 (stale, manual calc) ·
+ * G1 =1=1 saved TRUE · H1 =1/0 saved #DIV/0! · I1 literal #N/A
+ */
+function mixedBytes(): Uint8Array {
+	const workbook = utils.book_new();
+	utils.book_append_sheet(
+		workbook,
+		{
+			'!ref': 'A1:I1',
+			A1: { t: 's', v: '=abc' },
+			B1: { t: 'n', v: 10 },
+			C1: { t: 'b', v: true },
+			D1: { t: 's', v: '5' },
+			E1: { t: 'n', v: 10, f: 'SUM(B1:D1)' },
+			F1: { t: 'n', v: 999, f: 'B1*2' },
+			G1: { t: 'b', v: true, f: '1=1' },
+			H1: { t: 'e', v: 7, f: '1/0' },
+			I1: { t: 'e', v: 0x2a }
+		},
+		'Mixed'
+	);
+	return new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+}
+
+function rowTexts(container: HTMLElement, row = 0): string[] {
+	return [...container.querySelectorAll(`[data-row-index="${row}"] [role="gridcell"]`)].map(
+		(cell) => cell.textContent?.trim() ?? ''
+	);
+}
+
+/** Edits the cell with that text, or the cell at [row, col]. */
+async function editCell(target: string | [number, number], value: string): Promise<void> {
+	const cell =
+		typeof target === 'string'
+			? screen.getByRole('gridcell', { name: target })
+			: (document.querySelector(
+					`[data-testid="editor-cell"][data-row="${target[0]}"][data-col="${target[1]}"]`
+				) as HTMLElement);
+	await fireEvent.dblClick(cell);
+	const input = await screen.findByTestId('cell-input');
+	await fireEvent.input(input, { target: { value } });
+	await fireEvent.keyDown(input, { key: 'Enter' });
+}
+
 async function exportedWorkbook(onExport: ReturnType<typeof vi.fn>) {
 	await fireEvent.click(screen.getByTestId('export-button'));
 	await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1));
@@ -257,6 +304,97 @@ describe('XlsxEditor', () => {
 		expect(lanes['D6']).toMatchObject({ f: 'SUM(D3:D5)', v: 3300 });
 		const totals = workbook.Sheets['Totals'] as Record<string, { v?: unknown; f?: string }>;
 		expect(totals['B2']).toMatchObject({ f: 'SUM(Inventory!C2:C6)', v: 787 });
+	});
+
+	it('keeps a text cell that starts with = as text on load and export', async () => {
+		const onExport = vi.fn();
+		const onCellChange = vi.fn();
+		render(XlsxEditor, { data: mixedBytes(), onExport, onCellChange });
+		const text = await screen.findByRole('gridcell', { name: '=abc' });
+
+		await fireEvent.click(text);
+		expect(screen.getByTestId('formula-bar')).toHaveValue('=abc');
+		// Opening and committing the editor unchanged leaves it as text.
+		await fireEvent.dblClick(text);
+		await fireEvent.keyDown(await screen.findByTestId('cell-input'), { key: 'Enter' });
+		expect(onCellChange).not.toHaveBeenCalled();
+		expect(screen.getByRole('gridcell', { name: '=abc' })).toBeVisible();
+
+		const sheet = (await exportedWorkbook(onExport)).Sheets['Mixed'] as Record<
+			string,
+			{ t?: string; v?: unknown; f?: string }
+		>;
+		expect(sheet['A1']).toMatchObject({ t: 's', v: '=abc' });
+		expect(sheet['A1']?.f).toBeUndefined();
+	});
+
+	it('turns typed text starting with = into a formula, like upstream', async () => {
+		render(XlsxEditor, { data: mixedBytes() });
+		await screen.findByRole('gridcell', { name: '=abc' });
+
+		await editCell('=abc', '=B1*3');
+		expect(await screen.findByRole('gridcell', { name: '30' })).toBeVisible();
+		await fireEvent.click(screen.getByRole('gridcell', { name: '30' }));
+		expect(screen.getByTestId('formula-bar')).toHaveValue('=B1*3');
+	});
+
+	it("shows the file's saved formula values until an input is edited", async () => {
+		const { container } = render(XlsxEditor, { data: mixedBytes() });
+		await screen.findByRole('gridcell', { name: '=abc' });
+
+		// SUM ignores TRUE and the text "5" (Excel gives 10), and the stale
+		// saved 999 is shown as saved.
+		expect(rowTexts(container).slice(4, 6)).toEqual(['10', '999']);
+
+		await editCell([0, 1], '20');
+		expect(rowTexts(container).slice(4, 6)).toEqual(['20', '40']);
+	});
+
+	it('shows boolean and error results as Excel does', async () => {
+		const { container } = render(XlsxEditor, { data: mixedBytes() });
+		await screen.findByRole('gridcell', { name: '=abc' });
+
+		expect(rowTexts(container).slice(2)).toEqual(['TRUE', '5', '10', '999', 'TRUE', '#DIV/0!', '#N/A']);
+	});
+
+	it('exports formula results and literals with their types', async () => {
+		const onExport = vi.fn();
+		render(XlsxEditor, { data: mixedBytes(), onExport });
+		await screen.findByRole('gridcell', { name: '=abc' });
+
+		const sheet = (await exportedWorkbook(onExport)).Sheets['Mixed'] as Record<
+			string,
+			{ t?: string; v?: unknown; f?: string; w?: string }
+		>;
+		expect(sheet['C1']).toMatchObject({ t: 'b', v: true });
+		expect(sheet['D1']).toMatchObject({ t: 's', v: '5' });
+		expect(sheet['E1']).toMatchObject({ t: 'n', v: 10, f: 'SUM(B1:D1)' });
+		expect(sheet['F1']).toMatchObject({ t: 'n', v: 999, f: 'B1*2' });
+		expect(sheet['G1']).toMatchObject({ t: 'b', v: true, f: '1=1' });
+		expect(sheet['H1']).toMatchObject({ t: 'e', w: '#DIV/0!', f: '1/0' });
+		expect(sheet['I1']).toMatchObject({ t: 'e', w: '#N/A' });
+	});
+
+	it('resets styles and edits when the source changes to another workbook', async () => {
+		const { rerender } = render(XlsxEditor, { data: inventoryBytes() });
+		await gridLoaded();
+		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
+		expect(screen.getByRole('gridcell', { name: 'Resistor kit' })).toHaveStyle({ fontWeight: '700' });
+
+		// Same sheet names, different file: nothing carries over (upstream
+		// remounts with key={src}).
+		const other = utils.book_new();
+		utils.book_append_sheet(other, utils.aoa_to_sheet([['SKU', 'Item'], ['B-1', 'Fuse box']]), 'Inventory');
+		utils.book_append_sheet(other, utils.aoa_to_sheet([['x']]), 'Summary');
+		await rerender({
+			data: new Uint8Array(write(other, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer)
+		});
+
+		const cell = await screen.findByRole('gridcell', { name: 'Fuse box' });
+		expect(cell.getAttribute('style') ?? '').not.toContain('font-weight');
+		expect(cell).toHaveAttribute('aria-selected', 'false');
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('—');
 	});
 
 	it('accepts className as an alias of class and exports the upstream name', async () => {

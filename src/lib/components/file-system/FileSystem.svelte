@@ -10,14 +10,16 @@
 	  sort, filters), thumbnails and the preview pager (previewImageUrl(s),
 	  loadPreviewImageUrl, renderFilePreview), lazy loadChildren, and the
 	  built-in viewer dialog are not ported. onFileOpen is called on file
-	  double-click (with the url from `url` or getFileUrl); without it nothing
-	  opens. `class` is accepted alongside the upstream `className`.
+	  double-click or Enter (with the url from `url` or getFileUrl); without it
+	  nothing opens. Double-click or Enter on a folder expands it in place
+	  instead of navigating into it. `class` is accepted alongside the
+	  upstream `className`.
 	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
 	  switch, so onIsDarkChange is accepted and never called.
 	- Port additions: bind:selectedPath, onRename, renamable (inline F2 rename).
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { resolveIsDark } from '#lib/dark-mode.js';
 	import {
@@ -96,9 +98,44 @@
 		rowElements().find((row) => row.dataset.path === path)?.focus();
 	}
 
+	// Like upstream: re-selecting the same entry is a no-op.
 	function select(entry: FileSystemEntry): void {
+		if (selectedPath === entry.path) return;
 		selectedPath = entry.path;
 		onSelectionChange?.(entry);
+	}
+
+	// Like upstream, a selected entry that disappears clears the selection.
+	$effect(() => {
+		const path = selectedPath;
+		if (path === null || index.files.has(path) || index.folders.has(path)) return;
+		selectedPath = null;
+		onSelectionChange?.(null);
+	});
+
+	// Upstream's Finder-style type-ahead: letters and digits build a buffer
+	// that resets after 700ms idle; a single letter advances past the focused
+	// row, a longer buffer refines the match in place.
+	const TYPE_AHEAD_RESET_MS = 700;
+	let typeAheadBuffer = '';
+	let typeAheadTimer: ReturnType<typeof setTimeout> | undefined;
+	onDestroy(() => clearTimeout(typeAheadTimer));
+
+	function typeAhead(event: KeyboardEvent, at: number): void {
+		if (event.key.length !== 1 || !/^[\p{L}\p{N}]$/u.test(event.key)) return;
+		if (event.altKey || event.ctrlKey || event.metaKey) return;
+		event.preventDefault();
+		clearTimeout(typeAheadTimer);
+		typeAheadTimer = setTimeout(() => (typeAheadBuffer = ''), TYPE_AHEAD_RESET_MS);
+		typeAheadBuffer += event.key.toLowerCase();
+		const start = at < 0 ? 0 : at + (typeAheadBuffer.length === 1 ? 1 : 0);
+		for (let step = 0; step < rows.length; step += 1) {
+			const row = rows[(start + step) % rows.length];
+			if (row.entry.name.toLowerCase().startsWith(typeAheadBuffer)) {
+				focusRow(row.entry.path);
+				return;
+			}
+		}
 	}
 
 	function toggle(entry: FileSystemEntry): void {
@@ -205,9 +242,13 @@
 				}
 				break;
 			}
+			// Like upstream, Enter opens: files go to onFileOpen, folders toggle
+			// (the tree's double-click action).
 			case 'Enter': {
 				event.preventDefault();
 				select(entry);
+				if (entry.kind === 'folder') toggle(entry);
+				else void openFile(entry);
 				break;
 			}
 			case 'F2': {
@@ -215,6 +256,8 @@
 				startRename(entry);
 				break;
 			}
+			default:
+				typeAhead(event, at);
 		}
 	}
 </script>

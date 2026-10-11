@@ -1,6 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 import { describe, expect, it, vi } from 'vitest';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import ColorPicker from './ColorPicker.svelte';
 import { ColorPickerPanel } from './index.js';
@@ -60,6 +60,84 @@ describe('ColorPicker', () => {
 		expect(screen.queryByLabelText('Color value')).not.toBeInTheDocument();
 	});
 
+	it('behaves like the upstream Popover: expanded state, focus in, Escape, focus back', async () => {
+		render(ColorPicker, { value: '#FF0000', variant: 'swatch' });
+		const trigger = screen.getByRole('button', { name: 'Choose color' });
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+		expect(trigger).not.toHaveAttribute('aria-controls');
+
+		trigger.focus();
+		await fireEvent.click(trigger);
+		await tick();
+		const dialog = screen.getByRole('dialog', { name: 'Choose color panel' });
+		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		expect(trigger).toHaveAttribute('aria-controls', dialog.id);
+		// Focus moves to the first tabbable element in the panel.
+		expect(screen.getByRole('button', { name: 'Chroma and lightness' })).toHaveFocus();
+
+		await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
+		expect(trigger).toHaveFocus();
+	});
+
+	it('closes on Escape even while focus is on the trigger', async () => {
+		render(ColorPicker, { value: '#FF0000' });
+		const trigger = screen.getByRole('button', { name: 'Choose color' });
+
+		await fireEvent.click(trigger);
+		await tick();
+		trigger.focus();
+		await fireEvent.keyDown(trigger, { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	it('closes on an outside press, stays open for presses inside, and returns focus', async () => {
+		render(ColorPicker, { value: '#FF0000', variant: 'swatch' });
+		const trigger = screen.getByRole('button', { name: 'Choose color' });
+
+		await fireEvent.click(trigger);
+		await tick();
+		await fireEvent.pointerDown(screen.getByLabelText('Color format'));
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+		await fireEvent.pointerDown(document.body);
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		await new Promise((resolve) => setTimeout(resolve));
+		expect(trigger).toHaveFocus();
+	});
+
+	it('leaves focus on the element an outside press focused', async () => {
+		const outside = document.createElement('button');
+		document.body.append(outside);
+		render(ColorPicker, { value: '#FF0000', variant: 'swatch' });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Choose color' }));
+		await tick();
+		await fireEvent.pointerDown(outside);
+		outside.focus();
+		await new Promise((resolve) => setTimeout(resolve));
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(outside).toHaveFocus();
+		outside.remove();
+	});
+
+	it('closes when focus tabs out of the panel, like a non-modal Popover', async () => {
+		const outside = document.createElement('button');
+		document.body.append(outside);
+		render(ColorPicker, { value: '#FF0000', variant: 'swatch' });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Choose color' }));
+		await tick();
+		const plane = screen.getByRole('button', { name: 'Chroma and lightness' });
+		await fireEvent.focusOut(plane, { relatedTarget: screen.getByLabelText('Color format') });
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		await fireEvent.focusOut(plane, { relatedTarget: outside });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		outside.remove();
+	});
+
 	it('commits typed colors as uppercase hex through onChange', async () => {
 		const onChange = vi.fn();
 		render(ColorPicker, { value: '#FF0000', onChange });
@@ -111,6 +189,21 @@ describe('ColorPicker', () => {
 
 		expect(screen.getByLabelText('HSL hue')).toBeInTheDocument();
 		expect(screen.getByLabelText('OKLCH lightness')).toBeInTheDocument();
+	});
+
+	it('keeps the HSL hue when the color passes through gray, like upstream', async () => {
+		const onChange = vi.fn();
+		render(ColorPicker, { value: '#FF0000', variant: 'panel', onChange });
+
+		const saturation = screen.getByLabelText('HSL saturation');
+		await fireEvent.input(saturation, { target: { value: '0' } });
+		await fireEvent.blur(saturation);
+		expect(onChange).toHaveBeenLastCalledWith('#808080');
+		expect(screen.getByLabelText('HSL hue')).toHaveValue('0.0');
+
+		await fireEvent.input(saturation, { target: { value: '100' } });
+		await fireEvent.blur(saturation);
+		expect(onChange).toHaveBeenLastCalledWith('#FF0000');
 	});
 
 	it('steps channel values with the arrow keys', async () => {

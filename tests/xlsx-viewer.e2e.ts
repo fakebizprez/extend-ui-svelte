@@ -67,3 +67,22 @@ test('xlsx-viewer dark-mode toggle notifies the parent', async ({ page }) => {
 
 	await expect(viewer).toHaveAttribute('data-dark', 'true');
 });
+
+test('xlsx-viewer shows error and boolean cells as text', async ({ page }) => {
+	await page.goto('/xlsx-viewer');
+	const viewer = page.getByTestId('xlsx-viewer').first();
+	await viewer.getByRole('tab', { name: 'Checks' }).click();
+	await expect(viewer.getByTestId('row-count')).toHaveText('1 row');
+
+	await expect(viewer.locator('[data-row-index="0"]').getByRole('cell')).toHaveText([
+		'=abc',
+		'10',
+		'TRUE',
+		'5',
+		'10',
+		'999',
+		'TRUE',
+		'#DIV/0!',
+		'#N/A'
+	]);
+});

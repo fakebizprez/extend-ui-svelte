@@ -192,6 +192,12 @@
 			ported.
 		</li>
 		<li>
+			Upstream's <code>OcrBlockOverlay</code> (the colored block outline drawn on the
+			rendered PDF page) is not ported, so blocks cannot be highlighted on the page yet.
+			<code>blockToArea</code> and <code>blockToHighlightArea</code> are exported for building
+			overlays.
+		</li>
+		<li>
 			Adds <code>height</code> (viewport height, default 420 like upstream) and
 			<code>overscan</code> (default 6 like upstream) props.
 		</li>

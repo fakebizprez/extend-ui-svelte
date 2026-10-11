@@ -12,7 +12,9 @@
 	- Form and serialized JSON render side by side instead of in tabs.
 	- Native HTML5 drag-and-drop reorders top-level fields only; nested moves,
 	  enum reordering, and collapsible nested editors are not ported.
-	- Port additions: per-field `required`, onSerializedSchemaChange, bind:schema.
+	- "Add field" / "Add nested field" buttons instead of upstream's "Add property".
+	- Port additions: per-field `required` (serialized as `required` on its parent
+	  object at every level), onSerializedSchemaChange.
 -->
 <script module lang="ts">
 	export type SchemaBuilderScalarType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
@@ -54,6 +56,7 @@
 		enum?: string[];
 		enumDescriptions?: Record<string, string>;
 		properties?: Record<string, SerializedSchemaProperty>;
+		required?: string[];
 		items?: SerializedSchemaProperty;
 	}
 
@@ -256,11 +259,7 @@
 		}
 
 		if (property.type === 'object') {
-			return {
-				type: 'object',
-				...base,
-				properties: serializeProperties(property.properties ?? [])
-			};
+			return { type: 'object', ...base, ...serializeObject(property.properties ?? []) };
 		}
 
 		if (property.type === 'array') {
@@ -269,10 +268,7 @@
 				return {
 					type: 'array',
 					...base,
-					items: {
-						type: 'object',
-						properties: serializeProperties(items.properties ?? [])
-					}
+					items: { type: 'object', ...serializeObject(items.properties ?? []) }
 				};
 			}
 			if (items.type === 'enum') {
@@ -307,15 +303,22 @@
 		);
 	}
 
-	export function serializeSchema(schema: SchemaBuilderSchema): SerializedSchema {
-		const required = schema.properties
+	// Port addition: per-field required flags serialize at every object level.
+	function serializeObject(properties: SchemaBuilderProperty[]): {
+		properties: Record<string, SerializedSchemaProperty>;
+		required?: string[];
+	} {
+		const required = properties
 			.filter((property) => property.required && property.key.trim())
 			.map((property) => property.key.trim());
 		return {
-			type: 'object',
-			properties: serializeProperties(schema.properties),
+			properties: serializeProperties(properties),
 			...(required.length > 0 ? { required } : {})
 		};
+	}
+
+	export function serializeSchema(schema: SchemaBuilderSchema): SerializedSchema {
+		return { type: 'object', ...serializeObject(schema.properties) };
 	}
 </script>
 
@@ -325,6 +328,7 @@
 	interface Props {
 		/** Uncontrolled starting schema. Defaults to SAMPLE_SCHEMA, like upstream. */
 		defaultSchema?: SchemaBuilderSchema;
+		/** Controlled schema: the builder renders only this; edits go to onSchemaChange. */
 		schema?: SchemaBuilderSchema;
 		onSchemaChange?: (schema: SchemaBuilderSchema) => void;
 		/** Port addition: called with the serialized JSON schema on every change. */
@@ -342,7 +346,7 @@
 
 	let {
 		defaultSchema = SAMPLE_SCHEMA,
-		schema = $bindable(undefined),
+		schema,
 		onSchemaChange,
 		onSerializedSchemaChange,
 		isDark = false,
@@ -353,7 +357,8 @@
 
 	const dark = $derived(theme ? theme === 'dark' : isDark);
 
-	let uncontrolled = $state<SchemaBuilderSchema>(untrack(() => defaultSchema));
+	// Raw: edits replace the schema immutably, so it never holds $state proxies.
+	let uncontrolled = $state.raw<SchemaBuilderSchema>(untrack(() => defaultSchema));
 	const current = $derived<SchemaBuilderSchema>(schema ?? uncontrolled);
 	const serialized = $derived<SerializedSchema>(serializeSchema(current));
 
@@ -366,13 +371,11 @@
 		}
 	});
 
+	// Like upstream: controlled mode only reports the edit; the parent decides.
 	function commit(next: SchemaBuilderSchema): void {
-		if (schema !== undefined) {
-			schema = next;
-		} else {
-			uncontrolled = next;
-		}
-		onSchemaChange?.(next);
+		const plain = $state.snapshot(next) as SchemaBuilderSchema;
+		if (schema === undefined) uncontrolled = plain;
+		onSchemaChange?.(plain);
 	}
 
 	function updateProperties(
@@ -426,6 +429,19 @@
 			updatePropertyById(properties, parentId, (property) => ({
 				...property,
 				properties: [...(property.properties ?? []), createSchemaBuilderProperty('string')]
+			}))
+		);
+	}
+
+	function addArrayItemField(arrayId: string): void {
+		updateProperties((properties) =>
+			updatePropertyById(properties, arrayId, (property) => ({
+				...property,
+				items: {
+					type: 'object',
+					...property.items,
+					properties: [...(property.items?.properties ?? []), createSchemaBuilderProperty('string')]
+				}
 			}))
 		);
 	}
@@ -640,6 +656,9 @@
 					</label>
 					{#if property.items?.type === 'object'}
 						{@render fieldRows(property.items.properties ?? [], true)}
+						<button type="button" onclick={() => addArrayItemField(property.id)}>
+							Add nested field
+						</button>
 					{:else if property.items?.type === 'enum'}
 						{@render enumEditor(property.items.enumValues ?? [], (values) =>
 							setArrayItemEnumValues(property.id, values)

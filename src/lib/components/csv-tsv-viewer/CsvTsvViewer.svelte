@@ -1,10 +1,11 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI csv-viewer. Upstream: extend-hq/ui (MIT).
 	Exported as CsvTsvViewer and under the upstream name CsvViewer.
-	search={true} opens a find popover like upstream: matching cells are
-	highlighted, next/previous (Enter / Shift+Enter) step through results, and
-	the active match scrolls into view. Differences from upstream (keep in sync
-	with the docs page, src/routes/csv-tsv-viewer/+page.svelte):
+	search={true} opens a find popover like upstream: next/previous (Enter /
+	Shift+Enter) step through matching cells, the active match's cell is
+	selected and scrolled into view, and the popover closes on an outside
+	press, on Escape, or when the data changes. Differences from upstream
+	(keep in sync with the docs page, src/routes/csv-tsv-viewer/+page.svelte):
 	- Dark mode is parent-controlled (isDark; onIsDarkChange is accepted but
 	  never called); upstream reads the .dark class from the document.
 	- The grid is a native <table> windowed locally instead of glide-data-grid.
@@ -72,6 +73,8 @@
 	let parsed: ParsedTable = $state.raw({ headers: [], rows: [], error: null });
 	let parsing = $state(false);
 	let searchOpen = $state(false);
+	let searchTrigger: HTMLButtonElement | null = $state(null);
+	let searchPanel: HTMLDivElement | null = $state(null);
 	let searchDraft = $state('');
 	let searchQuery = $state('');
 	let searching = $state(false);
@@ -121,8 +124,21 @@
 		untrack(() => {
 			scrollTop = 0;
 			if (viewport) viewport.scrollTop = 0;
+			searchOpen = false;
 			clearSearch();
 		});
+	});
+
+	// Close on a press outside the popover, as upstream's Radix popover does.
+	$effect(() => {
+		if (!searchOpen) return;
+		const close = (event: PointerEvent) => {
+			const target = event.target as Node | null;
+			if (target && (searchPanel?.contains(target) || searchTrigger?.contains(target))) return;
+			searchOpen = false;
+		};
+		document.addEventListener('pointerdown', close);
+		return () => document.removeEventListener('pointerdown', close);
 	});
 
 	function runSearch(raw: string): void {
@@ -173,7 +189,6 @@
 	}
 
 	const activeResult = $derived(results[activeResultIndex] ?? null);
-	const matchKeys = $derived(new Set(results.map((result) => `${result.row}:${result.col}`)));
 	const resultLabel = $derived(
 		searching
 			? 'Searching'
@@ -229,7 +244,7 @@
 	const topPad = $derived(startIndex * rowHeight);
 	const bottomPad = $derived((parsed.rows.length - endIndex) * rowHeight);
 	const columnCount = $derived(parsed.headers.length + 1);
-	const rowCountLabel = $derived(`${parsed.rows.length} rows`);
+	const rowCountLabel = $derived(`${parsed.rows.length} ${parsed.rows.length === 1 ? 'row' : 'rows'}`);
 	const searchDisabled = $derived(parsing || Boolean(parsed.error) || parsed.rows.length === 0);
 
 	function handleScroll(event: Event) {
@@ -252,6 +267,7 @@
 				title="Search CSV"
 				aria-expanded={searchOpen}
 				disabled={searchDisabled}
+				bind:this={searchTrigger}
 				onclick={() => (searchOpen = !searchOpen)}
 			>
 				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -266,6 +282,7 @@
 				role="dialog"
 				aria-label="Search CSV"
 				tabindex="-1"
+				bind:this={searchPanel}
 				onkeydown={(event) => {
 					if (event.key === 'Escape') searchOpen = false;
 				}}
@@ -353,17 +370,12 @@
 						<tr data-row-index={startIndex + i} style={`height: ${rowHeight}px;`}>
 							<th scope="row" class="csv-rownum">{startIndex + i + 1}</th>
 							{#each row as cell, j (j)}
-								{@const isMatch = matchKeys.has(`${startIndex + i}:${j}`)}
+								<!-- Like upstream, only the active result's cell is selected. -->
 								{@const isActive =
 									activeResult !== null &&
 									activeResult.row === startIndex + i &&
 									activeResult.col === j}
-								<td
-									class:match={isMatch}
-									class:active-match={isActive}
-									data-search-match={isMatch ? '' : undefined}
-									data-search-active={isActive ? '' : undefined}
-								>
+								<td class:active-match={isActive} data-search-active={isActive ? '' : undefined}>
 									{cell}
 								</td>
 							{/each}
@@ -389,7 +401,6 @@
 		--csv-header-bg: #fafafa;
 		--csv-row-alt: #fafafa;
 		--csv-accent: #2563eb;
-		--csv-match: #fef9c3;
 		--csv-match-active: #dbeafe;
 		display: flex;
 		flex-direction: column;
@@ -415,7 +426,6 @@
 		--csv-header-bg: #171717;
 		--csv-row-alt: #111111;
 		--csv-accent: #60a5fa;
-		--csv-match: #422006;
 		--csv-match-active: #1d4ed826;
 	}
 
@@ -487,10 +497,6 @@
 
 	.csv-clear {
 		justify-self: end;
-	}
-
-	.csv-table td.match {
-		background: var(--csv-match);
 	}
 
 	.csv-table td.active-match {

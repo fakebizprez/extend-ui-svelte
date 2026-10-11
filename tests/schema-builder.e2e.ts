@@ -79,3 +79,43 @@ test('docs page lists the differences from upstream', async ({ page }) => {
 	await expect(differences).toContainText('SchemaBuilderPanel');
 	await expect(differences).toContainText('theme');
 });
+
+async function emitted(page: Page) {
+	return JSON.parse((await page.getByTestId('schema-builder-docs-output').textContent()) ?? '{}');
+}
+
+test('Required on a nested object field reaches the emitted schema', async ({ page }) => {
+	await openBuilder(page);
+
+	await page.getByRole('button', { name: 'Add field' }).click();
+	const row = page.getByTestId('schema-builder-field').nth(2);
+	await row.getByLabel('Field key').first().fill('address');
+	await row.getByLabel('Field type').first().selectOption('object');
+	const nested = row.getByTestId('schema-builder-nested-field').first();
+	await nested.getByLabel('Field key').fill('city');
+	await nested.getByLabel('Required').check();
+
+	await expect(page.getByTestId('schema-builder-docs-output')).toContainText('"city"');
+	await expect.poll(async () => (await emitted(page)).properties?.address?.required).toEqual([
+		'city'
+	]);
+});
+
+test('array-of-object items accept new properties', async ({ page }) => {
+	await openBuilder(page);
+
+	await page.getByRole('button', { name: 'Add field' }).click();
+	const row = page.getByTestId('schema-builder-field').nth(2);
+	await row.getByLabel('Field key').first().fill('lines');
+	await row.getByLabel('Field type').first().selectOption('array');
+	const editor = row.getByTestId('schema-builder-array-editor');
+	await expect(editor.getByTestId('schema-builder-nested-field')).toHaveCount(1);
+
+	await editor.getByRole('button', { name: 'Add nested field' }).click();
+	await expect(editor.getByTestId('schema-builder-nested-field')).toHaveCount(2);
+	await editor.getByTestId('schema-builder-nested-field').nth(1).getByLabel('Field key').fill('sku');
+
+	await expect
+		.poll(async () => Object.keys((await emitted(page)).properties?.lines?.items?.properties ?? {}))
+		.toContain('sku');
+});

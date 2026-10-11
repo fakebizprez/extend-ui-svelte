@@ -197,6 +197,19 @@ describe('PdfEditor', () => {
 		expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('300%');
 	});
 
+	it('resets zoom to defaultZoom when a new document loads, like upstream', async () => {
+		const { rerender } = render(PdfEditor, { src: SRC, defaultZoom: 1 });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('120%');
+
+		await rerender({ src: 'https://example.com/files/next.pdf', defaultZoom: 1 });
+		await vi.waitFor(() => expect(mockState.loads).toHaveLength(2));
+		await vi.waitFor(() =>
+			expect(screen.getByTestId('pdf-editor-zoom-label')).toHaveTextContent('100%')
+		);
+	});
+
 	it('previews the selected page at its real size', async () => {
 		mockState.sizes = [LETTER, LANDSCAPE, LETTER];
 		render(PdfEditor, { src: SRC, defaultZoom: 1 });

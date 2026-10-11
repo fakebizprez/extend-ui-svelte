@@ -197,7 +197,15 @@
 		}
 	}
 
-	function finishEditing(save: boolean, movement: [number, number] = [0, 0]): void {
+	/**
+	 * Ends the cell edit. Keyboard endings (Enter/Tab/Escape) return focus to the
+	 * grid; a blur leaves focus wherever the user moved it, like upstream.
+	 */
+	function finishEditing(
+		save: boolean,
+		movement: [number, number] = [0, 0],
+		refocusGrid = true
+	): void {
 		if (!editing) return;
 		const { item, text } = editing;
 		editing = null;
@@ -212,7 +220,7 @@
 				Math.min(Math.max(row + movement[1], 0), rows.length - 1)
 			]);
 		}
-		gridElement?.focus();
+		if (refocusGrid) gridElement?.focus();
 	}
 
 	function handleEditorKeydown(event: KeyboardEvent): void {
@@ -413,7 +421,7 @@
 										if (editing) editing.text = event.currentTarget.value;
 									}}
 									onkeydown={handleEditorKeydown}
-									onblur={() => finishEditing(true)}
+									onblur={() => finishEditing(true, [0, 0], false)}
 								></textarea>
 							{:else if info.cellSchema.type === 'boolean' && !info.complex}
 								<input

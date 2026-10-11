@@ -103,11 +103,13 @@
 		}
 		return 'workbook.xlsx';
 	});
-	const rowCountLabel = $derived(`${rows.length} rows`);
+	const rowCountLabel = $derived(`${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`);
 
 	function formatCell(value: unknown): string {
 		if (value === null || value === undefined) return '';
 		if (typeof value === 'string') return value;
+		// Excel shows booleans as TRUE/FALSE; error cells print their code.
+		if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
 		return String(value);
 	}
 

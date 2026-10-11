@@ -9,6 +9,8 @@
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 	- No `TogglePrimitive` re-export (Base UI is React-only).
+	- A consumer `onclick` runs before the built-in toggle, like Base UI;
+	  `event.preventDefault()` stands in for `preventBaseUIHandler()`.
 	- Upstream's before-pseudo shadow, touch hit-area, and icon sizing
 	  utilities are not ported; variants and sizes are.
 -->
@@ -77,6 +79,7 @@
 		variant = 'default',
 		size = 'default',
 		value,
+		onclick,
 		onfocus,
 		class: className = '',
 		className: classNameAlias = '',
@@ -109,7 +112,11 @@
 		(onfocus as ((event: FocusEvent) => void) | undefined)?.(event);
 	}
 
+	// Like Base UI's mergeProps: the consumer handler runs first, and
+	// preventDefault() stands in for preventBaseUIHandler() to skip ours.
 	function handleClick(event: MouseEvent) {
+		(onclick as ((event: MouseEvent) => void) | undefined)?.(event);
+		if (event.defaultPrevented) return;
 		if (isDisabled) {
 			event.preventDefault();
 			return;

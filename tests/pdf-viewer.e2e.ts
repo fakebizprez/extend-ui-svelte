@@ -163,3 +163,19 @@ test('pdf viewer keeps the current page in view through zoom, fit width and rota
 	await expect(indicator).toHaveText('Page 2 of 3');
 	expect(await pageTwoInView()).toBe(true);
 });
+
+test('pdf viewer resets zoom to defaultZoom when a new document loads', async ({ page }) => {
+	const viewer = await openViewer(page);
+	await viewer.getByRole('button', { name: 'Zoom in' }).click();
+	await expect(viewer.getByTestId('pdf-zoom-label')).toHaveText('75%');
+
+	const next = await PDFDocument.create();
+	next.addPage([612, 792]);
+	await viewer.getByLabel('Upload PDF').setInputFiles({
+		name: 'next.pdf',
+		mimeType: 'application/pdf',
+		buffer: Buffer.from(await next.save())
+	});
+	await expect(viewer.getByTestId('pdf-page-indicator')).toHaveText('Page 1 of 1');
+	await expect(viewer.getByTestId('pdf-zoom-label')).toHaveText('50%');
+});

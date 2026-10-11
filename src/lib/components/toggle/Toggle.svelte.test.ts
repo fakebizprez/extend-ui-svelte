@@ -312,3 +312,68 @@ describe('ToggleGroup roving tab stop', () => {
 		expect(screen.getByRole('button', { name: 'Bold' })).not.toHaveAttribute('tabindex');
 	});
 });
+
+// Base UI merges consumer handlers with its own: the consumer runs first, then
+// the internal logic unless the consumer opted out (preventBaseUIHandler; the
+// DOM stand-in here is event.preventDefault()).
+describe('consumer event handlers', () => {
+	it('keeps toggling when the consumer passes onclick to a Toggle', async () => {
+		const onclick = vi.fn();
+		const onPressedChange = vi.fn();
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', onclick, onPressedChange });
+
+		const button = screen.getByRole('button', { name: 'Bold' });
+		await fireEvent.click(button);
+		expect(onclick).toHaveBeenCalledTimes(1);
+		expect(onPressedChange).toHaveBeenCalledWith(true);
+		expect(button).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('skips the toggle when the consumer onclick prevents default', async () => {
+		const onPressedChange = vi.fn();
+		render(Toggle, {
+			children: label('Bold'),
+			'aria-label': 'Bold',
+			onclick: (event: MouseEvent) => event.preventDefault(),
+			onPressedChange
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
+		expect(onPressedChange).not.toHaveBeenCalled();
+	});
+
+	it('keeps selecting when the consumer passes onclick to a ToggleGroupItem', async () => {
+		const itemOnclick = vi.fn();
+		const onValueChange = vi.fn();
+		render(ToggleGroupHarness, { itemOnclick, onValueChange });
+
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		await fireEvent.click(bold);
+		expect(itemOnclick).toHaveBeenCalledTimes(1);
+		expect(onValueChange).toHaveBeenCalledWith(['bold']);
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('keeps arrow-key navigation when the consumer passes onkeydown to a ToggleGroup', async () => {
+		const onkeydown = vi.fn();
+		render(ToggleGroupHarness, { onkeydown });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(onkeydown).toHaveBeenCalledTimes(1);
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'Home' });
+		expect(bold).toHaveFocus();
+	});
+
+	it('skips navigation when the consumer onkeydown prevents default', async () => {
+		render(ToggleGroupHarness, { onkeydown: (event: KeyboardEvent) => event.preventDefault() });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+	});
+});

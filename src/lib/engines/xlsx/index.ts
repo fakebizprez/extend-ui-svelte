@@ -6,7 +6,9 @@ export {
 	loadWorkbookFromUrl,
 	sheetToGrid,
 	sheetToRows,
-	type XlsxSheetGrid,
+	XLSX_ERROR_CODES,
+	XlsxCellError,
+type XlsxSheetGrid,
 	type XlsxRow,
 	type XlsxSheetToRowsOptions
 } from './xlsx.js';

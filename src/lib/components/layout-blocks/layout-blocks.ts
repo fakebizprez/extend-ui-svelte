@@ -8,6 +8,9 @@
 //   are removed) since no HTML sanitizer dependency is available.
 // - blockToArea returns a CSS declaration string for Svelte `style`
 //   attributes instead of a React.CSSProperties object.
+import { fromHtml } from 'hast-util-from-html';
+import { defaultSchema, sanitize, type Schema } from 'hast-util-sanitize';
+import { toHtml } from 'hast-util-to-html';
 import { marked } from 'marked';
 
 /** A point in page coordinates. */
@@ -281,27 +284,32 @@ export function blockToArea(
 	);
 }
 
-/** Remove script/style elements from rendered HTML. */
-function stripDangerousElements(html: string): string {
-	return html
-		.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
-		.replace(/<script\b[^>]*\/>/gi, '')
-		.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '');
-}
+// Upstream runs react-markdown with rehype-raw and rehype-sanitize; this is
+// the same sanitizer (hast-util-sanitize) with upstream's schema: GitHub's
+// default schema plus figure (with `type`), figcaption, and caption, keeping
+// the default clobber prefix and URL protocols.
+const OCR_MARKDOWN_SCHEMA: Schema = {
+	...defaultSchema,
+	attributes: {
+		...defaultSchema.attributes,
+		figure: [...(defaultSchema.attributes?.figure ?? []), 'type']
+	},
+	tagNames: [...(defaultSchema.tagNames ?? []), 'caption', 'figcaption', 'figure']
+};
 
-/** Remove inline event handlers and javascript: URLs from rendered HTML. */
-function stripDangerousAttributes(html: string): string {
-	return html
-		.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-		.replace(/\s+(href|src|xlink:href)\s*=\s*(["']?)\s*javascript:[^"'\s>]*/gi, '$1=$2#');
+/** Sanitize rendered HTML with upstream's schema. Framework-free, so it runs during SSR. */
+export function sanitizeBlockHtml(html: string): string {
+	const tree = sanitize(fromHtml(html, { fragment: true }), OCR_MARKDOWN_SCHEMA);
+	// Named references (&amp;) match what React writes for upstream.
+	return toHtml(tree, { characterReferences: { useNamedReferences: true } });
 }
 
 /**
  * Render block markdown to sanitized HTML with marked.
  *
  * `<caption>` tags are rewritten to `<figcaption>` first (matching upstream),
- * then GFM markdown is parsed and the result is scrubbed of scripts and
- * event-handler attributes.
+ * then GFM markdown is parsed and the result is sanitized with upstream's
+ * rehype-sanitize schema.
  */
 export function renderBlockMarkdown(text: string): string {
 	if (!text) return '';
@@ -310,7 +318,8 @@ export function renderBlockMarkdown(text: string): string {
 		tag.startsWith('</') ? '</figcaption>' : '<figcaption>'
 	);
 
-	const html = marked.parse(markdown, { breaks: true, gfm: true, async: false }) as string;
+	// Soft line breaks, like upstream react-markdown + remark-gfm.
+	const html = marked.parse(markdown, { gfm: true, async: false }) as string;
 
-	return stripDangerousAttributes(stripDangerousElements(html));
+	return sanitizeBlockHtml(html);
 }

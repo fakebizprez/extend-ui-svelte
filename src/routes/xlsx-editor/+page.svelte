@@ -8,6 +8,9 @@
 	let darkPreview = $state(true);
 	let lastChange = $state('');
 	let lastExport = $state('');
+	// Each reload hands the editor a new src, so it starts over like a new file.
+	let reloads = $state(0);
+	const fixtureSrc = $derived(reloads ? `${FIXTURE_URL}?reload=${reloads}` : FIXTURE_URL);
 </script>
 
 <h1>XLSX Editor</h1>
@@ -18,8 +21,11 @@
 </p>
 
 <h2>Fixture workbook</h2>
+<button type="button" data-testid="reload-workbook" onclick={() => (reloads += 1)}>
+	Reload file (drops edits and styles)
+</button>
 <XlsxEditor
-	src={FIXTURE_URL}
+	src={fixtureSrc}
 	fileName="sample.xlsx"
 	isDark={isDark}
 	onIsDarkChange={(value) => (isDark = value)}
@@ -46,10 +52,11 @@
 <p>Also exported as <code>XlsxEditorPreview</code>, the upstream name.</p>
 <ul data-testid="differences">
 	<li>
-		Formulas are kept from the file and shown in the formula bar. SUM, AVERAGE, MIN, MAX, COUNT,
-		PRODUCT, and arithmetic over same-sheet references recalculate locally; other formulas
-		(cross-sheet references, other functions) show the file's saved value and do not
-		recalculate.
+		Formulas are kept from the file and shown in the formula bar; each shows the file's saved
+		value until it or one of its inputs is edited. Then SUM, AVERAGE, MIN, MAX, COUNT, PRODUCT,
+		TRUE/FALSE, and arithmetic over same-sheet references recalculate locally with Excel's
+		argument rules; other formulas (cross-sheet references, other functions, comparisons)
+		keep the saved value and do not recalculate.
 	</li>
 	<li>
 		Styling is limited to bold, horizontal alignment, and fill, and is not written on export

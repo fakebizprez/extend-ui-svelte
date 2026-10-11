@@ -5,10 +5,10 @@ test('xlsx engine harness loads the fixture and reports sheets', async ({ page }
 	await page.goto('/engines/xlsx');
 
 	await expect(page.locator('h1')).toContainText('XLSX Engine Harness');
-	await expect(page.getByTestId('sheet-count')).toContainText('4 sheets');
+	await expect(page.getByTestId('sheet-count')).toContainText('5 sheets');
 
 	const sheets = page.getByTestId('sheet-item');
-	await expect(sheets).toHaveCount(4);
+	await expect(sheets).toHaveCount(5);
 	await expect(sheets.nth(0)).toContainText('Inventory');
 	await expect(sheets.nth(0)).toContainText('5 rows');
 	await expect(sheets.nth(1)).toContainText('Summary');

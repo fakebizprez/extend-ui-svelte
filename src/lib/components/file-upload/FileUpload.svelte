@@ -338,11 +338,18 @@
 		--fu-danger: #f87171;
 	}
 
-	/* Pure-CSS replacement for the upstream border-beam effect. */
+	/*
+	 * Pure-CSS replacement for the upstream border-beam effect. Like upstream
+	 * (BorderBeam active={isDragging}) the beam only shows while dragging; idle,
+	 * the drop area keeps its dashed border.
+	 */
 	.beam {
 		--beam-angle: 0deg;
 		padding: 2px;
 		border-radius: 1.125rem;
+	}
+
+	.beam-active {
 		background: conic-gradient(
 			from var(--beam-angle),
 			var(--fu-border),
@@ -350,9 +357,6 @@
 			#818cf8,
 			var(--fu-border)
 		);
-	}
-
-	.beam-active {
 		animation: beam-spin 2.4s linear infinite;
 	}
 
@@ -386,10 +390,6 @@
 		transition:
 			border-color 200ms ease-out,
 			background-color 200ms ease-out;
-	}
-
-	.beam .dropzone {
-		border-color: transparent;
 	}
 
 	.dropzone:hover {
