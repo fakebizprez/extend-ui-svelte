@@ -90,5 +90,9 @@
 		"pptx-browser": "^4.1.5",
 		"signature_pad": "^5.1.4",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/fakebizprez/extend-ui-svelte.git"
 	}
 }
