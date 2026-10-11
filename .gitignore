@@ -43,3 +43,8 @@ Thumbs.db
 .claude/settings.local.json
 .firecrawl/
 private/
+
+.agents/
+.claude/
+skills-lock.json
+test-results/
