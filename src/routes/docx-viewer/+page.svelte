@@ -1,8 +1,9 @@
 <!-- MIT License — Svelte 5 port of Extend UI docx-viewer. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import DocxViewer from '#lib/components/docx-viewer/DocxViewer.svelte';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 </script>
 
 <h1>DOCX Viewer</h1>
@@ -63,4 +64,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

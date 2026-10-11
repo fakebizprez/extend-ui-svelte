@@ -1,12 +1,13 @@
 <!-- MIT License — Svelte 5 port of Extend UI xlsx-editor. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import XlsxEditor from '#lib/components/xlsx-editor/XlsxEditor.svelte';
 
 	const FIXTURE_URL = '/fixtures/sample.xlsx';
 
-	let isDark = $state(false);
-	let darkPreview = $state(true);
-	let emptyDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
+	let darkPreview = $derived(docsTheme.isDark);
+	let emptyDark = $derived(docsTheme.isDark);
 	let lastChange = $state('');
 	let lastExport = $state('');
 	// Each reload hands the editor a new src, so it starts over like a new file.
@@ -37,7 +38,7 @@
 <p data-testid="last-change">Last edit: {lastChange || 'none yet'}</p>
 <p data-testid="last-export">Last export: {lastExport || 'none yet'}</p>
 
-<h2>Dark mode</h2>
+<h2>Compact workbook</h2>
 <XlsxEditor
 	src={FIXTURE_URL}
 	fileName="sample.xlsx"
@@ -93,7 +94,7 @@
 	</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	h2 {

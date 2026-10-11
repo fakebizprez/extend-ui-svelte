@@ -179,6 +179,7 @@ for (const width of [1280, 390]) {
 test('the signature pad stays white in dark mode, like upstream', async ({
 	page
 }) => {
+	await page.addInitScript(() => localStorage.setItem('docs-theme', 'dark'));
 	await page.goto('/e-signature');
 	const darkPad = page.getByTestId('e-signature').nth(1).getByTestId('e-signature-pad');
 	await expect(darkPad).toHaveAttribute('data-pad-ready', 'true', { timeout: 30000 });

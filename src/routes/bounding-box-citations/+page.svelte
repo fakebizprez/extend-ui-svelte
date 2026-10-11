@@ -1,5 +1,6 @@
 <!-- MIT License — Svelte 5 port of Extend UI bounding-box-citations. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import {
 		BoundingBoxCitations,
 		HumanReviewPanel
@@ -11,7 +12,7 @@
 		resolveBlockReviewArrayItemMetadataPath
 	} from './block-demo.js';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let activeFieldKey: string | null = $state(null);
 </script>
 
@@ -111,7 +112,7 @@
 	<li>Port-only exports: the overlay helpers <code>boxesForPage</code>, <code>formatCitationValue</code>, <code>getCitationLocation</code>, plus the types <code>BoundingBoxCitationsProps</code>, <code>HumanReviewPanelProps</code>, <code>CitationBox</code>, <code>ArrayNestedView</code>, <code>ArrayReviewSide</code>. Upstream's <code>HumanReviewTheme</code> type is not exported because <code>theme</code> is replaced by <code>isDark</code>.</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	.lead {

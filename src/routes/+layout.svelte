@@ -34,7 +34,7 @@
 	<aside class="side">
 		<Sidebar groups={NAV_GROUPS} currentSlug={slug} />
 	</aside>
-	<main bind:this={main}>
+	<main id="main-content" tabindex="-1" bind:this={main}>
 		{#if current && group}
 			<p class="crumbs">Docs / {group.title} / {current.title}</p>
 		{/if}

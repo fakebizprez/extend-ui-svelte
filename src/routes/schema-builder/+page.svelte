@@ -1,12 +1,13 @@
 <!-- MIT License — Svelte 5 port of Extend UI schema-builder. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import SchemaBuilder from '#lib/components/schema-builder/SchemaBuilder.svelte';
 	import type {
 		SchemaBuilderSchema,
 		SerializedSchema
 	} from '#lib/components/schema-builder/SchemaBuilder.svelte';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let schema = $state<SchemaBuilderSchema>({
 		properties: [
 			{ id: 'demo-vendor', key: 'vendor', type: 'string', description: 'Invoice vendor' },
@@ -85,4 +86,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

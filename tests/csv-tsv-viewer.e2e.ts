@@ -103,7 +103,7 @@ test('csv-tsv-viewer dark mode follows the parent', async ({ page }) => {
 	const { csv, tsv } = await openPage(page);
 
 	await expect(csv).toHaveAttribute('data-dark', 'false');
-	await expect(tsv).toHaveAttribute('data-dark', 'true');
+	await expect(tsv).toHaveAttribute('data-dark', 'false');
 	// No theme control inside the viewer, like upstream.
 	await expect(csv.getByRole('switch')).toHaveCount(0);
 

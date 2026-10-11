@@ -24,12 +24,13 @@ const SLUGS = [
 	'toggle'
 ];
 
-test('home page links to every component preview', async ({ page }) => {
+test('home sidebar links to every component preview', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/');
 	await expect(page.locator('h1')).toContainText('Extend UI Svelte');
 
 	for (const { title } of PREVIEW_COMPONENTS) {
-		await expect(page.getByRole('link', { name: title, exact: true }).first()).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Components' }).getByRole('link', { name: title, exact: true })).toBeVisible();
 	}
 });
 

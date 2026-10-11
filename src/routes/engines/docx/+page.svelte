@@ -58,7 +58,7 @@
 	<div data-testid="docx-container" bind:this={containerEl}></div>
 </div>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	.viewer {

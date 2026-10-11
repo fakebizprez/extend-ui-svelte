@@ -1,8 +1,9 @@
 <!-- MIT License — Svelte 5 port of Extend UI docx-editor. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import DocxEditor from '#lib/components/docx-editor/DocxEditor.svelte';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 </script>
 
 <h1>DOCX Editor</h1>
@@ -53,4 +54,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

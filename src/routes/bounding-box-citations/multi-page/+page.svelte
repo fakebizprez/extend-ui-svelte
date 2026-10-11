@@ -4,6 +4,7 @@
 	so browser tests can check scroll-to-area across pages.
 -->
 <script lang="ts">
+	import { docsTheme } from '../../_shell/theme.svelte.js';
 	import { BoundingBoxCitations, type ReviewField } from '#lib/components/bounding-box-citations/index.js';
 
 	const fields: ReviewField[] = [1, 2, 3].map((page) => ({
@@ -16,4 +17,4 @@
 </script>
 
 <h1>Bounding Box Citations: multi-page test page</h1>
-<BoundingBoxCitations src="/fixtures/sample.pdf" fileName="sample" {fields} />
+<BoundingBoxCitations isDark={docsTheme.isDark} src="/fixtures/sample.pdf" fileName="sample" {fields} />

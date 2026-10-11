@@ -347,9 +347,13 @@
 			<p class="csv-state-hint">Pass delimited text with the data prop.</p>
 		</div>
 {:else}
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to focus this viewport to scroll the table.) -->
 		<div
 			class="csv-viewport"
 			data-testid="csv-viewport"
+			role="group"
+			aria-label="CSV table"
+			tabindex="0"
 			style={`height: ${height}px;`}
 			bind:this={viewport}
 			onscroll={handleScroll}
@@ -556,6 +560,11 @@
 
 	.csv-viewport {
 		overflow: auto;
+	}
+
+	.csv-viewport:focus-visible {
+		outline: 2px solid var(--csv-accent);
+		outline-offset: -2px;
 	}
 
 	.csv-table {

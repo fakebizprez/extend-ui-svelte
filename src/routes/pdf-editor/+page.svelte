@@ -1,9 +1,10 @@
 <!-- MIT License — Svelte 5 port of Extend UI pdf-editor. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { PdfEditor } from '#lib/components/pdf-editor/index.js';
 	import type { EditedPdfPage, PdfEditorDocumentInfo } from '#lib/components/pdf-editor/index.js';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let pages: EditedPdfPage[] = $state([]);
 	let savedFile = $state('');
 	let loadedInfo: PdfEditorDocumentInfo | null = $state(null);
@@ -60,7 +61,7 @@
 	<li>Port-only exports: <code>PdfEditor</code> (the same component as <code>PDFEditor</code>) and the page-model helpers <code>createEditState</code>, <code>deleteEditPage</code>, <code>exportEditedPdf</code>, <code>getPdfFileName</code>, <code>moveEditPage</code>, <code>resetEditState</code>, <code>rotateEditPage</code>. Port-only types: <code>PdfEditorProps</code>, <code>PdfEditorDocumentInfo</code>, <code>PdfEditorSaveResult</code>, <code>PdfEditorZoomLevel</code>, <code>EditedPdfPage</code>, <code>PdfEditState</code>, <code>PdfRotateDirection</code> (upstream's <code>PDFEditorProps</code> and <code>PDFEditorZoomLevel</code> are exported too). Not exported: upstream's <code>serializeAnnotationItems</code>, <code>deserializeAnnotationItems</code>, <code>PDFEditorHandle</code>, <code>PDFEditorToast</code> and <code>PDFEditorPageOverlayProps</code>, which belong to features not ported.</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	h2 {

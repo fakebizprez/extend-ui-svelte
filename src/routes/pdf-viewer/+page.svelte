@@ -1,8 +1,9 @@
 <!-- MIT License — Svelte 5 port of Extend UI pdf-viewer. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { PdfViewer } from '#lib/components/pdf-viewer/index.js';
 
-	let darkPreview = $state(true);
+	let darkPreview = $derived(docsTheme.isDark);
 </script>
 
 <h1>PDF Viewer</h1>
@@ -10,9 +11,9 @@
 
 <h2>Fixture document</h2>
 <!-- Matches the upstream docs preview, which starts at 50%. -->
-<PdfViewer src="/fixtures/sample.pdf" fileName="sample" defaultZoom={0.5} />
+<PdfViewer isDark={docsTheme.isDark} src="/fixtures/sample.pdf" fileName="sample" defaultZoom={0.5} />
 
-<h2>Dark mode, fit width</h2>
+<h2>Parent-controlled theme, fit width</h2>
 <p>
 	Dark mode is controlled by the parent through <code>isDark</code> and
 	<code>onIsDarkChange</code>; this switch lives on the page, outside the viewer.
@@ -34,7 +35,7 @@
 />
 
 <h2>Empty source</h2>
-<PdfViewer />
+<PdfViewer isDark={docsTheme.isDark} />
 
 <h2>Differences from upstream</h2>
 <ul>
@@ -48,7 +49,7 @@
 	<li>Port-only exports: <code>PdfViewer</code> (the same component as <code>PDFViewer</code>) and the framework-free zoom, rotation, download-name and page-layout helpers <code>clampZoom</code>, <code>computeFitZoom</code>, <code>computePageLayout</code>, <code>DEFAULT_ZOOM</code>, <code>ensurePdfExtension</code>, <code>formatZoomPercent</code>, <code>getPdfDownloadFileName</code>, <code>getRotatedPdfDownloadFileName</code>, <code>isZoomMode</code>, <code>MAX_ZOOM</code>, <code>MIN_ZOOM</code>, <code>normalizeRotation</code>, <code>pageAtOffset</code>, <code>pageWindow</code>, <code>resolveZoom</code>, <code>rotateClockwise</code>, <code>rotateCounterClockwise</code>, <code>rotatedPageSize</code>, <code>ZOOM_MODES</code>, <code>ZOOM_OPTIONS</code>, <code>zoomSelectOptions</code>, <code>zoomSelectValue</code>, <code>zoomStepIn</code>, <code>zoomStepOut</code>. Port-only types: <code>PdfViewerProps</code>, <code>PdfViewerPageOverlayProps</code>, <code>PdfViewerZoomLevel</code>, <code>PdfViewerZoomMode</code>, <code>PdfLayoutSize</code>, <code>PdfPageLayout</code>, <code>ZoomViewport</code> (upstream's <code>PDFViewerProps</code>, <code>PDFViewerPageOverlayProps</code> and <code>PDFViewerZoomLevel</code> are exported too). Upstream's <code>PDFViewerHandle</code> and <code>PDFViewerScrollAreaViewportResolver</code> types are not exported, since the handle and <code>resolveScrollAreaViewport</code> are not ported.</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	h2 {

@@ -28,6 +28,16 @@ async function search(query: string, expectedLabel: string): Promise<HTMLElement
 }
 
 describe('CsvTsvViewer', () => {
+	it('lets keyboard users focus the scrollable table', async () => {
+		render(CsvTsvViewer, { data: SAMPLE_CSV });
+		await screen.findByRole('cell', { name: 'INV-1001' });
+
+		const viewport = screen.getByRole('group', { name: 'CSV table' });
+		expect(viewport).toHaveAttribute('tabindex', '0');
+		viewport.focus();
+		expect(viewport).toHaveFocus();
+	});
+
 	it('renders CSV headers and rows', async () => {
 		const { container } = render(CsvTsvViewer, { data: SAMPLE_CSV });
 

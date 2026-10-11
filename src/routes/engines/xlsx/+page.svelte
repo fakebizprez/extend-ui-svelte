@@ -49,4 +49,4 @@
 	</ul>
 {/if}
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

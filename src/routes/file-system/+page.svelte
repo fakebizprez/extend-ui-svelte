@@ -1,5 +1,6 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import FileSystem from '../../lib/components/file-system/FileSystem.svelte';
 	import type {
 		FileSystemFileItem,
@@ -14,7 +15,7 @@
 		{ kind: 'file', path: 'readme.txt', contentType: 'text/plain' }
 	];
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let selection = $state('none');
 	let lastRename = $state('none');
 	let lastOpen = $state('none');
@@ -107,4 +108,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

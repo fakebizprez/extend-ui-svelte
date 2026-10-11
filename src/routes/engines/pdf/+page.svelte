@@ -85,4 +85,4 @@
 	<button type="button" data-testid="pdf-next" onclick={next}>Next</button>
 </div>
 <canvas data-testid="pdf-canvas" bind:this={canvas}></canvas>
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

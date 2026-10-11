@@ -116,13 +116,13 @@ test('pdf viewer navigates pages', async ({ page }) => {
 	await expect(viewer.getByTestId('pdf-page-indicator')).toContainText('Page 2 of 3');
 });
 
-test('pdf viewer dark demo is controlled from outside the viewer', async ({ page }) => {
+test('pdf viewer theme demo is controlled from outside the viewer', async ({ page }) => {
 	const viewer = await openViewer(page, 1);
-	await expect(viewer).toHaveAttribute('data-dark', 'true');
+	await expect(viewer).toHaveAttribute('data-dark', 'false');
 	await expect(viewer.getByRole('switch')).toHaveCount(0);
 
 	await page.getByRole('switch', { name: 'Dark mode' }).click();
-	await expect(viewer).toHaveAttribute('data-dark', 'false');
+	await expect(viewer).toHaveAttribute('data-dark', 'true');
 });
 
 test('pdf viewer empty source shows the upstream empty state', async ({ page }) => {

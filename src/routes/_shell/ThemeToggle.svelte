@@ -1,11 +1,13 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { docsTheme } from './theme.svelte.js';
 
 	let theme = $state<'light' | 'dark'>('light');
 
 	function apply(next: 'light' | 'dark') {
 		theme = next;
+		docsTheme.isDark = next === 'dark';
 		document.documentElement.dataset.theme = next;
 		document.documentElement.classList.toggle('dark', next === 'dark');
 		try {

@@ -1,5 +1,6 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { onMount } from 'svelte';
 	import {
 		getOcrBlocks,
@@ -10,7 +11,7 @@
 
 	const LONG_DOCUMENT_BLOCK_COUNT = 200;
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let focusedBlockId = $state<string | undefined>(undefined);
 	let pinnedReports = $state(0);
 	// Set once hydrated so tests know the panels are live.
@@ -257,4 +258,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

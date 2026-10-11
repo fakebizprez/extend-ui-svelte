@@ -6,6 +6,7 @@
 </script>
 
 <header>
+	<a class="skip" href="#main-content">Skip to content</a>
 	<button
 		type="button"
 		class="menu"
@@ -41,6 +42,7 @@
 		color: var(--lh-text);
 	}
 	.brand {
+		min-width: 0;
 		font-family: var(--lh-display);
 		font-weight: 700;
 		letter-spacing: -0.02em;
@@ -55,6 +57,9 @@
 		margin-left: auto;
 	}
 	.gh {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
 		color: var(--lh-muted);
 		text-decoration: none;
 		font-family: var(--lh-mono);
@@ -79,9 +84,29 @@
 		cursor: pointer;
 	}
 	@media (max-width: 768px) {
+		header {
+			gap: 0.5rem;
+			padding: 0.5rem 0.75rem;
+		}
+		.actions {
+			gap: 0.5rem;
+		}
 		.menu {
 			display: inline-flex;
 		}
+	}
+	.skip {
+		position: fixed;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 60;
+		padding: 0.75rem;
+		background: var(--lh-surface);
+		color: var(--lh-text);
+		transform: translateY(-200%);
+	}
+	.skip:focus {
+		transform: none;
 	}
 	a:focus-visible,
 	.menu:focus-visible {

@@ -1,5 +1,6 @@
 <!-- MIT License — Svelte 5 port of Extend UI csv-viewer. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import CsvTsvViewer from '../../lib/components/csv-tsv-viewer/CsvTsvViewer.svelte';
 
 	const SAMPLE_CSV = `Invoice,Customer,Status,Amount,Submitted
@@ -26,8 +27,8 @@ A-9004\tJumper wires\t340\tAustin`;
 		...Array.from({ length: 2000 }, (_, i) => `L-${i + 1},Lane ${(i % 40) + 1},${(i % 9) + 1}`)
 	].join('\n');
 
-	let isDark = $state(false);
-	let tsvDark = $state(true);
+	let isDark = $derived(docsTheme.isDark);
+	let tsvDark = $derived(docsTheme.isDark);
 </script>
 
 <h1>CSV/TSV Viewer</h1>
@@ -49,7 +50,7 @@ A-9004\tJumper wires\t340\tAustin`;
 	onIsDarkChange={(value) => (isDark = value)}
 />
 
-<h2>TSV in dark mode</h2>
+<h2>TSV with search</h2>
 <CsvTsvViewer
 	data={SAMPLE_TSV}
 	search
@@ -59,10 +60,10 @@ A-9004\tJumper wires\t340\tAustin`;
 />
 
 <h2>Long CSV (2,000 rows)</h2>
-<CsvTsvViewer data={LONG_CSV} search height={320} />
+<CsvTsvViewer isDark={docsTheme.isDark} data={LONG_CSV} search height={320} />
 
 <h2>Empty input</h2>
-<CsvTsvViewer data="" />
+<CsvTsvViewer isDark={docsTheme.isDark} data="" />
 
 <h2>Differences from upstream</h2>
 <p>Also exported as <code>CsvViewer</code>, the upstream name.</p>
@@ -85,7 +86,7 @@ A-9004\tJumper wires\t340\tAustin`;
 	<li>Not ported: zoom, upload, download, cell selection, and column resize.</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	h2 {

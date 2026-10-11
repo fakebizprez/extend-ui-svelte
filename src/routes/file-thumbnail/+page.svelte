@@ -1,8 +1,9 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { FileThumbnail } from '#lib/components/file-thumbnail/index.js';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let pageNumber = $state(1);
 </script>
 
@@ -64,4 +65,4 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>

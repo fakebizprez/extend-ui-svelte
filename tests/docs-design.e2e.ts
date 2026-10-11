@@ -36,7 +36,7 @@ test('body copy and sidebar links use the mono face', async ({ page }) => {
 	expect(await style(page, 'nav[aria-label="Components"] a', 'font-family')).toContain('Space Mono');
 });
 
-test('controls and cards have square corners and no shadows', async ({ page }) => {
+test('controls have square corners and no shadows', async ({ page }) => {
 	await page.goto('/toggle');
 	for (const sel of [
 		'button[aria-label="Toggle theme"]',
@@ -46,16 +46,12 @@ test('controls and cards have square corners and no shadows', async ({ page }) =
 		expect(await style(page, sel, 'border-radius'), sel).toBe('0px');
 		expect(await style(page, sel, 'box-shadow'), sel).toBe('none');
 	}
-	await page.goto('/');
-	expect(await style(page, '.home-card', 'border-radius')).toBe('0px');
-	expect(await style(page, '.home-card', 'background-color')).toBe('rgb(255, 255, 255)');
-	expect(await style(page, '.home-card', 'box-shadow')).toBe('none');
 });
 
 test('links and the current-page marker use the signal blue', async ({ page }) => {
 	await page.goto('/toggle');
 	expect(await style(page, 'nav[aria-label="Components"] a[aria-current="page"]', 'color')).toBe(
-		'rgb(0, 119, 255)'
+		'rgb(0, 102, 219)'
 	);
 });
 

@@ -1,8 +1,9 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { ESignature } from '#lib/components/e-signature/index.js';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let lastDownload = $state('');
 </script>
 
@@ -31,11 +32,11 @@
 	<p data-testid="e-signature-last-download">Last download: {lastDownload}</p>
 {/if}
 
-<h2>Dark mode</h2>
-<ESignature file="/fixtures/sample.pdf" fileName="sample" isDark />
+<h2>Parent-controlled theme</h2>
+<ESignature file="/fixtures/sample.pdf" fileName="sample" {isDark} />
 
 <h2>Empty source</h2>
-<ESignature />
+<ESignature {isDark} />
 
 <section aria-labelledby="differences-from-upstream">
 	<h2 id="differences-from-upstream">Differences from upstream</h2>
@@ -78,7 +79,7 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	h2 {

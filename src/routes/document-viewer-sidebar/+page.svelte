@@ -5,6 +5,7 @@
 	including its placeholder thumbnail and page cards.
 -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import {
 		DocumentViewerSidebarSkeleton,
 		DocumentViewerThumbnailSidebar,
@@ -23,7 +24,7 @@
 	const sidebarInline = $derived(useInlineThumbnailSidebar(viewerShell.width));
 	let sidebarOpen = $state(true);
 	let activePageId = $state(1);
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	const activePage = $derived(demoPages.find((page) => page.id === activePageId) ?? demoPages[0]);
 </script>
 
@@ -137,7 +138,7 @@
 	<li>Port-only export: <code>INLINE_THUMBNAIL_SIDEBAR_MIN_WIDTH</code>, the shell width at which the sidebar switches from overlay to inline (upstream keeps it private).</li>
 </ul>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	.preview {

@@ -4,6 +4,11 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import Header from './Header.svelte';
 
 describe('Header', () => {
+	it('offers a skip link before repeated navigation', () => {
+		render(Header);
+		expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
+	});
+
 	it('renders home link, GitHub link and theme toggle', () => {
 		render(Header);
 		expect(screen.getByRole('link', { name: /extend ui/i })).toHaveAttribute('href', '/');

@@ -1,11 +1,12 @@
 <!-- MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT). -->
 <script lang="ts">
+	import { docsTheme } from '../_shell/theme.svelte.js';
 	import { onMount } from 'svelte';
 	import { DocumentSplits, createInitialSplits, type DocumentSplit } from '#lib/components/document-splits/index.js';
 
 	const PDF_URL = '/fixtures/sample.pdf';
 
-	let isDark = $state(false);
+	let isDark = $derived(docsTheme.isDark);
 	let pageCount = $state(0);
 	let loadError = $state<string | null>(null);
 	let splits = $state<DocumentSplit[]>(createInitialSplits(0));
@@ -111,7 +112,7 @@
 	</ul>
 </section>
 
-<p><a href="/">Back to all components</a></p>
+<p><a href="/">Back to overview</a></p>
 
 <style>
 	.preview-frame {

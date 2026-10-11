@@ -81,6 +81,8 @@
 	}
 	a {
 		display: block;
+		min-height: 24px;
+		box-sizing: border-box;
 		padding: 0.25rem 0;
 		font-family: var(--lh-mono);
 		font-size: 0.6875rem;
