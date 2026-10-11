@@ -118,3 +118,21 @@ describe('GroupSeparator', () => {
 		expect(ButtonGroupSeparator).toBe(GroupSeparator);
 	});
 });
+
+describe('className alias', () => {
+	it('merges className and class onto each root', () => {
+		const children = textChildren('<span>x</span>');
+		const group = render(Group, { children, class: 'from-class', className: 'from-classname' });
+		const root = group.container.firstElementChild as HTMLElement;
+		expect(root).toHaveClass('from-class');
+		expect(root).toHaveClass('from-classname');
+		group.unmount();
+
+		const text = render(GroupText, { children, className: 'text-alias' });
+		expect(text.container.firstElementChild).toHaveClass('text-alias');
+		text.unmount();
+
+		render(GroupSeparator, { className: 'sep-alias' });
+		expect(screen.getByRole('separator')).toHaveClass('sep-alias');
+	});
+});

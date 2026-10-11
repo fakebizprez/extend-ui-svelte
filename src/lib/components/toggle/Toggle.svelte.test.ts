@@ -6,6 +6,7 @@ import Toggle from './Toggle.svelte';
 import ToggleGroup from './ToggleGroup.svelte';
 import ToggleGroupItem from './ToggleGroupItem.svelte';
 import ToggleGroupHarness from './ToggleGroupHarness.svelte';
+import ToggleReorderHarness from './ToggleReorderHarness.svelte';
 import { toggleGroupVariants, toggleVariants } from './index.js';
 
 function label(text: string) {
@@ -36,11 +37,11 @@ describe('Toggle', () => {
 		expect(button).toHaveAttribute('data-pressed');
 
 		await fireEvent.click(button);
-		expect(onPressedChange).toHaveBeenCalledWith(false);
+		expect(onPressedChange).toHaveBeenCalledWith(false, expect.anything());
 		expect(button).toHaveAttribute('aria-pressed', 'false');
 
 		await fireEvent.click(button);
-		expect(onPressedChange).toHaveBeenCalledWith(true);
+		expect(onPressedChange).toHaveBeenCalledWith(true, expect.anything());
 		expect(button).toHaveAttribute('aria-pressed', 'true');
 	});
 
@@ -55,7 +56,7 @@ describe('Toggle', () => {
 
 		const button = screen.getByRole('button', { name: 'Bold' });
 		await fireEvent.click(button);
-		expect(onPressedChange).toHaveBeenCalledWith(true);
+		expect(onPressedChange).toHaveBeenCalledWith(true, expect.anything());
 		expect(button).toHaveAttribute('aria-pressed', 'false');
 
 		await view.rerender({ children: label('Bold'), 'aria-label': 'Bold', pressed: true, onPressedChange });
@@ -131,42 +132,42 @@ describe('ToggleGroup', () => {
 
 	it('selects and deselects multiple items', async () => {
 		const onValueChange = vi.fn();
-		render(ToggleGroupHarness, { onValueChange });
+		render(ToggleGroupHarness, { multiple: true, onValueChange });
 
 		const bold = screen.getByRole('button', { name: 'Bold' });
 		const italic = screen.getByRole('button', { name: 'Italic' });
 		expect(bold).toHaveAttribute('data-slot', 'toggle-group-item');
 
 		await fireEvent.click(bold);
-		expect(onValueChange).toHaveBeenCalledWith(['bold']);
+		expect(onValueChange).toHaveBeenCalledWith(['bold'], expect.anything());
 		expect(bold).toHaveAttribute('aria-pressed', 'true');
 
 		await fireEvent.click(italic);
-		expect(onValueChange).toHaveBeenCalledWith(['bold', 'italic']);
+		expect(onValueChange).toHaveBeenCalledWith(['bold', 'italic'], expect.anything());
 		expect(italic).toHaveAttribute('aria-pressed', 'true');
 
 		await fireEvent.click(bold);
-		expect(onValueChange).toHaveBeenCalledWith(['italic']);
+		expect(onValueChange).toHaveBeenCalledWith(['italic'], expect.anything());
 		expect(bold).toHaveAttribute('aria-pressed', 'false');
 	});
 
-	it('replaces the selection when multiple is false', async () => {
+	it('replaces the selection by default, like Base UI (multiple defaults to false)', async () => {
 		const onValueChange = vi.fn();
-		render(ToggleGroupHarness, { multiple: false, onValueChange });
+		render(ToggleGroupHarness, { onValueChange });
 
 		const bold = screen.getByRole('button', { name: 'Bold' });
 		const italic = screen.getByRole('button', { name: 'Italic' });
 
 		await fireEvent.click(bold);
-		expect(onValueChange).toHaveBeenCalledWith(['bold']);
+		expect(onValueChange).toHaveBeenCalledWith(['bold'], expect.anything());
 
 		await fireEvent.click(italic);
-		expect(onValueChange).toHaveBeenCalledWith(['italic']);
+		expect(onValueChange).toHaveBeenCalledWith(['italic'], expect.anything());
 		expect(bold).toHaveAttribute('aria-pressed', 'false');
 		expect(italic).toHaveAttribute('aria-pressed', 'true');
 
 		await fireEvent.click(italic);
-		expect(onValueChange).toHaveBeenCalledWith([]);
+		expect(onValueChange).toHaveBeenCalledWith([], expect.anything());
 		expect(italic).toHaveAttribute('aria-pressed', 'false');
 	});
 
@@ -179,7 +180,7 @@ describe('ToggleGroup', () => {
 		const controlled = render(ToggleGroupHarness, { value: [], onValueChange });
 		const bold = screen.getByRole('button', { name: 'Bold' });
 		await fireEvent.click(bold);
-		expect(onValueChange).toHaveBeenCalledWith(['bold']);
+		expect(onValueChange).toHaveBeenCalledWith(['bold'], expect.anything());
 		expect(bold).toHaveAttribute('aria-pressed', 'false');
 
 		await controlled.rerender({ value: ['bold'], onValueChange });
@@ -216,5 +217,418 @@ describe('ToggleGroup', () => {
 	it('re-exports the item component from the barrel', () => {
 		expect(ToggleGroupItem).toBeDefined();
 		expect(ToggleGroup).toBeDefined();
+	});
+});
+
+describe('ToggleGroup keyboard', () => {
+	it('moves focus between items with the arrow keys and loops at the ends', async () => {
+		render(ToggleGroupHarness);
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'ArrowLeft' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'Home' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'End' });
+		expect(italic).toHaveFocus();
+	});
+
+	it('uses up and down in a vertical group and stops at the ends without loopFocus', async () => {
+		render(ToggleGroupHarness, { orientation: 'vertical', loopFocus: false });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+		await fireEvent.keyDown(bold, { key: 'ArrowDown' });
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'ArrowDown' });
+		expect(italic).toHaveFocus();
+	});
+});
+
+describe('Toggle className alias', () => {
+	it('merges className and class onto Toggle, ToggleGroup, and items', () => {
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', class: 'a', className: 'b' });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveClass('a');
+		expect(button).toHaveClass('b');
+	});
+
+	it('merges className onto the ToggleGroup root and its items', () => {
+		render(ToggleGroupHarness, { className: 'group-alias', itemClassName: 'item-alias' });
+		expect(screen.getByRole('group')).toHaveClass('group-alias');
+		expect(screen.getByRole('button', { name: 'Bold' })).toHaveClass('item-alias');
+	});
+});
+
+describe('ToggleGroup roving tab stop', () => {
+	const tabbable = () =>
+		screen.getAllByRole('button').filter((button) => button.getAttribute('tabindex') === '0');
+	const threeItems = (disabledFirst = false) => [
+		{ value: 'left', label: 'Left', disabled: disabledFirst },
+		{ value: 'center', label: 'Center' },
+		{ value: 'right', label: 'Right' }
+	];
+
+	it('gives the group one tab stop on the first enabled item when nothing is pressed', () => {
+		render(ToggleGroupHarness, { items: threeItems(true) });
+
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Center' })]);
+		expect(screen.getByRole('button', { name: 'Right' })).toHaveAttribute('tabindex', '-1');
+	});
+
+	it('starts the tab stop on the first item even when a later one is pressed, like Base UI 1.4.1', () => {
+		render(ToggleGroupHarness, { items: threeItems(), defaultValue: ['right'] });
+
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Left' })]);
+	});
+
+	it('orders the tab stop by DOM position when an item is added at the front', async () => {
+		const view = render(ToggleGroupHarness, { items: threeItems().slice(1) });
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Center' })]);
+
+		await view.rerender({ items: threeItems() });
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Left' })]);
+	});
+
+	it('moves the tab stop to the new first item when items are reordered', async () => {
+		const view = render(ToggleReorderHarness, {
+			items: [
+				{ label: 'A', value: 'a' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'A' })]);
+
+		await view.rerender({
+			items: [
+				{ label: 'B', value: 'b' },
+				{ label: 'A', value: 'a' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'B' })]);
+	});
+
+	it('keeps exactly one tab stop when an item value changes after mount', async () => {
+		const view = render(ToggleReorderHarness, {
+			items: [
+				{ label: 'A', value: 'a' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+
+		await view.rerender({
+			items: [
+				{ label: 'A', value: 'x' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'A' })]);
+	});
+
+	it('moves the tab stop with focus and skips disabled items', async () => {
+		render(ToggleGroupHarness, { items: threeItems(true), defaultValue: ['center'] });
+		const center = screen.getByRole('button', { name: 'Center' });
+		const right = screen.getByRole('button', { name: 'Right' });
+
+		center.focus();
+		await fireEvent.keyDown(center, { key: 'ArrowRight' });
+		expect(right).toHaveFocus();
+		expect(tabbable()).toEqual([right]);
+
+		// Looping skips the disabled first item.
+		await fireEvent.keyDown(right, { key: 'ArrowRight' });
+		expect(center).toHaveFocus();
+		expect(tabbable()).toEqual([center]);
+	});
+
+	it('leaves a standalone toggle in the normal tab order', () => {
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold' });
+
+		expect(screen.getByRole('button', { name: 'Bold' })).not.toHaveAttribute('tabindex');
+	});
+});
+
+// Base UI merges consumer handlers with its own: the consumer runs first, then
+// the internal logic unless the consumer opted out (preventBaseUIHandler; the
+// DOM stand-in here is event.preventDefault()).
+describe('consumer event handlers', () => {
+	it('keeps toggling when the consumer passes onclick to a Toggle', async () => {
+		const onclick = vi.fn();
+		const onPressedChange = vi.fn();
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', onclick, onPressedChange });
+
+		const button = screen.getByRole('button', { name: 'Bold' });
+		await fireEvent.click(button);
+		expect(onclick).toHaveBeenCalledTimes(1);
+		expect(onPressedChange).toHaveBeenCalledWith(true, expect.anything());
+		expect(button).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('skips the toggle when the consumer onclick prevents default', async () => {
+		const onPressedChange = vi.fn();
+		render(Toggle, {
+			children: label('Bold'),
+			'aria-label': 'Bold',
+			onclick: (event: MouseEvent) => event.preventDefault(),
+			onPressedChange
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
+		expect(onPressedChange).not.toHaveBeenCalled();
+	});
+
+	it('keeps selecting when the consumer passes onclick to a ToggleGroupItem', async () => {
+		const itemOnclick = vi.fn();
+		const onValueChange = vi.fn();
+		render(ToggleGroupHarness, { itemOnclick, onValueChange });
+
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		await fireEvent.click(bold);
+		expect(itemOnclick).toHaveBeenCalledTimes(1);
+		expect(onValueChange).toHaveBeenCalledWith(['bold'], expect.anything());
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('keeps arrow-key navigation when the consumer passes onkeydown to a ToggleGroup', async () => {
+		const onkeydown = vi.fn();
+		render(ToggleGroupHarness, { onkeydown });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(onkeydown).toHaveBeenCalledTimes(1);
+		expect(italic).toHaveFocus();
+		await fireEvent.keyDown(italic, { key: 'Home' });
+		expect(bold).toHaveFocus();
+	});
+
+	it('skips navigation when the consumer onkeydown prevents default', async () => {
+		render(ToggleGroupHarness, { onkeydown: (event: KeyboardEvent) => event.preventDefault() });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		bold.focus();
+		await fireEvent.keyDown(bold, { key: 'ArrowRight' });
+		expect(bold).toHaveFocus();
+	});
+});
+
+// Base UI 1.4.1 calls onPressedChange(pressed, eventDetails) for every toggle,
+// grouped or not. A standalone toggle skips its state change on cancel(); in a
+// group the group commits first (its onValueChange can cancel), then the item's
+// onPressedChange runs with the same details and cannot block the group.
+describe('change event details', () => {
+	it('passes Base UI-style event details to onPressedChange', async () => {
+		const onPressedChange = vi.fn();
+		render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', onPressedChange });
+		const button = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(button);
+		const [pressed, details] = onPressedChange.mock.calls[0]!;
+		expect(pressed).toBe(true);
+		expect(details.reason).toBe('none');
+		expect(details.event).toBeInstanceOf(MouseEvent);
+		expect(details.trigger).toBe(button);
+		expect(details.isCanceled).toBe(false);
+	});
+
+	it('keeps the pressed state when onPressedChange cancels', async () => {
+		render(Toggle, {
+			children: label('Bold'),
+			'aria-label': 'Bold',
+			onPressedChange: (_pressed: boolean, details: { cancel: () => void }) => details.cancel()
+		});
+		const button = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(button);
+		expect(button).toHaveAttribute('aria-pressed', 'false');
+	});
+
+	it('calls onPressedChange on a ToggleGroupItem, like Base UI', async () => {
+		const itemOnPressedChange = vi.fn();
+		const onValueChange = vi.fn();
+		render(ToggleGroupHarness, { itemOnPressedChange, onValueChange });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(bold);
+		expect(itemOnPressedChange).toHaveBeenCalledWith(true, expect.objectContaining({ reason: 'none' }));
+		expect(onValueChange).toHaveBeenCalledWith(['bold'], expect.objectContaining({ reason: 'none' }));
+
+		await fireEvent.click(bold);
+		expect(itemOnPressedChange).toHaveBeenLastCalledWith(false, expect.anything());
+	});
+
+	it('commits the group before the item onPressedChange, which cannot block it', async () => {
+		const calls: string[] = [];
+		render(ToggleGroupHarness, {
+			itemOnPressedChange: (_pressed: boolean, details: { cancel: () => void }) => {
+				calls.push('item');
+				details.cancel();
+			},
+			onValueChange: (value: string[]) => calls.push(`group:${value.join(',')}`)
+		});
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(bold);
+		expect(calls).toEqual(['group:bold', 'item']);
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	it('keeps the group selection when onValueChange cancels and tells the item', async () => {
+		// Record isCanceled at call time; the details object is shared and mutable.
+		const seen: boolean[] = [];
+		render(ToggleGroupHarness, {
+			itemOnPressedChange: (_pressed: boolean, details: { isCanceled: boolean }) =>
+				seen.push(details.isCanceled),
+			onValueChange: (_value: string[], details: { cancel: () => void }) => details.cancel()
+		});
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(bold);
+		expect(bold).toHaveAttribute('aria-pressed', 'false');
+		expect(seen).toEqual([true]);
+	});
+});
+
+describe('ToggleGroupItem value', () => {
+	it('is optional and falls back to a generated id, like Base UI', async () => {
+		const onValueChange = vi.fn();
+		render(ToggleGroupHarness, {
+			items: [{ label: 'Auto' }, { value: 'bold', label: 'Bold' }],
+			onValueChange
+		});
+		const auto = screen.getByRole('button', { name: 'Auto' });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+
+		await fireEvent.click(auto);
+		const [value] = onValueChange.mock.calls[0]!;
+		expect(value).toHaveLength(1);
+		expect(value[0]).toEqual(expect.any(String));
+		expect(value[0]).not.toBe('');
+		expect(auto).toHaveAttribute('aria-pressed', 'true');
+
+		await fireEvent.click(bold);
+		expect(auto).toHaveAttribute('aria-pressed', 'false');
+		expect(bold).toHaveAttribute('aria-pressed', 'true');
+	});
+});
+
+// Base UI 1.4.1's composite root ignores arrow, Home, and End keys while Shift,
+// Control, Alt, or Meta is held, and only when it moves focus does it call
+// preventDefault() and stopPropagation().
+describe('ToggleGroup keyboard modifiers and propagation', () => {
+	function trackDocumentKeys() {
+		const seen: string[] = [];
+		const listener = (event: KeyboardEvent) => seen.push(event.key);
+		document.addEventListener('keydown', listener);
+		return { seen, stop: () => document.removeEventListener('keydown', listener) };
+	}
+
+	for (const modifier of ['altKey', 'metaKey', 'ctrlKey', 'shiftKey'] as const) {
+		it(`leaves arrows and Home/End alone while ${modifier} is held`, async () => {
+			render(ToggleGroupHarness);
+			const bold = screen.getByRole('button', { name: 'Bold' });
+			const italic = screen.getByRole('button', { name: 'Italic' });
+			const keys = trackDocumentKeys();
+
+			bold.focus();
+			expect(await fireEvent.keyDown(bold, { key: 'ArrowRight', [modifier]: true })).toBe(true);
+			expect(bold).toHaveFocus();
+			italic.focus();
+			expect(await fireEvent.keyDown(italic, { key: 'Home', [modifier]: true })).toBe(true);
+			expect(italic).toHaveFocus();
+			expect(keys.seen).toEqual(['ArrowRight', 'Home']);
+			keys.stop();
+		});
+	}
+
+	it('stops propagation and prevents default only when focus moves', async () => {
+		render(ToggleGroupHarness, { loopFocus: false });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+		const keys = trackDocumentKeys();
+
+		bold.focus();
+		expect(await fireEvent.keyDown(bold, { key: 'ArrowRight' })).toBe(false);
+		expect(italic).toHaveFocus();
+		// At the end without loopFocus nothing moves, so the key passes through.
+		expect(await fireEvent.keyDown(italic, { key: 'ArrowRight' })).toBe(true);
+		expect(italic).toHaveFocus();
+		expect(keys.seen).toEqual(['ArrowRight']);
+		keys.stop();
+	});
+});
+
+// Base UI 1.4.1 maps true state to empty data attributes: Toggle state is
+// { pressed, disabled }; ToggleGroup state is { disabled, multiple, orientation },
+// its composite root also adds aria-orientation, which the port leaves out:
+// ARIA does not allow it on role="group" (data-orientation carries it).
+describe('Base UI state attributes', () => {
+	it('renders data-pressed and data-disabled on a Toggle like Base UI', async () => {
+		const view = render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', defaultPressed: true });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveAttribute('data-pressed', '');
+		expect(button).not.toHaveAttribute('data-disabled');
+
+		await view.rerender({ children: label('Bold'), 'aria-label': 'Bold', disabled: true });
+		expect(button).toHaveAttribute('data-disabled', '');
+	});
+
+	it('renders data-multiple, data-disabled and data-orientation (not aria-orientation) on a ToggleGroup', () => {
+		const single = render(ToggleGroupHarness);
+		const group = screen.getByRole('group');
+		expect(group).toHaveAttribute('data-orientation', 'horizontal');
+		expect(group).not.toHaveAttribute('aria-orientation');
+		expect(group).not.toHaveAttribute('data-multiple');
+		expect(group).not.toHaveAttribute('data-disabled');
+		single.unmount();
+
+		render(ToggleGroupHarness, { multiple: true, disabled: true, orientation: 'vertical' });
+		const other = screen.getByRole('group');
+		expect(other).toHaveAttribute('data-multiple', '');
+		expect(other).toHaveAttribute('data-disabled', '');
+		expect(other).toHaveAttribute('data-orientation', 'vertical');
+		expect(other).not.toHaveAttribute('aria-orientation');
+		expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('data-disabled', '');
+	});
+});
+
+// Base UI 1.4.1's Toggle destructures and drops `type` and `form`: a toggle is
+// always type="button" and never joins a form.
+describe('Toggle type and form', () => {
+	it('stays type="button" and drops form, so it never submits, like Base UI', async () => {
+		const onsubmit = vi.fn((event: SubmitEvent) => event.preventDefault());
+		const form = document.createElement('form');
+		form.id = 'f1';
+		form.addEventListener('submit', onsubmit);
+		document.body.append(form);
+		render(Toggle, {
+			target: form,
+			props: { children: label('Bold'), 'aria-label': 'Bold', type: 'submit', form: 'f1' }
+		});
+		const button = screen.getByRole('button', { name: 'Bold' });
+
+		expect(button).toHaveAttribute('type', 'button');
+		expect(button).not.toHaveAttribute('form');
+		await fireEvent.click(button);
+		expect(onsubmit).not.toHaveBeenCalled();
+		expect(button).toHaveAttribute('aria-pressed', 'true');
+		form.remove();
+	});
+
+	it('drops type and form on a ToggleGroupItem too', () => {
+		render(ToggleGroupItem, { value: 'bold', type: 'submit', form: 'f1', 'aria-label': 'Bold' });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveAttribute('type', 'button');
+		expect(button).not.toHaveAttribute('form');
 	});
 });

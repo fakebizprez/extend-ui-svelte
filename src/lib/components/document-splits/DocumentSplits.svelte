@@ -9,21 +9,31 @@
 	- Every drag operation also has a button control (move up/down/left/right,
 	  move to previous/next split) so reordering works by keyboard and in
 	  automated tests where native drag events are impractical.
-	- Splits are `$bindable` and mutations are pure helpers in ./splits.js, so
-	  the component works controlled (`splits` + `onSplitsChange`, like
-	  upstream), uncontrolled, or with `bind:splits`.
+	- `class` is accepted alongside the upstream `className`. splits,
+	  activePage, onSelectPage, and onSplitsChange are required as in the
+	  upstream API table. Like upstream, splits are controlled: the component
+	  renders only what the parent passes and reports edits to onSplitsChange.
+	  Mutations are pure helpers in ./splits.js.
 	- New operations upstream inlines or lacks: rename via a title input,
-	  `Split <title> in two` (midpoint cut), and an `activePage` highlight.
-	- Page thumbnails reuse FileThumbnail; pass `pdfUrl` to render real PDF
-	  pages through the shared PDF engine, or `thumbnailImages` for cached
-	  data URLs exactly like upstream.
+	  `Split <title> in two` (midpoint cut), and an `activePage` highlight
+	  (0 for none; upstream documents the prop but never renders it).
+	- Page thumbnails reuse FileThumbnail; pass `thumbnailImages` for cached
+	  data URLs exactly like upstream, or `pdfUrl` to render real PDF pages.
+	  Like upstream's lazy PDF page thumbnails, the document loads once per
+	  `pdfUrl` and each page renders to an image only when it scrolls near the
+	  viewport (IntersectionObserver; all pages render where it is missing).
 	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange);
 	  this component renders no theme switcher, so it reflects `isDark` and
 	  never invokes the callback.
 -->
 <script lang="ts">
-	import { FileThumbnail } from '#lib/components/file-thumbnail/index.js';
-	import { resolveIsDark } from '#lib/dark-mode.js';
+	import { onMount, untrack } from 'svelte';
+	import {
+		FileThumbnail,
+		renderLoadedPdfThumbnail
+	} from '../file-thumbnail/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
+	import { resolveIsDark } from '../../dark-mode.js';
 	import {
 		addSplit,
 		areSplitGroupsEqual,
@@ -31,7 +41,6 @@
 		findGroupId,
 		getGroupPages,
 		getPageNumber,
-		INITIAL_SPLITS,
 		movePage,
 		movePageToAdjacentGroup,
 		movePageToGroup,
@@ -45,32 +54,36 @@
 	} from './splits.js';
 
 	interface Props {
-		/** Controlled split groups. Defaults to the upstream demo splits. */
-		splits?: DocumentSplit[];
-		/** 1-based page number highlighted as active. */
-		activePage?: number | null;
+		/** Split groups. Required and controlled, like upstream. */
+		splits: DocumentSplit[];
+		/** 1-based page number highlighted as active (0 for none). Required, like upstream's docs. */
+		activePage: number;
 		/** Cached page images by page id, e.g. `{ 'page-1': 'data:...' }`. */
-		thumbnailImages?: Record<string, string>;
+		thumbnailImages?: Record<DocumentSplitPageId, string>;
 		/** PDF URL rendered into each page thumbnail via FileThumbnail. */
 		pdfUrl?: string | null;
 		/** Whether the frame divider border is shown. Defaults to `true`. */
 		withFrameDivider?: boolean;
 		className?: string;
-		/** Called with the 1-based page number when a page is selected. */
-		onSelectPage?: (pageNumber: number) => void;
-		/** Called with the next splits after every mutation. */
-		onSplitsChange?: (splits: DocumentSplit[]) => void;
+		/** Alias of the upstream `className`. */
+		class?: string;
+		/** Called with the 1-based page number when a page is selected. Required, like upstream. */
+		onSelectPage: (pageNumber: number) => void;
+		/** Called with the next splits after every mutation. Required, like upstream. */
+		onSplitsChange: (splits: DocumentSplit[]) => void;
 		isDark?: boolean;
+		/** Accepted for contract parity; the component renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 	}
 
 	let {
-		splits = $bindable(INITIAL_SPLITS),
-		activePage = null,
+		splits,
+		activePage,
 		thumbnailImages = {},
 		pdfUrl = null,
 		withFrameDivider = true,
 		className,
+		class: classProp,
 		onSelectPage,
 		onSplitsChange,
 		isDark = false
@@ -90,8 +103,8 @@
 	let dropTargetGroup = $state<string | null>(null);
 
 	function commit(next: DocumentSplit[]): void {
+		// Controlled, like upstream: the parent decides whether the edit lands.
 		if (areSplitGroupsEqual(splits, next)) return;
-		splits = next;
 		onSplitsChange?.(next);
 	}
 
@@ -140,12 +153,14 @@
 		dropTargetPage = pageId;
 	}
 
+	// Split drags fall through to the group's drop handler, so only page drags stop here.
 	function onPageDrop(event: DragEvent, targetPageId: DocumentSplitPageId): void {
+		const dragged = draggedPageId(event);
+		if (!dragged) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const dragged = draggedPageId(event);
 		clearDragState();
-		if (!dragged || dragged === targetPageId) return;
+		if (dragged === targetPageId) return;
 
 		const sourceGroupId = findGroupId(splits, dragged);
 		const targetGroupId = findGroupId(splits, targetPageId);
@@ -177,11 +192,11 @@
 	}
 
 	function onDropzoneDrop(event: DragEvent, groupId: string): void {
+		const dragged = draggedPageId(event);
+		if (!dragged) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const dragged = draggedPageId(event);
 		clearDragState();
-		if (!dragged) return;
 
 		const sourceGroupId = findGroupId(splits, dragged);
 		if (!sourceGroupId) return;
@@ -238,20 +253,120 @@
 		if (fromIndex === -1) return;
 		commit(reorderSplits(splits, fromIndex, fromIndex + direction));
 	}
+
+	// Page thumbnail box, matching upstream THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT.
+	const THUMBNAIL_WIDTH = 72;
+	const THUMBNAIL_HEIGHT = 92;
+
+	// Page images rendered from pdfUrl; null marks a page that failed to render.
+	let pdfImages = $state<Partial<Record<DocumentSplitPageId, string | null>>>({});
+	let pdfDocument: Promise<{ engine: PdfEngine; pageCount: number }> | null = null;
+	let pdfRun = 0;
+	// Pages render one at a time, in the order they scroll into view.
+	let renderQueue: Promise<void> = Promise.resolve();
+	const requestedPages = new Set<DocumentSplitPageId>();
+	const visiblePages = new Set<DocumentSplitPageId>();
+	const observedPages = new Map<Element, DocumentSplitPageId>();
+	let pageObserver: IntersectionObserver | null = null;
+
+	function requestPageImage(pageId: DocumentSplitPageId): void {
+		const documentPromise = pdfDocument;
+		if (!documentPromise || thumbnailImages[pageId] || requestedPages.has(pageId)) return;
+		requestedPages.add(pageId);
+		const run = pdfRun;
+		renderQueue = renderQueue.then(async () => {
+			if (run !== pdfRun) return;
+			try {
+				const { engine, pageCount } = await documentPromise;
+				const pageNumber = getPageNumber(pageId);
+				if (pageNumber > pageCount) throw new RangeError(`No page ${pageNumber}`);
+				if (run !== pdfRun) return;
+				const canvas = document.createElement('canvas');
+				await renderLoadedPdfThumbnail(engine, pageCount, canvas, {
+					pageNumber,
+					width: THUMBNAIL_WIDTH,
+					dpr: window.devicePixelRatio || 1
+				});
+				if (run !== pdfRun) return;
+				pdfImages = { ...pdfImages, [pageId]: canvas.toDataURL() };
+			} catch {
+				if (run === pdfRun) pdfImages = { ...pdfImages, [pageId]: null };
+			}
+		});
+	}
+
+	// Load the document once per pdfUrl; every page thumbnail shares it.
+	$effect(() => {
+		const url = pdfUrl;
+		pdfImages = {};
+		requestedPages.clear();
+		if (!url) return;
+		// Browser-only: the engine (and PDF.js behind it) loads on the client.
+		let engine: PdfEngine | undefined;
+		let cancelled = false;
+		const loading = import('../../engines/pdf/index.js').then(async (module) => {
+			if (cancelled) throw new Error('DocumentSplits: pdfUrl changed before loading started.');
+			engine = module.createPdfEngine();
+			return { engine, pageCount: await engine.load(url) };
+		});
+		// A failed or superseded load still owns an engine; release it.
+		loading.catch(() => void engine?.destroy());
+		pdfDocument = loading;
+		// Pages already near the viewport will not report again; render them now.
+		untrack(() => visiblePages.forEach(requestPageImage));
+		return () => {
+			pdfRun += 1;
+			pdfDocument = null;
+			cancelled = true;
+			// destroy() also cancels a load still in flight.
+			void engine?.destroy();
+		};
+	});
+
+	function observePage(node: HTMLElement, pageId: DocumentSplitPageId) {
+		if (typeof IntersectionObserver === 'undefined') {
+			visiblePages.add(pageId);
+			requestPageImage(pageId);
+			return;
+		}
+		pageObserver ??= new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					const id = observedPages.get(entry.target);
+					if (!id) continue;
+					if (entry.isIntersecting) {
+						visiblePages.add(id);
+						requestPageImage(id);
+					} else {
+						visiblePages.delete(id);
+					}
+				}
+			},
+			{ rootMargin: '200px' }
+		);
+		observedPages.set(node, pageId);
+		pageObserver.observe(node);
+		return {
+			destroy() {
+				observedPages.delete(node);
+				visiblePages.delete(pageId);
+				pageObserver?.unobserve(node);
+			}
+		};
+	}
+
+	onMount(() => () => pageObserver?.disconnect());
 </script>
 
 <aside
 	data-testid="document-splits"
 	data-dark={dark ? 'true' : 'false'}
 	data-frame-divider={withFrameDivider ? 'true' : 'false'}
-	class="document-splits {className ?? ''}"
+	class={['document-splits', classProp, className]}
 	class:dark
 	class:with-frame-divider={withFrameDivider}
 >
 	<div class="splits-header">
-		<span class="splits-summary" aria-live="polite">
-			{splits.length} {splits.length === 1 ? 'split' : 'splits'}
-		</span>
 		<button
 			type="button"
 			class="add-split"
@@ -300,8 +415,8 @@
 						<div class="split-range">{createPageRangeLabel(group.pages)}</div>
 					</div>
 					<div class="split-group-actions">
-						<span class="split-count" aria-label={`${group.pages.length} pages`}>
-							{group.pages.length}
+						<span class="split-count">
+							{group.pages.length}<span class="visually-hidden">{' pages'}</span>
 						</span>
 						<button
 							type="button"
@@ -356,6 +471,7 @@
 								{@const pageNumber = getPageNumber(pageId)}
 								{@const isFirstPage = pageIndex === 0}
 								{@const isLastPage = pageIndex === group.pages.length - 1}
+								{@const imageUrl = thumbnailImages[pageId] ?? pdfImages[pageId] ?? null}
 								<div class="split-page">
 									<button
 										type="button"
@@ -370,14 +486,14 @@
 										ondragover={(event) => onPageDragOver(event, pageId)}
 										ondrop={(event) => onPageDrop(event, pageId)}
 										ondragend={clearDragState}
+										use:observePage={pageId}
 									>
 										<FileThumbnail
 											file={{ name: `page-${pageNumber}.pdf`, type: 'application/pdf' }}
-											previewImageUrl={thumbnailImages[pageId] ?? null}
-											isLoading={!thumbnailImages[pageId] && !pdfUrl}
-											{pdfUrl}
-											{pageNumber}
-											width={72}
+											previewImageUrl={imageUrl}
+											isLoading={!imageUrl && pdfImages[pageId] !== null}
+											hasError={!imageUrl && pdfImages[pageId] === null}
+											previewAspectRatio={THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT}
 											isDark={dark}
 										/>
 										<span class="split-page-badge">{pageNumber}</span>
@@ -457,23 +573,27 @@
 		--splits-accent: #3f3f46;
 	}
 
+	/* Like upstream: the divider sits on top when stacked, on the left from md up. */
 	.document-splits.with-frame-divider {
-		border-left: 1px solid var(--splits-border);
+		border-top: 1px solid var(--splits-border);
+	}
+
+	@media (min-width: 768px) {
+		.document-splits.with-frame-divider {
+			border-top: 0;
+			border-left: 1px solid var(--splits-border);
+		}
 	}
 
 	.splits-header {
 		display: flex;
+		min-height: 3rem;
 		align-items: center;
-		justify-content: space-between;
+		justify-content: flex-end;
 		gap: 0.75rem;
 		border-bottom: 1px solid var(--splits-border);
 		background: var(--splits-bg);
 		padding: 0.5rem 0.75rem;
-	}
-
-	.splits-summary {
-		font-size: 0.75rem;
-		color: var(--splits-subtle);
 	}
 
 	.add-split {

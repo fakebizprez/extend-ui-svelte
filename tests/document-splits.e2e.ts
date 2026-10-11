@@ -7,6 +7,14 @@ async function splitTitles(page: Page): Promise<string[]> {
 	);
 }
 
+// The route resets the splits once it has counted the PDF's pages, so wait for
+// that before interacting or the reset can undo the interaction.
+async function gotoLoadedSplits(page: Page): Promise<void> {
+	await page.goto('/document-splits');
+	await expect(page.getByText('Sample PDF: 3 pages')).toBeVisible({ timeout: 30000 });
+	await expect(page.getByTestId('split-group')).toHaveCount(3);
+}
+
 test('groups the sample PDF pages into initial splits', async ({ page }) => {
 	await page.goto('/document-splits');
 
@@ -17,9 +25,7 @@ test('groups the sample PDF pages into initial splits', async ({ page }) => {
 });
 
 test('creates a split through the Add split control', async ({ page }) => {
-	await page.goto('/document-splits');
-
-	await expect(page.getByTestId('split-group')).toHaveCount(3, { timeout: 30000 });
+	await gotoLoadedSplits(page);
 
 	await page.getByRole('button', { name: 'Add split' }).click();
 
@@ -29,9 +35,7 @@ test('creates a split through the Add split control', async ({ page }) => {
 });
 
 test('creates a split by splitting a group in two', async ({ page }) => {
-	await page.goto('/document-splits');
-
-	await expect(page.getByTestId('split-group')).toHaveCount(3, { timeout: 30000 });
+	await gotoLoadedSplits(page);
 
 	// Single-page groups cannot split, so move page 2 into the first split first.
 	await page.getByRole('button', { name: 'Move page 2 to previous split' }).click();
@@ -44,9 +48,7 @@ test('creates a split by splitting a group in two', async ({ page }) => {
 });
 
 test('reorders splits through the move controls', async ({ page }) => {
-	await page.goto('/document-splits');
-
-	await expect(page.getByTestId('split-group')).toHaveCount(3, { timeout: 30000 });
+	await gotoLoadedSplits(page);
 
 	await page.getByRole('button', { name: 'Move Page 2 up' }).click();
 
@@ -58,12 +60,108 @@ test('reorders splits through the move controls', async ({ page }) => {
 });
 
 test('moves a page across splits through the controls', async ({ page }) => {
-	await page.goto('/document-splits');
-
-	await expect(page.getByTestId('split-group')).toHaveCount(3, { timeout: 30000 });
+	await gotoLoadedSplits(page);
 
 	await page.getByRole('button', { name: 'Move page 3 to previous split' }).click();
 
 	await expect(page.getByTestId('split-group').nth(1)).toContainText('Pages 2, 3');
 	await expect(page.getByTestId('split-group').nth(2)).toContainText('No pages');
+});
+
+test('loads without console errors, nested buttons, or theme pills over thumbnails', async ({
+	page
+}) => {
+	const errors: string[] = [];
+	page.on('console', (message) => {
+		if (message.type() === 'error') errors.push(message.text());
+	});
+	page.on('pageerror', (error) => errors.push(error.message));
+
+	await page.goto('/document-splits');
+	await expect(page.getByTestId('split-group')).toHaveCount(3, { timeout: 30000 });
+
+	// Every page thumbnail renders a real image from the PDF.
+	const images = page.getByTestId('document-splits').getByTestId('file-thumbnail-image');
+	await expect(images).toHaveCount(3, { timeout: 30000 });
+	await expect(page.getByTestId('document-splits').getByTestId('file-thumbnail-loading')).toHaveCount(0, {
+		timeout: 30000
+	});
+
+	expect(await page.evaluate(() => document.querySelectorAll('button button').length)).toBe(0);
+	await expect(
+		page.getByTestId('document-splits').getByRole('button', { name: /^(Dark|Light)$/ })
+	).toHaveCount(0);
+	await expect(page.getByTestId('document-splits').getByText(/^(Dark|Light)$/)).toHaveCount(0);
+	expect(errors).toEqual([]);
+});
+
+test('docs page lists the differences from upstream', async ({ page }) => {
+	await page.goto('/document-splits');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('dnd-kit');
+	await expect(differences).toContainText('activePage');
+});
+
+test('dropping a split on another split\'s page thumbnail reorders the splits', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	const before = await splitTitles(page);
+
+	const handle = page.getByTestId('split-group').first().getByRole('button', { name: /^Reorder / });
+	const thumbnail = page.getByTestId('split-group').nth(1).getByTestId(/^split-page-/).first();
+	await handle.dragTo(thumbnail);
+
+	await expect.poll(() => splitTitles(page)).toEqual([before[1], before[0], before[2]]);
+});
+
+test('dropping a split on another split\'s dropzone reorders the splits', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	const before = await splitTitles(page);
+
+	const handle = page.getByTestId('split-group').nth(2).getByRole('button', { name: /^Reorder / });
+	const dropzone = page.getByTestId('split-group').first().getByTestId('split-dropzone');
+	await handle.dragTo(dropzone, { targetPosition: { x: 4, y: 4 } });
+
+	await expect.poll(() => splitTitles(page)).toEqual([before[2], before[0], before[1]]);
+});
+
+for (const [width, side] of [
+	[1280, 'left'],
+	[390, 'top']
+] as const) {
+	test(`the frame divider sits on the ${side} at ${width}px, like upstream`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await gotoLoadedSplits(page);
+
+		const root = page.getByTestId('document-splits').first();
+		const other = side === 'left' ? 'top' : 'left';
+		await expect(root).toHaveCSS(`border-${side}-width`, '1px');
+		await expect(root).toHaveCSS(`border-${other}-width`, '0px');
+	});
+}
+
+test('the header shows no split counter, like upstream', async ({ page }) => {
+	await gotoLoadedSplits(page);
+	await expect(page.getByTestId('document-splits').getByText(/^\s*\d+\s+splits?\s*$/)).toHaveCount(0);
+});
+
+test('docs do not list upstream\'s Remove button as a port addition', async ({ page }) => {
+	await page.goto('/document-splits');
+
+	const differences = page.getByRole('region', { name: 'Differences from upstream' });
+	await expect(differences).toContainText('rename a split');
+	await expect(differences).not.toContainText('remove a split');
+});
+
+test('no aria-label sits on a role-less span or div (axe aria-prohibited-attr)', async ({ page }) => {
+	await gotoLoadedSplits(page);
+
+	const offenders = await page
+		.getByTestId('document-splits')
+		.evaluate((root) =>
+			[...root.querySelectorAll('span[aria-label], div[aria-label]')]
+				.filter((element) => !element.getAttribute('role'))
+				.map((element) => element.outerHTML)
+		);
+	expect(offenders).toEqual([]);
 });

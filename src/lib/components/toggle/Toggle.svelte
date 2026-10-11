@@ -4,11 +4,16 @@
 	Base UI Toggle primitive. Props mirror Base UI: `pressed`,
 	`defaultPressed`, `onPressedChange`, `disabled`, plus `variant`/`size`.
 	Deliberate API changes vs React:
-	- `class` instead of `className` (Svelte / shadcn-svelte convention).
+	- `class` and `className` are both accepted and merged onto the root.
 	- `children` is a Svelte snippet instead of ReactNode.
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 	- No `TogglePrimitive` re-export (Base UI is React-only).
+	- Like Base UI, `type` and `form` are ignored: always type="button".
+	- A consumer `onclick` runs before the built-in toggle, like Base UI;
+	  `event.preventDefault()` stands in for `preventBaseUIHandler()`.
+	- Upstream's before-pseudo shadow, touch hit-area, and icon sizing
+	  utilities are not ported; variants and sizes are.
 -->
 <script lang="ts" module>
 	export type ToggleVariant = 'default' | 'outline';
@@ -46,20 +51,28 @@
 	import type { Snippet } from 'svelte';
 	import type { DarkModeProps } from '../../dark-mode.js';
 	import { cn } from '../../utils.js';
-	import { getToggleGroupContext } from './toggle-context.js';
+	import { onDestroy } from 'svelte';
+	import {
+		createChangeEventDetails,
+		getToggleGroupContext,
+		type ToggleChangeEventDetails
+	} from './toggle-context.js';
 
 	export interface ToggleProps extends DarkModeProps {
 		/** Controlled pressed state. Omit for uncontrolled mode. */
 		pressed?: boolean;
 		/** Initial pressed state for uncontrolled mode. Defaults to `false`. */
 		defaultPressed?: boolean;
-		onPressedChange?: (pressed: boolean) => void;
+		/** Fires for standalone and grouped toggles; `details.cancel()` skips the change. */
+		onPressedChange?: (pressed: boolean, details: ToggleChangeEventDetails) => void;
 		disabled?: boolean;
 		variant?: ToggleVariant;
 		size?: ToggleSize;
 		/** Item value when used inside a ToggleGroup. */
 		value?: string;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop name. Both are merged. */
+		className?: string;
 		children?: Snippet;
 		[key: string]: unknown;
 	}
@@ -72,48 +85,77 @@
 		variant = 'default',
 		size = 'default',
 		value,
+		onclick,
+		onfocus,
 		class: className = '',
+		className: classNameAlias = '',
 		children,
 		isDark = false,
 		// Shared-contract parity; intentionally unused, the parent owns the theme.
 		onIsDarkChange: _onIsDarkChange,
+		// Dropped like Base UI's Toggle: always type="button", never part of a form.
+		type: _type,
+		form: _form,
 		...rest
 	}: ToggleProps = $props();
 
 	const group = getToggleGroupContext();
-	const inGroup = $derived(group !== undefined && value !== undefined);
+	// Like Base UI's useBaseUiId(value || undefined): a missing or empty value
+	// gets a generated id, so every grouped item has one.
+	const generatedId = $props.id();
+	const itemValue = $derived(value || generatedId);
+	let buttonEl = $state<HTMLButtonElement | undefined>(undefined);
 
 	// Initial capture is intended: uncontrolled state starts from the default.
 	// svelte-ignore state_referenced_locally
 	let internalPressed = $state(defaultPressed);
-	const pressed = $derived(
-		inGroup && group ? group.isSelected(value as string) : (pressedProp ?? internalPressed)
-	);
+	const pressed = $derived(group ? group.isSelected(itemValue) : (pressedProp ?? internalPressed));
 	const isDisabled = $derived(disabled || (group?.isDisabled() ?? false));
 
+	// Register at init (not in an effect) so server-rendered HTML already has
+	// the right tab stop. The value is read on demand, so later changes count.
+	if (group) onDestroy(group.register(() => itemValue, () => disabled, () => buttonEl));
+	const tabindex = $derived(group ? (group.isTabStop(itemValue) ? 0 : -1) : undefined);
+
+	function handleFocus(event: FocusEvent) {
+		if (group) group.setFocused(itemValue);
+		(onfocus as ((event: FocusEvent) => void) | undefined)?.(event);
+	}
+
+	// Like Base UI's mergeProps: the consumer handler runs first, and
+	// preventDefault() stands in for preventBaseUIHandler() to skip ours.
 	function handleClick(event: MouseEvent) {
+		(onclick as ((event: MouseEvent) => void) | undefined)?.(event);
+		if (event.defaultPrevented) return;
 		if (isDisabled) {
 			event.preventDefault();
 			return;
 		}
-		if (inGroup && group) {
-			group.toggleValue(value as string);
-			return;
-		}
+		// Like Base UI 1.4.1: a grouped toggle commits to the group first (its
+		// onValueChange may cancel), then reports with the same details, so the
+		// item's cancel() cannot block the group. A standalone toggle reports
+		// first and skips its own update when canceled.
 		const next = !pressed;
+		const details = createChangeEventDetails(event);
+		if (group) group.toggleValue(itemValue, details);
+		onPressedChange?.(next, details);
+		if (group || details.isCanceled) return;
 		if (pressedProp === undefined) internalPressed = next;
-		onPressedChange?.(next);
 	}
 </script>
 
 <button
 	type="button"
-	class={cn(toggleVariants({ variant, size }), className, isDark && 'dark')}
+	class={cn(toggleVariants({ variant, size }), className, classNameAlias, isDark && 'dark')}
 	data-slot="toggle"
 	aria-pressed={pressed}
-	data-pressed={pressed || undefined}
+	data-pressed={pressed ? '' : undefined}
+	data-disabled={isDisabled ? '' : undefined}
 	disabled={isDisabled}
+	{tabindex}
+	bind:this={buttonEl}
 	onclick={handleClick}
+	onfocus={handleFocus}
 	{...rest}
 >
 	{@render children?.()}

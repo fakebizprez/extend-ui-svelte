@@ -8,6 +8,7 @@
 	let status = $state('loading');
 	let pageCount = $state(0);
 	let currentPage = $state(0);
+	let pageSizes = $state('');
 	let error = $state('');
 
 	let engine: PdfEngine | null = null;
@@ -48,6 +49,8 @@
 			try {
 				pageCount = await engine.load('/fixtures/sample.pdf');
 				currentPage = engine.currentPage;
+				const sizes = await engine.getPageSizes();
+				pageSizes = sizes.map((size) => `${size.width}x${size.height}`).join(', ');
 				if (!cancelled) {
 					await render(engine.currentPage);
 				}
@@ -72,6 +75,7 @@
 <h1>PDF Engine Harness</h1>
 <p data-testid="pdf-status">Status: {status}</p>
 <p data-testid="pdf-page-count">Pages: {pageCount}</p>
+<p data-testid="pdf-page-sizes">Page sizes: {pageSizes}</p>
 <p data-testid="pdf-current-page">Current page: {currentPage}</p>
 {#if error}
 	<p data-testid="pdf-error">{error}</p>

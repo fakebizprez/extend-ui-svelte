@@ -1,5 +1,5 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { createRawSnippet } from 'svelte';
 import { fireEvent, render } from '@testing-library/svelte';
@@ -63,7 +63,7 @@ describe('VirtualList', () => {
 
 	it('renders snippet content for the visible rows', () => {
 		const items = ['a', 'b', 'c'];
-		const children = createRawSnippet<[string, number]>((getItem, getIndex) => {
+		const children = createRawSnippet<[unknown, number]>((getItem, getIndex) => {
 			return { render: () => `<span>row-${getIndex()}-${getItem()}</span>` };
 		});
 		const { container } = render(VirtualList, {
@@ -131,5 +131,163 @@ describe('VirtualList', () => {
 		await tick();
 
 		expect(rowIndexes(container)).toEqual(Array.from({ length: 14 }, (_, i) => 48 + i));
+	});
+});
+
+// jsdom has no layout or ResizeObserver: this fake lets a test report row heights.
+class FakeResizeObserver {
+	static instances: FakeResizeObserver[] = [];
+	readonly targets = new Set<Element>();
+	constructor(private readonly callback: ResizeObserverCallback) {
+		FakeResizeObserver.instances.push(this);
+	}
+	observe(target: Element) {
+		this.targets.add(target);
+		// Like the real observer, report the first size of a newly observed row.
+		queueMicrotask(() => {
+			if (this.targets.has(target) && (target as HTMLElement).offsetHeight > 0) {
+				this.callback([{ target } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+			}
+		});
+	}
+	unobserve(target: Element) {
+		this.targets.delete(target);
+	}
+	disconnect() {
+		this.targets.clear();
+	}
+	report(heights: Record<number, number>) {
+		const entries = [...this.targets]
+			.filter((target) => Number(target.getAttribute('data-virtual-index')) in heights)
+			.map((target) => {
+				const height = heights[Number(target.getAttribute('data-virtual-index'))];
+				Object.defineProperty(target, 'offsetHeight', { configurable: true, value: height });
+				return { target } as unknown as ResizeObserverEntry;
+			});
+		this.callback(entries, this as unknown as ResizeObserver);
+	}
+}
+
+describe('VirtualList measured rows', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		FakeResizeObserver.instances = [];
+	});
+
+	it('positions rows from estimateSize and leaves their height to the content', () => {
+		const items = Array.from({ length: 100 }, (_, i) => `item-${i}`);
+		const { container } = render(VirtualList, {
+			items,
+			estimateSize: (index: number) => (index % 2 === 0 ? 50 : 100),
+			height: VIEWPORT_HEIGHT,
+			overscan: 0
+		});
+
+		const rows = container.querySelectorAll<HTMLElement>('[data-virtual-index]');
+		// 50 + 100 + 50 + 100 = 300 fills the viewport exactly.
+		expect(rowIndexes(container)).toEqual([0, 1, 2, 3]);
+		expect(rows[1]?.style.top).toBe('50px');
+		expect(rows[3]?.style.top).toBe('200px');
+		expect(rows[0]?.style.height).toBe('');
+		const spacer = container.querySelector<HTMLElement>('[data-testid="virtual-spacer"]');
+		expect(spacer?.style.height).toBe('7500px');
+	});
+
+	it('repositions later rows once a row reports its measured height', async () => {
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		const items = Array.from({ length: 20 }, (_, i) => `item-${i}`);
+		const { container } = render(VirtualList, {
+			items,
+			estimateSize: () => 100,
+			height: VIEWPORT_HEIGHT,
+			overscan: 0
+		});
+		await tick();
+
+		const observer = FakeResizeObserver.instances[0];
+		expect(observer).toBeDefined();
+		observer?.report({ 0: 20, 1: 30 });
+		await tick();
+
+		const row = (index: number) =>
+			container.querySelector<HTMLElement>(`[data-virtual-index="${index}"]`);
+		expect(row(1)?.style.top).toBe('20px');
+		expect(row(2)?.style.top).toBe('50px');
+		// The freed space pulls another row into the window.
+		expect(rowIndexes(container)).toEqual([0, 1, 2, 3, 4]);
+	});
+});
+
+describe('VirtualList measured rows after items are reassigned', () => {
+	const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+	// Every rendered row lays out at this height (jsdom has no layout).
+	let rowHeight = 40;
+
+	beforeEach(() => {
+		rowHeight = 40;
+		vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+		Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+			configurable: true,
+			get(this: HTMLElement) {
+				return this.dataset.virtualIndex === undefined ? 0 : rowHeight;
+			}
+		});
+	});
+
+	afterEach(() => {
+		if (original) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', original);
+		vi.unstubAllGlobals();
+		FakeResizeObserver.instances = [];
+	});
+
+	async function settle() {
+		for (let pass = 0; pass < 5; pass += 1) await tick();
+	}
+
+	const tops = (container: HTMLElement) =>
+		Array.from(container.querySelectorAll<HTMLElement>('[data-virtual-index]')).map(
+			(row) => row.style.top
+		);
+	const spacer = (container: HTMLElement) =>
+		container.querySelector<HTMLElement>('[data-testid="virtual-spacer"]')?.style.height;
+
+	async function measuredList() {
+		const view = render(VirtualList, {
+			items: ['a', 'b', 'c', 'd'],
+			estimateSize: () => 100,
+			height: VIEWPORT_HEIGHT,
+			overscan: 0
+		});
+		await settle();
+		expect(tops(view.container)).toEqual(['0px', '40px', '80px', '120px']);
+		expect(spacer(view.container)).toBe('160px');
+		return view;
+	}
+
+	it('keeps measured offsets when the same items arrive in a new array', async () => {
+		const view = await measuredList();
+
+		await view.rerender({ items: ['a', 'b', 'c', 'd'] });
+		await settle();
+
+		expect(tops(view.container)).toEqual(['0px', '40px', '80px', '120px']);
+		expect(spacer(view.container)).toBe('160px');
+	});
+
+	it('re-measures mounted rows when new items render at the same size', async () => {
+		const view = await measuredList();
+
+		// Same-size rows never fire the observer; the list must measure them itself.
+		await view.rerender({ items: ['w', 'x', 'y', 'z'] });
+		await settle();
+		expect(tops(view.container)).toEqual(['0px', '40px', '80px', '120px']);
+		expect(spacer(view.container)).toBe('160px');
+
+		// The next observer measurement still applies.
+		rowHeight = 60;
+		FakeResizeObserver.instances[0]?.report({ 1: 20 });
+		await settle();
+		expect(tops(view.container)).toEqual(['0px', '40px', '60px', '100px']);
+		expect(spacer(view.container)).toBe('140px');
 	});
 });

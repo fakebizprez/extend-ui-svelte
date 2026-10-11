@@ -6,8 +6,11 @@
  */
 export interface PdfViewerPageOverlayProps {
 	pageNumber: number;
+	/** Unrotated page width at scale 1; the overlay is laid out in this page space. */
 	pageWidth: number;
+	/** Unrotated page height at scale 1. */
 	pageHeight: number;
 	scale: number;
+	/** Rotation in degrees; the overlay layer is turned with the page by this much. */
 	rotation: number;
 }

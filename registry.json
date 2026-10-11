@@ -47,7 +47,7 @@
 			"dependencies": [
 				"pdfjs-dist@^6.4.299",
 				"docx-preview@^0.4.1",
-				"xlsx@^0.18.5",
+				"xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
 				"pptx-browser@^4.1.5"
 			]
 		},
@@ -59,7 +59,8 @@
 			"files": [
 				{ "path": "src/lib/components/file-upload/FileUpload.svelte", "type": "registry:component" },
 				{ "path": "src/lib/components/file-upload/index.ts", "type": "registry:lib" }
-			]
+			],
+			"registryDependencies": ["file-thumbnail"]
 		},
 		{
 			"name": "csv-tsv-viewer",
@@ -77,14 +78,23 @@
 			"name": "document-viewer-sidebar",
 			"type": "registry:component",
 			"title": "Document Viewer Sidebar",
-			"description": "Sidebar layout for document viewers. Svelte 5 port of Extend UI document-viewer-sidebar.",
+			"description": "Thumbnail sidebar that sits inline on wide viewers and overlays narrow ones, plus its loading skeleton and width helpers. Svelte 5 port of Extend UI document-viewer-sidebar.",
 			"files": [
 				{
-					"path": "src/lib/components/document-viewer-sidebar/DocumentViewerSidebar.svelte",
+					"path": "src/lib/components/document-viewer-sidebar/DocumentViewerThumbnailSidebar.svelte",
 					"type": "registry:component"
 				},
+				{
+					"path": "src/lib/components/document-viewer-sidebar/DocumentViewerSidebarSkeleton.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/document-viewer-sidebar/document-viewer-sidebar.svelte.ts",
+					"type": "registry:lib"
+				},
 				{ "path": "src/lib/components/document-viewer-sidebar/index.ts", "type": "registry:lib" }
-			]
+			],
+			"registryDependencies": ["dark-mode"]
 		},
 		{
 			"name": "file-thumbnail",
@@ -113,7 +123,8 @@
 				{ "path": "src/lib/components/pdf-viewer/types.ts", "type": "registry:lib" },
 				{ "path": "src/lib/components/pdf-viewer/zoom.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["engines", "virtual-list"]
+			"registryDependencies": ["engines", "virtual-list"],
+			"dependencies": ["pdf-lib@^1.17.1"]
 		},
 		{
 			"name": "docx-viewer",
@@ -133,7 +144,15 @@
 			"description": "Sheet tabs, virtual rows, dark mode. Svelte 5 port of Extend UI xlsx-viewer.",
 			"files": [
 				{ "path": "src/lib/components/xlsx-viewer/XlsxViewer.svelte", "type": "registry:component" },
-				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" }
+				{
+					"path": "src/lib/components/xlsx-viewer/WorkbookSheetTabs.svelte",
+					"type": "registry:component"
+				},
+				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" },
+				{
+					"path": "src/lib/components/xlsx-viewer/grid-navigation.ts",
+					"type": "registry:lib"
+				}
 			],
 			"registryDependencies": ["dark-mode", "engines", "virtual-list"]
 		},
@@ -186,8 +205,8 @@
 				{ "path": "src/lib/components/xlsx-editor/formulas.ts", "type": "registry:lib" },
 				{ "path": "src/lib/components/xlsx-editor/workbook-export.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["dark-mode", "engines", "virtual-list"],
-			"dependencies": ["xlsx@^0.18.5"]
+			"registryDependencies": ["dark-mode", "engines", "virtual-list", "xlsx-viewer"],
+			"dependencies": ["xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"]
 		},
 		{
 			"name": "file-system",
@@ -215,7 +234,7 @@
 				{ "path": "src/lib/components/document-splits/index.ts", "type": "registry:lib" },
 				{ "path": "src/lib/components/document-splits/splits.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["dark-mode", "file-thumbnail"]
+			"registryDependencies": ["dark-mode", "engines", "file-thumbnail"]
 		},
 		{
 			"name": "schema-builder",
@@ -225,6 +244,10 @@
 			"files": [
 				{
 					"path": "src/lib/components/schema-builder/SchemaBuilder.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/schema-builder/SchemaJsonView.svelte",
 					"type": "registry:component"
 				},
 				{ "path": "src/lib/components/schema-builder/index.ts", "type": "registry:lib" }
@@ -244,22 +267,56 @@
 				{ "path": "src/lib/components/layout-blocks/layout-blocks.ts", "type": "registry:lib" }
 			],
 			"registryDependencies": ["dark-mode", "virtual-list"],
-			"dependencies": ["marked@^18.1.0"]
+			"dependencies": [
+				"marked@^18.1.0",
+				"hast-util-sanitize@^5.0.2",
+				"hast-util-from-html@^2.0.3",
+				"hast-util-to-html@^9.0.5"
+			]
 		},
 		{
 			"name": "bounding-box-citations",
 			"type": "registry:component",
 			"title": "Bounding Box Citations",
-			"description": "Citation overlays on the PDF viewer. Svelte 5 port of Extend UI bounding-box-citations.",
+			"description": "Human review panel (editable actual and expected values, array tables, undo, Set to NULL, JSON diff) and the PDF block with bounding-box citations. Svelte 5 port of Extend UI bounding-box-citations.",
 			"files": [
 				{
 					"path": "src/lib/components/bounding-box-citations/BoundingBoxCitations.svelte",
 					"type": "registry:component"
 				},
+				{
+					"path": "src/lib/components/bounding-box-citations/HumanReviewPanel.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/HumanReviewFieldCard.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/HumanReviewArrayGrid.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/HumanReviewHighlight.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/JsonDiffView.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/JsonCodeView.svelte",
+					"type": "registry:component"
+				},
+				{
+					"path": "src/lib/components/bounding-box-citations/ReviewIcon.svelte",
+					"type": "registry:component"
+				},
 				{ "path": "src/lib/components/bounding-box-citations/index.ts", "type": "registry:lib" },
-				{ "path": "src/lib/components/bounding-box-citations/citations.ts", "type": "registry:lib" }
+				{ "path": "src/lib/components/bounding-box-citations/citations.ts", "type": "registry:lib" },
+				{ "path": "src/lib/components/bounding-box-citations/review.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["pdf-viewer"]
+			"registryDependencies": ["pdf-viewer", "utils", "virtual-list"]
 		},
 		{
 			"name": "e-signature",
@@ -323,7 +380,7 @@
 				{ "path": "src/lib/components/toggle/index.ts", "type": "registry:lib" },
 				{ "path": "src/lib/components/toggle/toggle-context.ts", "type": "registry:lib" }
 			],
-			"registryDependencies": ["dark-mode", "utils"]
+			"registryDependencies": ["dark-mode", "group", "utils"]
 		}
 	]
 }

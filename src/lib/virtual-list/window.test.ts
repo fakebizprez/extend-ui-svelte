@@ -1,6 +1,13 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 import { describe, expect, it } from 'vitest';
-import { computeWindow, DEFAULT_OVERSCAN, offsetTopForIndex, totalHeight } from './window';
+import {
+	computeVariableWindow,
+	computeWindow,
+	DEFAULT_OVERSCAN,
+	offsetTopForIndex,
+	prefixOffsets,
+	totalHeight
+} from './window';
 
 describe('computeWindow', () => {
 	it('windows a large list instead of rendering everything', () => {
@@ -122,5 +129,37 @@ describe('offsetTopForIndex', () => {
 	it('places each row at its index times the item height', () => {
 		expect(offsetTopForIndex(0, 30)).toBe(0);
 		expect(offsetTopForIndex(7, 30)).toBe(210);
+	});
+});
+
+describe('variable-height windowing', () => {
+	it('builds prefix offsets whose last entry is the total height', () => {
+		expect(prefixOffsets([10, 20, 30])).toEqual([0, 10, 30, 60]);
+		expect(prefixOffsets([])).toEqual([0]);
+	});
+
+	it('windows rows of different heights around the viewport', () => {
+		// Rows: 0-100, 100-150, 150-350, 350-360, 360-460, 460-560.
+		const offsets = prefixOffsets([100, 50, 200, 10, 100, 100]);
+
+		expect(
+			computeVariableWindow({ offsets, viewportHeight: 120, scrollTop: 0, overscan: 0 })
+		).toEqual({ start: 0, end: 2 });
+		expect(
+			computeVariableWindow({ offsets, viewportHeight: 100, scrollTop: 160, overscan: 0 })
+		).toEqual({ start: 2, end: 3 });
+		expect(
+			computeVariableWindow({ offsets, viewportHeight: 100, scrollTop: 160, overscan: 1 })
+		).toEqual({ start: 1, end: 4 });
+	});
+
+	it('clamps the scroll offset and handles empty lists', () => {
+		const offsets = prefixOffsets([100, 100, 100]);
+		expect(
+			computeVariableWindow({ offsets, viewportHeight: 150, scrollTop: 9999, overscan: 0 })
+		).toEqual({ start: 1, end: 3 });
+		expect(
+			computeVariableWindow({ offsets: [0], viewportHeight: 150, scrollTop: 0 })
+		).toEqual({ start: 0, end: 0 });
 	});
 });

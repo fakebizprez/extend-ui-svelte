@@ -41,3 +41,10 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+.firecrawl/
+private/
+
+.agents/
+.claude/
+skills-lock.json
+test-results/

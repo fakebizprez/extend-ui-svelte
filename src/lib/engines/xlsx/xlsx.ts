@@ -54,7 +54,9 @@ export function listSheetNames(workbook: WorkBook): string[] {
 }
 
 /**
- * Converts one sheet to row objects with `sheet_to_json` for the viewer.
+ * Converts one sheet to row objects keyed by its first-row headers with
+ * `sheet_to_json`. For an A1-addressed grid (what the viewer and editor
+ * render), use `sheetToGrid`.
  * Blank cells default to `''` so every row carries the same keys; pass
  * `options` to override. Rejects with a clear error for an unknown sheet.
  */
@@ -64,13 +66,91 @@ export async function sheetToRows<T extends XlsxRow = XlsxRow>(
 	options: XlsxSheetToRowsOptions = {}
 ): Promise<T[]> {
 	const worksheet = workbook.Sheets?.[sheetName];
-	if (!worksheet) {
-		const available = listSheetNames(workbook).join(', ') || '(no sheets)';
-		throw new Error(`Unknown sheet: "${sheetName}". Available sheets: ${available}.`);
-	}
+	if (!worksheet) throw unknownSheetError(workbook, sheetName);
 
 	const XLSX = await loadSheetJs();
 	return XLSX.utils.sheet_to_json<T>(worksheet, { defval: '', ...options });
+}
+
+/** Excel error codes as SheetJS stores them in an error cell's `v`. */
+export const XLSX_ERROR_CODES: Readonly<Record<string, number>> = {
+	'#NULL!': 0x00,
+	'#DIV/0!': 0x07,
+	'#VALUE!': 0x0f,
+	'#REF!': 0x17,
+	'#NAME?': 0x1d,
+	'#NUM!': 0x24,
+	'#N/A': 0x2a,
+	'#GETTING_DATA': 0x2b
+};
+
+/**
+ * An error-valued cell (#DIV/0!, #N/A, ...). Kept as its own type so it is
+ * never confused with text that happens to start with `#`; it prints as its
+ * code, so `String(value)` is what spreadsheets show.
+ */
+export class XlsxCellError {
+	constructor(readonly code: string) {}
+
+	toString(): string {
+		return this.code;
+	}
+}
+
+/** A sheet read cell by cell from A1, the way spreadsheet apps address it. */
+export interface XlsxSheetGrid {
+	/**
+	 * Cell values (formula cells hold their cached result), blanks as null,
+	 * error cells as XlsxCellError.
+	 */
+	values: unknown[][];
+	/** Formula text without the leading `=`, keyed by zero-based `row:col`. */
+	formulas: Record<string, string>;
+}
+
+function unknownSheetError(workbook: WorkBook, sheetName: string): Error {
+	const available = listSheetNames(workbook).join(', ') || '(no sheets)';
+	return new Error(`Unknown sheet: "${sheetName}". Available sheets: ${available}.`);
+}
+
+/**
+ * Reads one sheet as a grid anchored at A1: the first row is data (not
+ * headers), blank rows and leading blank columns are kept, so `values[r][c]`
+ * is the cell at row r+1, column c. Shared by the viewer and editor so both
+ * show the same rows and A1 addresses.
+ */
+export async function sheetToGrid(workbook: WorkBook, sheetName: string): Promise<XlsxSheetGrid> {
+	const worksheet = workbook.Sheets?.[sheetName];
+	if (!worksheet) throw unknownSheetError(workbook, sheetName);
+	if (!worksheet['!ref']) return { values: [], formulas: {} };
+
+	const XLSX = await loadSheetJs();
+	// The sheet's own range starts at its first used cell; widen it to A1.
+	const used = XLSX.utils.decode_range(worksheet['!ref']);
+	const range = { s: { r: 0, c: 0 }, e: used.e };
+	const values = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+		header: 1,
+		defval: null,
+		blankrows: true,
+		range
+	});
+	const formulas: Record<string, string> = {};
+	for (let r = used.s.r; r <= used.e.r; r += 1) {
+		for (let c = used.s.c; c <= used.e.c; c += 1) {
+			const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+			if (typeof cell?.f === 'string' && cell.f) formulas[`${r}:${c}`] = cell.f;
+			// sheet_to_json reads error cells as blank; keep the error instead.
+			if (cell?.t === 'e') {
+				const code =
+					typeof cell.w === 'string' && cell.w.startsWith('#')
+						? cell.w
+						: (Object.keys(XLSX_ERROR_CODES).find((key) => XLSX_ERROR_CODES[key] === cell.v) ??
+							'#N/A');
+				(values[r] as unknown[])[c] = new XlsxCellError(code);
+			}
+		}
+	}
+	return { values, formulas };
 }
 
 /** Returns the number of data rows `sheetToRows` would return for a sheet. */

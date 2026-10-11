@@ -4,7 +4,11 @@ export {
 	listSheetNames,
 	loadWorkbookFromBytes,
 	loadWorkbookFromUrl,
+	sheetToGrid,
 	sheetToRows,
+	XLSX_ERROR_CODES,
+	XlsxCellError,
+type XlsxSheetGrid,
 	type XlsxRow,
 	type XlsxSheetToRowsOptions
 } from './xlsx.js';

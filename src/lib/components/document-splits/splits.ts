@@ -229,12 +229,18 @@ export function removeSplit(groups: DocumentSplit[], groupId: string): DocumentS
 	return groups.filter((group) => group.id !== groupId);
 }
 
-/** First unused `split-N` id for the given groups. */
+let lastSplitStamp = 0;
+
+/**
+ * Upstream's `split-<Date.now()>` id, kept strictly increasing so two splits
+ * made in one millisecond, or one made after a removal, never reuse an id.
+ */
 export function nextSplitId(groups: DocumentSplit[]): string {
 	const used = new Set(groups.map((group) => group.id));
-	let counter = 1;
-	while (used.has(`split-${counter}`)) counter += 1;
-	return `split-${counter}`;
+	let stamp = Math.max(Date.now(), lastSplitStamp + 1);
+	while (used.has(`split-${stamp}`)) stamp += 1;
+	lastSplitStamp = stamp;
+	return `split-${stamp}`;
 }
 
 /** Appends an empty named split, matching upstream's `Split N` titling. */

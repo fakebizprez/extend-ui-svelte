@@ -1,21 +1,56 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI xlsx-viewer. Upstream: extend-hq/ui (MIT).
-	Deliberate changes vs the React XlsxViewerPreview ({ src, fileName, isDark,
-	onIsDarkChange, showDownload, showToolbar, showUpload }):
-	- The grid is a virtualized native table (SheetJS rows + the shared
-	  VirtualList) instead of @extend-ai/react-xlsx, which is React-only.
-	- A data prop (workbook bytes) is accepted alongside src so tests and file
-	  drops can pass bytes without a fetch round-trip.
-	- Zoom, search, upload, and download actions are out of scope for this port.
+	Exported as XlsxViewer and under the upstream name XlsxViewerPreview.
+	Like upstream, the grid shows column letters and row numbers from A1, with
+	row 1 as data and blank rows kept. Differences from upstream (keep in sync
+	with the docs page, src/routes/xlsx-viewer/+page.svelte):
+	- The grid is a virtualized native grid over SheetJS values instead of
+	  @extend-ai/react-xlsx, which is React-only.
+	- Added props: data (workbook bytes), rowHeight, height, overscan; the
+	  toolbar shows a row count.
+	- The dark-mode control is a toolbar switch, not an item in a workbook
+	  actions menu; it only calls onIsDarkChange.
+	- Not ported: cell formatting (fonts, fills, borders, number formats, merged
+	  cells), frozen panes, column resize, zoom, search, sheet thumbnails, and
+	  the upload/download menu (showDownload, showUpload, toolbarActions).
+	- Like upstream's read-only grid, cells can be selected and the grid (one
+	  Tab stop) navigates with the arrows, Ctrl/Cmd+arrows, Home/End,
+	  PageUp/PageDown, Tab, and Enter. Not ported: range selection
+	  (Shift+arrows move instead of extending) and copy.
+	- Exports: WorkbookSheetTabs is ported (it takes sheets, activeSheetIndex,
+	  and onActiveSheetIndexChange instead of workbookIdentity plus the
+	  react-xlsx context, and has no hover thumbnails). Not ported:
+	  renderXlsxScroller (a react-xlsx scroll-area render helper),
+	  WorkbookTableHeaderMenu (the column sort menu; the port has no sorting),
+	  and XlsxWorkbookSurface (a context surface; XlsxViewer is self-contained).
 -->
 <script lang="ts">
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { DarkModeProps } from '#lib/dark-mode.js';
-	import type { WorkBook, XlsxRow } from '#lib/engines/xlsx/index.js';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import WorkbookSheetTabs from './WorkbookSheetTabs.svelte';
+	import {
+		navigateGrid,
+		scrollCellIntoView,
+		usedRange,
+		type GridPosition
+	} from './grid-navigation.js';
+	import type { WorkBook } from '../../engines/xlsx/index.js';
 
-	type EngineModule = typeof import('#lib/engines/xlsx/index.js');
+	type EngineModule = typeof import('../../engines/xlsx/index.js');
 
-	interface Props extends DarkModeProps {
+	/** Zero-based column index to spreadsheet letters (0 is A, 26 is AA). */
+	function columnIndexToLetter(index: number): string {
+		let letters = '';
+		for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+			letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+		}
+		return letters;
+	}
+
+	interface Props {
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
 		/** Workbook URL. Loaded with fetch on the client. */
 		src?: string;
 		/** Workbook bytes. Takes precedence over src when both are given. */
@@ -31,6 +66,8 @@
 		/** Extra rows rendered above/below the visible window. */
 		overscan?: number;
 		class?: string;
+		/** Alias of `class`, matching the React prop name. Both are applied. */
+		className?: string;
 	}
 
 	let {
@@ -43,7 +80,8 @@
 		rowHeight = 34,
 		height = 480,
 		overscan = 5,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: Props = $props();
 
 	type Status = 'empty' | 'loading' | 'ready' | 'error';
@@ -54,14 +92,28 @@
 	let activeSheetIndex = $state(0);
 	// Raw state: parsed workbooks and row arrays can be huge and need no deep reactivity.
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
-	let rows = $state.raw<XlsxRow[]>([]);
+	let rows = $state.raw<unknown[][]>([]);
 	let loadingSheet = $state(false);
+
+	// Like upstream's readOnly grid: one Tab stop, a selectable active cell,
+	// and keyboard navigation, but no editing.
+	const uid = $props.id();
+	let selected = $state<GridPosition | null>(null);
+	let gridEl: HTMLDivElement | null = $state(null);
+	let scrollEl: HTMLDivElement | null = $state(null);
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 150;
 
 	const activeSheetName = $derived(sheetNames[activeSheetIndex] ?? '');
-	const columns = $derived(rows.length > 0 ? Object.keys(rows[0] as XlsxRow) : []);
+	const columns = $derived(
+		Array.from({ length: rows.reduce((max, row) => Math.max(max, row.length), 0) }, (_, index) =>
+			columnIndexToLetter(index)
+		)
+	);
+	const rootClass = $derived(
+		['xlsx-viewer', isDark ? 'dark' : '', classProp, className].filter(Boolean).join(' ')
+	);
 	const gridTemplate = $derived(
 		`${ROWNUM_WIDTH}px repeat(${Math.max(columns.length, 1)}, ${COLUMN_WIDTH}px)`
 	);
@@ -78,11 +130,13 @@
 		}
 		return 'workbook.xlsx';
 	});
-	const rowCountLabel = $derived(`${rows.length} rows`);
+	const rowCountLabel = $derived(`${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`);
 
 	function formatCell(value: unknown): string {
 		if (value === null || value === undefined) return '';
 		if (typeof value === 'string') return value;
+		// Excel shows booleans as TRUE/FALSE; error cells print their code.
+		if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
 		return String(value);
 	}
 
@@ -90,12 +144,15 @@
 	// (with SheetJS inside it) is loaded through a dynamic import.
 	$effect(() => {
 		const sourceKey: unknown = data ?? src ?? null;
+		// A new source is a new workbook: drop the sheet, rows, and selection,
+		// as upstream does by remounting with key={src}.
+		sheetNames = [];
+		activeSheetIndex = 0;
+		rows = [];
+		selected = null;
+		errorMessage = '';
 		if (sourceKey === null || sourceKey === undefined) {
 			workbookCache = null;
-			sheetNames = [];
-			activeSheetIndex = 0;
-			rows = [];
-			errorMessage = '';
 			status = 'empty';
 			return;
 		}
@@ -104,7 +161,7 @@
 		errorMessage = '';
 		(async () => {
 			try {
-				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
 				if (cancelled) return;
 				let workbook = workbookCache?.key === sourceKey ? workbookCache.workbook : null;
 				if (!workbook) {
@@ -145,10 +202,10 @@
 		loadingSheet = true;
 		(async () => {
 			try {
-				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
-				const next = await engine.sheetToRows(cached.workbook, sheetName);
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
+				const next = await engine.sheetToGrid(cached.workbook, sheetName);
 				if (cancelled) return;
-				rows = next;
+				rows = next.values;
 			} catch (failure) {
 				if (cancelled) return;
 				rows = [];
@@ -166,11 +223,44 @@
 
 	function selectSheet(index: number): void {
 		activeSheetIndex = index;
+		selected = null;
+	}
+
+	function cellId(row: number, col: number): string {
+		return `${uid}-r${row}c${col}`;
+	}
+
+	function selectCell(row: number, col: number): void {
+		selected = { row, col };
+		gridEl?.focus({ preventScroll: true });
+	}
+
+	function handleGridKeydown(event: KeyboardEvent): void {
+		if (event.target !== gridEl || rows.length === 0 || columns.length === 0) return;
+		// With no active cell, keys act from A1, as upstream does.
+		const next = navigateGrid(event, selected ?? { row: 0, col: 0 }, {
+			rowCount: rows.length,
+			colCount: columns.length,
+			pageRows: Math.max(1, Math.floor(height / rowHeight)),
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH)),
+			used: usedRange(rows)
+		});
+		if (!next) return;
+		event.preventDefault();
+		selected = next;
+		if (scrollEl) {
+			scrollCellIntoView(scrollEl, next, {
+				rowHeight,
+				height,
+				rowHeaderWidth: ROWNUM_WIDTH,
+				columnWidth: COLUMN_WIDTH
+			});
+		}
 	}
 </script>
 
 <div
-	class={`xlsx-viewer${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={rootClass}
 	data-dark={String(isDark)}
 	data-testid="xlsx-viewer"
 >
@@ -206,29 +296,23 @@
 		<div class="xlsx-state" role="status">Loading sheet…</div>
 	{:else if rows.length === 0}
 		<div class="xlsx-state">
-			<p class="xlsx-state-title">This sheet has no data rows.</p>
+			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
-		{#if sheetNames.length > 0}
-			<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-				{#each sheetNames as name, i (name)}
-					<button
-						type="button"
-						role="tab"
-						data-testid="sheet-tab"
-						aria-selected={i === activeSheetIndex}
-						class:active={i === activeSheetIndex}
-						onclick={() => selectSheet(i)}
-					>
-						{name}
-					</button>
-				{/each}
-			</div>
-		{/if}
 	{:else}
-		<div class="xlsx-scroll">
-			<div class="xlsx-grid" role="table" aria-label={activeSheetName} style={`min-width: ${gridMinWidth}px;`}>
+		<div class="xlsx-scroll" bind:this={scrollEl}>
+			<div
+				class="xlsx-grid"
+				role="grid"
+				tabindex="0"
+				aria-readonly="true"
+				aria-label={activeSheetName}
+				aria-activedescendant={selected ? cellId(selected.row, selected.col) : undefined}
+				style={`min-width: ${gridMinWidth}px;`}
+				bind:this={gridEl}
+				onkeydown={handleGridKeydown}
+			>
 				<div role="row" class="xlsx-header-row" style={`grid-template-columns: ${gridTemplate};`}>
-					<div role="columnheader" class="xlsx-rownum">#</div>
+					<div role="columnheader" class="xlsx-rownum" aria-label="Row numbers"></div>
 					{#each columns as column (column)}
 						<div role="columnheader" class="xlsx-header-cell">{column}</div>
 					{/each}
@@ -243,8 +327,21 @@
 								style={`grid-template-columns: ${gridTemplate}; height: 100%;`}
 							>
 								<div role="rowheader" class="xlsx-rownum">{index + 1}</div>
-								{#each columns as column (column)}
-									<div role="cell" class="xlsx-cell">{formatCell((row as XlsxRow)[column])}</div>
+								{#each columns as column, col (column)}
+									{@const isSelected = selected?.row === index && selected?.col === col}
+									<!-- Keyboard use goes through the grid, the single Tab stop, which
+										points at the active cell with aria-activedescendant. -->
+									<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+									<div
+										role="gridcell"
+										id={cellId(index, col)}
+										class="xlsx-cell"
+										class:selected={isSelected}
+										aria-selected={isSelected}
+										onclick={() => selectCell(index, col)}
+									>
+										{formatCell(row[col])}
+									</div>
 								{/each}
 							</div>
 						{/snippet}
@@ -252,20 +349,14 @@
 				{/key}
 			</div>
 		</div>
-		<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-			{#each sheetNames as name, i (name)}
-				<button
-					type="button"
-					role="tab"
-					data-testid="sheet-tab"
-					aria-selected={i === activeSheetIndex}
-					class:active={i === activeSheetIndex}
-					onclick={() => selectSheet(i)}
-				>
-					{name}
-				</button>
-			{/each}
-		</div>
+	{/if}
+	<!-- Outside the state branches so the tabs (and their focus) survive sheet loads. -->
+	{#if status === 'ready'}
+		<WorkbookSheetTabs
+			sheets={sheetNames}
+			{activeSheetIndex}
+			onActiveSheetIndexChange={selectSheet}
+		/>
 	{/if}
 </div>
 
@@ -278,6 +369,8 @@
 		--xlsx-header-bg: #fafafa;
 		--xlsx-row-alt: #fafafa;
 		--xlsx-tab-active: #171717;
+		--xlsx-selected: #dbeafe;
+		--xlsx-selected-border: #2563eb;
 		display: flex;
 		flex-direction: column;
 		width: 100%;
@@ -302,6 +395,8 @@
 		--xlsx-header-bg: #171717;
 		--xlsx-row-alt: #111111;
 		--xlsx-tab-active: #ffffff;
+		--xlsx-selected: #1e3a8a;
+		--xlsx-selected-border: #60a5fa;
 	}
 
 	.xlsx-toolbar {
@@ -408,30 +503,20 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: cell;
 	}
 
-	.xlsx-tabs {
-		display: flex;
-		gap: 0.25rem;
-		overflow-x: auto;
-		padding: 0.5rem 0.75rem;
-		border-top: 1px solid var(--xlsx-border);
+	.xlsx-cell.selected {
+		background: var(--xlsx-selected);
+		outline: 2px solid var(--xlsx-selected-border);
+		outline-offset: -2px;
 	}
 
-	.xlsx-tabs [role='tab'] {
-		flex: none;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid transparent;
-		border-radius: 0.375rem;
-		background: transparent;
-		color: var(--xlsx-muted);
-		font: inherit;
-		cursor: pointer;
+	.xlsx-grid:focus {
+		outline: none;
 	}
 
-	.xlsx-tabs [role='tab'].active {
-		border-color: var(--xlsx-border);
-		color: var(--xlsx-tab-active);
-		font-weight: 600;
+	.xlsx-grid:focus-visible {
+		box-shadow: inset 0 0 0 2px var(--xlsx-selected-border);
 	}
 </style>

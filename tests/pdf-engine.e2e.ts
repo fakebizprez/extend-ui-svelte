@@ -20,3 +20,11 @@ test('pdf engine harness navigates pages and fires page-change events', async ({
 	await page.getByTestId('pdf-prev').click();
 	await expect(page.getByTestId('pdf-current-page')).toContainText('1');
 });
+
+test('pdf engine harness reads the real page sizes', async ({ page }) => {
+	await page.goto('/engines/pdf');
+
+	await expect(page.getByTestId('pdf-page-sizes')).toContainText('612x792, 612x792, 612x792', {
+		timeout: 30000
+	});
+});

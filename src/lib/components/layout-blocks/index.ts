@@ -3,14 +3,16 @@ import type { ComponentProps } from 'svelte';
 import type LayoutBlocks from './LayoutBlocks.svelte';
 
 export { default as LayoutBlocks } from './LayoutBlocks.svelte';
+// Upstream name.
+export { default as OcrBlocksPanel } from './LayoutBlocks.svelte';
 export { default } from './LayoutBlocks.svelte';
 export type LayoutBlocksProps = ComponentProps<typeof LayoutBlocks>;
 export {
 	blockToArea,
 	blockToHighlightArea,
-	DEFAULT_LAYOUT_BLOCK_ITEM_HEIGHT,
 	DEFAULT_LAYOUT_BLOCKS_HEIGHT,
 	DEFAULT_LAYOUT_BLOCKS_OVERSCAN,
+	estimateOcrBlockRowHeight,
 	getOcrBlocks,
 	OCR_BLOCK_TYPE_LABELS,
 	renderBlockMarkdown

@@ -1,8 +1,36 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import DocumentSplits from './DocumentSplits.svelte';
+import { DocumentSplits as DocumentSplitsExport } from './index.js';
 import type { DocumentSplit } from './splits.js';
+
+const pdfMock = vi.hoisted(() => ({
+	created: 0,
+	loads: [] as unknown[],
+	rendered: [] as number[]
+}));
+
+vi.mock('../../engines/pdf/index.js', () => ({
+	createPdfEngine: () => {
+		pdfMock.created += 1;
+		return {
+			load: async (source: unknown) => {
+				pdfMock.loads.push(source);
+				return 5;
+			},
+			renderPage: async (page: number, _canvas: HTMLCanvasElement, options?: { scale?: number }) => {
+				pdfMock.rendered.push(page);
+				const scale = options?.scale ?? 1;
+				return { width: 612 * scale, height: 792 * scale };
+			},
+			destroy: async () => {}
+		};
+	}
+}));
+
+/** Props upstream marks required; activePage 0 means no page is active. */
+const REQUIRED = { activePage: 0, onSelectPage: () => {}, onSplitsChange: () => {} };
 
 const SPLITS: DocumentSplit[] = [
 	{ id: 'split-1', title: 'Intro', pages: ['page-1', 'page-2'] },
@@ -16,6 +44,19 @@ function groupSection(splitId: string): HTMLElement {
 	return found;
 }
 
+/** Renders with a parent that accepts every edit, the usual controlled setup. */
+function renderAccepting(splits: DocumentSplit[], onSplitsChange: (next: DocumentSplit[]) => void) {
+	const result = render(DocumentSplits, {
+		...REQUIRED,
+		splits,
+		onSplitsChange: (next: DocumentSplit[]) => {
+			onSplitsChange(next);
+			void result.rerender({ splits: next });
+		}
+	});
+	return result;
+}
+
 function groupTitles(): string[] {
 	return screen
 		.getAllByTestId('split-group')
@@ -24,7 +65,7 @@ function groupTitles(): string[] {
 
 describe('DocumentSplits', () => {
 	it('renders groups with titles, page badges, range labels, and counts', () => {
-		render(DocumentSplits, { splits: SPLITS });
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS });
 
 		expect(screen.getByTestId('document-splits')).toBeInTheDocument();
 		expect(screen.getAllByTestId('split-group')).toHaveLength(2);
@@ -35,7 +76,7 @@ describe('DocumentSplits', () => {
 	});
 
 	it('renders an empty state with no groups', () => {
-		render(DocumentSplits, { splits: [] });
+		render(DocumentSplits, { ...REQUIRED, splits: [] });
 
 		expect(screen.queryAllByTestId('split-group')).toHaveLength(0);
 		expect(screen.getByRole('button', { name: 'Add split' })).toBeInTheDocument();
@@ -43,7 +84,7 @@ describe('DocumentSplits', () => {
 
 	it('selects a page through its thumbnail button', async () => {
 		const onSelectPage = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSelectPage });
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS, onSelectPage });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Select page 4' }));
 
@@ -52,7 +93,7 @@ describe('DocumentSplits', () => {
 	});
 
 	it('marks the active page with aria-current', () => {
-		render(DocumentSplits, { splits: SPLITS, activePage: 3 });
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS, activePage: 3 });
 
 		expect(screen.getByRole('button', { name: 'Select page 3' })).toHaveAttribute(
 			'aria-current',
@@ -65,14 +106,14 @@ describe('DocumentSplits', () => {
 
 	it('adds an empty split and emits onSplitsChange', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Add split' }));
 
 		expect(onSplitsChange).toHaveBeenCalledTimes(1);
 		expect(onSplitsChange).toHaveBeenCalledWith([
 			...SPLITS,
-			{ id: 'split-3', title: 'Split 3', pages: [] }
+			{ id: expect.stringMatching(/^split-\d+$/), title: 'Split 3', pages: [] }
 		]);
 		expect(screen.getAllByTestId('split-group')).toHaveLength(3);
 		expect(screen.getByText('Drop pages here')).toBeInTheDocument();
@@ -80,7 +121,7 @@ describe('DocumentSplits', () => {
 
 	it('renames a split through its title input', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		const input = within(groupSection('split-1')).getByLabelText(/Split title/);
 		await fireEvent.input(input, { target: { value: 'Abstract' } });
@@ -94,7 +135,7 @@ describe('DocumentSplits', () => {
 
 	it('splits a group in two at the midpoint', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		await fireEvent.click(
 			within(groupSection('split-2')).getByRole('button', { name: 'Split Body in two' })
@@ -111,6 +152,7 @@ describe('DocumentSplits', () => {
 
 	it('disables the split button for single-page groups', () => {
 		render(DocumentSplits, {
+			...REQUIRED,
 			splits: [
 				{ id: 'split-1', title: 'Solo', pages: ['page-1'] },
 				{ id: 'split-2', title: 'Pair', pages: ['page-2', 'page-3'] }
@@ -127,7 +169,7 @@ describe('DocumentSplits', () => {
 
 	it('moves groups up and down through the controls', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		expect(
 			within(groupSection('split-1')).getByRole('button', { name: 'Move Intro up' })
@@ -146,7 +188,7 @@ describe('DocumentSplits', () => {
 
 	it('removes a group and keeps the last one', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		await fireEvent.click(
 			within(groupSection('split-1')).getByRole('button', { name: 'Remove Intro' })
@@ -159,7 +201,7 @@ describe('DocumentSplits', () => {
 
 	it('moves a page within its group through the controls', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		expect(screen.getByRole('button', { name: 'Move page 3 left' })).toBeDisabled();
 
@@ -173,7 +215,7 @@ describe('DocumentSplits', () => {
 
 	it('moves a page to the adjacent splits through the controls', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		expect(
 			screen.getByRole('button', { name: 'Move page 1 to previous split' })
@@ -190,7 +232,7 @@ describe('DocumentSplits', () => {
 
 	it('reorders groups with native drag-and-drop', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		const handle = within(groupSection('split-1')).getByRole('button', {
 			name: 'Reorder Intro'
@@ -203,9 +245,44 @@ describe('DocumentSplits', () => {
 		expect(groupTitles()).toEqual(['Body', 'Intro']);
 	});
 
+	it('reorders groups when a split is dropped on another split\'s page thumbnail', async () => {
+		const onSplitsChange = vi.fn();
+		renderAccepting(SPLITS, onSplitsChange);
+
+		await fireEvent.dragStart(
+			within(groupSection('split-1')).getByRole('button', { name: 'Reorder Intro' })
+		);
+		const thumbnail = screen.getByTestId('split-page-page-4');
+		await fireEvent.dragOver(thumbnail);
+		await fireEvent.drop(thumbnail);
+
+		expect(onSplitsChange).toHaveBeenCalledWith([SPLITS[1], SPLITS[0]]);
+		expect(groupTitles()).toEqual(['Body', 'Intro']);
+	});
+
+	it('reorders groups when a split is dropped on another split\'s dropzone', async () => {
+		const onSplitsChange = vi.fn();
+		renderAccepting(SPLITS, onSplitsChange);
+
+		await fireEvent.dragStart(
+			within(groupSection('split-2')).getByRole('button', { name: 'Reorder Body' })
+		);
+		const dropzone = within(groupSection('split-1')).getByTestId('split-dropzone');
+		await fireEvent.dragOver(dropzone);
+		await fireEvent.drop(dropzone);
+
+		expect(onSplitsChange).toHaveBeenCalledWith([SPLITS[1], SPLITS[0]]);
+	});
+
+	it('renders no split counter in the header, like upstream', () => {
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS });
+
+		expect(screen.queryByText(/^\s*\d+\s+splits?\s*$/)).not.toBeInTheDocument();
+	});
+
 	it('moves a page across groups with native drag-and-drop', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		const page = screen.getByTestId('split-page-page-2');
 		const targetDropzone = within(groupSection('split-2')).getByTestId('split-dropzone');
@@ -221,7 +298,7 @@ describe('DocumentSplits', () => {
 
 	it('reorders a page within its group by dropping it on another page', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		await fireEvent.dragStart(screen.getByTestId('split-page-page-3'));
 		await fireEvent.dragOver(screen.getByTestId('split-page-page-5'));
@@ -236,7 +313,7 @@ describe('DocumentSplits', () => {
 	it('drops a page into an empty group', async () => {
 		const onSplitsChange = vi.fn();
 		const withEmpty: DocumentSplit[] = [...SPLITS, { id: 'split-3', title: 'Empty', pages: [] }];
-		render(DocumentSplits, { splits: withEmpty, onSplitsChange });
+		render(DocumentSplits, { ...REQUIRED, splits: withEmpty, onSplitsChange });
 
 		await fireEvent.dragStart(screen.getByTestId('split-page-page-1'));
 		const dropzone = within(groupSection('split-3')).getByTestId('split-dropzone');
@@ -252,7 +329,7 @@ describe('DocumentSplits', () => {
 
 	it('ignores drops without an active drag payload', async () => {
 		const onSplitsChange = vi.fn();
-		render(DocumentSplits, { splits: SPLITS, onSplitsChange });
+		renderAccepting(SPLITS, onSplitsChange);
 
 		await fireEvent.drop(groupSection('split-2'));
 
@@ -260,7 +337,7 @@ describe('DocumentSplits', () => {
 	});
 
 	it('reflects the dark-mode contract on the root element', () => {
-		const { rerender } = render(DocumentSplits, { splits: SPLITS, isDark: false });
+		const { rerender } = render(DocumentSplits, { ...REQUIRED, splits: SPLITS, isDark: false });
 
 		const root = screen.getByTestId('document-splits');
 		expect(root).toHaveAttribute('data-dark', 'false');
@@ -274,6 +351,7 @@ describe('DocumentSplits', () => {
 
 	it('applies className and the frame divider flag', () => {
 		const { rerender } = render(DocumentSplits, {
+			...REQUIRED,
 			splits: SPLITS,
 			className: 'custom-frame',
 			withFrameDivider: true
@@ -286,5 +364,155 @@ describe('DocumentSplits', () => {
 		rerender({ splits: SPLITS, withFrameDivider: false });
 
 		expect(root).toHaveAttribute('data-frame-divider', 'false');
+	});
+
+	it('accepts class alongside the upstream className on the root', () => {
+		render(DocumentSplits, {
+			...REQUIRED,
+			splits: SPLITS,
+			class: 'from-class',
+			className: 'from-class-name'
+		});
+
+		expect(screen.getByTestId('document-splits')).toHaveClass(
+			'document-splits',
+			'from-class',
+			'from-class-name'
+		);
+	});
+
+	it('puts aria-label only on elements whose role allows it (axe aria-prohibited-attr)', () => {
+		render(DocumentSplits, { ...REQUIRED, splits: SPLITS });
+
+		const root = screen.getByTestId('document-splits');
+		for (const element of root.querySelectorAll('span[aria-label], div[aria-label]')) {
+			expect(element.getAttribute('role'), element.outerHTML).toBeTruthy();
+		}
+		// The page count still reads as "<n> pages".
+		const counts = [...root.querySelectorAll('.split-count')].map((count) => count.textContent);
+		expect(counts.map((text) => text?.replace(/\s+/g, ' ').trim())).toEqual(['2 pages', '3 pages']);
+	});
+
+	it('renders only the splits the parent passes, like upstream (controlled)', async () => {
+		const onSplitsChange = vi.fn();
+		const { rerender } = render(DocumentSplits, { ...REQUIRED, splits: SPLITS, onSplitsChange });
+
+		// The parent ignores the edit: nothing new renders.
+		await fireEvent.click(screen.getByRole('button', { name: 'Add split' }));
+		expect(screen.getAllByTestId('split-group')).toHaveLength(2);
+
+		// The next edit starts from the parent's splits, not the rejected one.
+		await fireEvent.click(screen.getByRole('button', { name: 'Remove Intro' }));
+		expect(onSplitsChange).toHaveBeenLastCalledWith([SPLITS[1]]);
+		expect(groupTitles()).toEqual(['Intro', 'Body']);
+
+		// The parent accepts an edit: it renders.
+		await rerender({ splits: [SPLITS[1]] });
+		expect(groupTitles()).toEqual(['Body']);
+	});
+
+	it('is exported under the upstream name DocumentSplits', () => {
+		expect(DocumentSplitsExport).toBe(DocumentSplits);
+	});
+
+	describe('lazy PDF page thumbnails', () => {
+		class FakeIntersectionObserver {
+			static instances: FakeIntersectionObserver[] = [];
+			readonly targets = new Set<Element>();
+			constructor(readonly callback: IntersectionObserverCallback) {
+				FakeIntersectionObserver.instances.push(this);
+			}
+			observe(target: Element) {
+				this.targets.add(target);
+			}
+			unobserve(target: Element) {
+				this.targets.delete(target);
+			}
+			disconnect() {
+				this.targets.clear();
+			}
+		}
+
+		function scrollIntoView(...targets: Element[]) {
+			for (const observer of FakeIntersectionObserver.instances) {
+				const entries = targets
+					.filter((target) => observer.targets.has(target))
+					.map((target) => ({ target, isIntersecting: true }) as IntersectionObserverEntry);
+				if (entries.length) {
+					observer.callback(entries, observer as unknown as IntersectionObserver);
+				}
+			}
+		}
+
+		function setup() {
+			pdfMock.created = 0;
+			pdfMock.loads = [];
+			pdfMock.rendered = [];
+			FakeIntersectionObserver.instances = [];
+			vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+			vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==');
+		}
+
+		afterEach(() => {
+			vi.unstubAllGlobals();
+			vi.restoreAllMocks();
+		});
+
+		it('loads the PDF once for all pages and renders only pages that scroll into view', async () => {
+			setup();
+			render(DocumentSplits, { ...REQUIRED, splits: SPLITS, pdfUrl: '/fixtures/sample.pdf' });
+
+			// Nothing is near the viewport yet: no page renders.
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(pdfMock.rendered).toEqual([]);
+
+			scrollIntoView(screen.getByTestId('split-page-page-3'));
+			await vi.waitFor(() => expect(pdfMock.rendered).toContain(3));
+			expect(new Set(pdfMock.rendered)).toEqual(new Set([3]));
+
+			scrollIntoView(screen.getByTestId('split-page-page-1'), screen.getByTestId('split-page-page-2'));
+			await vi.waitFor(() => expect(new Set(pdfMock.rendered)).toEqual(new Set([1, 2, 3])));
+
+			// Pages 4 and 5 stayed offscreen, and the document loaded exactly once.
+			expect(pdfMock.created).toBe(1);
+			expect(pdfMock.loads).toEqual(['/fixtures/sample.pdf']);
+
+			await vi.waitFor(() => {
+				const image = within(screen.getByTestId('split-page-page-3')).getByTestId(
+					'file-thumbnail-image'
+				);
+				expect(image).toHaveAttribute('src', 'data:image/png;base64,AA==');
+			});
+			expect(
+				within(screen.getByTestId('split-page-page-5')).queryByTestId('file-thumbnail-image')
+			).not.toBeInTheDocument();
+		});
+
+		it('never renders pages that already have cached thumbnail images', async () => {
+			setup();
+			render(DocumentSplits, {
+				...REQUIRED,
+				splits: SPLITS,
+				pdfUrl: '/fixtures/sample.pdf',
+				thumbnailImages: { 'page-1': 'data:image/png;base64,CACHED' }
+			});
+
+			scrollIntoView(screen.getByTestId('split-page-page-1'), screen.getByTestId('split-page-page-2'));
+			await vi.waitFor(() => expect(pdfMock.rendered).toContain(2));
+			expect(pdfMock.rendered).not.toContain(1);
+		});
+	});
+});
+
+describe('document-splits docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/document-splits/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		const upstream = new Set(['default', 'DocumentSplits', 'INITIAL_SPLITS', 'createInitialSplits']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
 	});
 });

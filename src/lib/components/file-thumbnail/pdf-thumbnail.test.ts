@@ -1,7 +1,7 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 // Unit tests for the file-thumbnail PDF helper (pure logic + engine orchestration).
 import { describe, expect, it, vi } from 'vitest';
-import type { PdfEngine, PdfPageSize, PdfSource } from '#lib/engines/pdf/index.js';
+import type { PdfEngine, PdfPageSize, PdfSource } from '../../engines/pdf/index.js';
 import {
 	clampPageNumber,
 	DEFAULT_THUMBNAIL_PAGE,
@@ -19,6 +19,7 @@ function fakeEngine(pageSizes: PdfPageSize[], rendered: { scale: number; page: n
 			return 1;
 		},
 		load: vi.fn(async (_source: PdfSource) => pageSizes.length),
+		getPageSizes: vi.fn(async () => pageSizes),
 		renderPage: vi.fn(async (pageNumber: number, _canvas: HTMLCanvasElement, options) => {
 			const size = pageSizes[pageNumber - 1] ?? { width: 0, height: 0 };
 			const scale = options?.scale ?? 1;

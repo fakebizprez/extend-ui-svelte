@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+USE SVELTE MCP SERVER w/ AUTOFIXERWHEN WORKING ON ANY `.svelte` file!!!
+
 ## Project intent
 
 Port Extend UI, an open-source React component library for document-heavy apps, to a **Svelte 5 component library**.

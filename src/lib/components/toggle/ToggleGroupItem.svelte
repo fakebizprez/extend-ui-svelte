@@ -8,10 +8,16 @@
 	import type { Snippet } from 'svelte';
 	import Toggle, { type ToggleProps } from './Toggle.svelte';
 
-	export interface ToggleGroupItemProps extends Omit<ToggleProps, 'children' | 'pressed' | 'defaultPressed' | 'onPressedChange'> {
-		/** Item value tracked in the group selection. */
-		value: string;
+	// Pick, not Omit: Omit over ToggleProps' index signature drops every named prop.
+	export interface ToggleGroupItemProps
+		extends Pick<
+			ToggleProps,
+			'onPressedChange' | 'disabled' | 'variant' | 'size' | 'class' | 'className' | 'isDark' | 'onIsDarkChange'
+		> {
+		/** Item value tracked in the group selection. Defaults to a generated id, like Base UI. */
+		value?: string;
 		children?: Snippet;
+		[key: string]: unknown;
 	}
 
 	let { value, children, ...rest }: ToggleGroupItemProps = $props();

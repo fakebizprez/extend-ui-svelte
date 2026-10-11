@@ -9,8 +9,8 @@
 <h1>File Thumbnail</h1>
 <p>
 	PDF page thumbnail rendered on a canvas through the shared PDF engine. Dark mode is
-	controlled by the parent through <code>isDark</code> plus
-	<code>onIsDarkChange</code>.
+	controlled by the parent through <code>isDark</code>; the checkbox below is the page's own
+	control.
 </p>
 <p>
 	<label>
@@ -36,8 +36,32 @@
 		{pageNumber}
 		width={240}
 		{isDark}
-		onIsDarkChange={(value: boolean) => (isDark = value)}
 	/>
 </div>
+
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Same export name, <code>FileThumbnail</code>. <code>class</code> is accepted alongside
+			the upstream <code>className</code>. The loading overlay is built in rather than exported
+			as <code>FileThumbnailLoadingOverlay</code>.
+		</li>
+		<li><code>previewContent</code> is a Svelte snippet instead of a React node.</li>
+		<li>
+			Port addition: built-in PDF page rendering. Pass <code>pdfUrl</code> (or
+			<code>pdfFile</code>) with <code>pageNumber</code> and <code>width</code>, and only that
+			page renders onto a canvas through PDF.js. Upstream expects the thumbnail image from your
+			own pipeline.
+		</li>
+		<li>
+			Dark mode is set by the parent through <code>isDark</code>. Like upstream there is no
+			theme switch inside the thumbnail.
+		</li>
+		<li>
+			Port-only exports for the built-in PDF rendering: <code>clampPageNumber</code>, <code>DEFAULT_THUMBNAIL_PAGE</code>, <code>DEFAULT_THUMBNAIL_WIDTH</code>, <code>renderLoadedPdfThumbnail</code>, <code>renderPdfThumbnail</code>, <code>thumbnailScale</code>, plus the types <code>PdfThumbnailRenderOptions</code>, <code>PdfThumbnailRenderResult</code>. <code>FileThumbnailProps</code> is exported as a type, as upstream does.
+		</li>
+	</ul>
+</section>
 
 <p><a href="/">Back to all components</a></p>

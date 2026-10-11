@@ -7,12 +7,18 @@
 	  contenteditable surface with document.execCommand formatting; the docx
 	  engine wrapper (docx-preview) renders the source document offscreen and
 	  its paragraphs are extracted into the editor.
+	- Also exported as the upstream name DocxEditorPreview; `className` is an
+	  alias of `class`. Port additions: showToolbar, readOnly, onExport.
 	- The toolbar covers the rewrite scope: bold, italic, headings, bulleted
-	  and numbered lists, plus import, export, and the theme switch. Comments,
-	  tracked changes, tables, images, links, and page thumbnails are out of
-	  scope for this port.
-	- Export rebuilds a minimal .docx package from the editor blocks with
-	  jszip (see ./export.js) instead of the react-docx controller API.
+	  and numbered lists, zoom (upstream steps and defaultZoomScale), plus
+	  import, export, and the theme switch. Undo/redo buttons, fonts, color,
+	  highlight, links, alignment, borders, comments, tracked changes, tables,
+	  images, and page thumbnails are out of scope for this port.
+	- The document is one contenteditable surface: no page split, no page
+	  virtualization, and no "Page N of M" indicator. Uploads accept .docx only.
+	- Export is lossy: it rebuilds a minimal .docx package from the editor
+	  blocks with jszip (see ./export.js) instead of the react-docx controller
+	  API, so source tables, images, styles, headers, and footers are dropped.
 	- Dark mode stays parent-controlled (isDark + onIsDarkChange) per the
 	  repo contract.
 -->
@@ -23,9 +29,21 @@
 	export const DOCX_MIME_TYPE =
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-	export const DOCX_UPLOAD_ACCEPT = ['.doc', '.docx', 'application/msword', DOCX_MIME_TYPE].join(
-		','
-	);
+	/** Upload filter, matching upstream: .docx only (no legacy .doc). */
+	export const DOCX_UPLOAD_ACCEPT = ['.docx', DOCX_MIME_TYPE].join(',');
+
+	/** Zoom steps offered by the toolbar, in percent, matching upstream. */
+	export const ZOOM_OPTIONS = [50, 75, 90, 100, 110, 125, 150, 175, 200] as const;
+
+	/** Editor zoom when the parent passes no defaultZoomScale, matching upstream. */
+	export const DEFAULT_ZOOM_SCALE = 100;
+
+	/** Like upstream: only values on the zoom scale are honored. */
+	export function normalizeZoomScale(value: number | undefined): number {
+		return typeof value === 'number' && (ZOOM_OPTIONS as readonly number[]).includes(value)
+			? value
+			: DEFAULT_ZOOM_SCALE;
+	}
 
 	/** Prefers an explicit fileName, else the last URL path segment. */
 	export function formatDocumentName(fileName: string | undefined, url: string): string {
@@ -155,12 +173,12 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { toggleIsDark } from '#lib/dark-mode.js';
-	import type { DocxSource } from '#lib/engines/docx/index.js';
+	import { onMount, untrack } from 'svelte';
+	import { toggleIsDark } from '../../dark-mode.js';
+	import type { DocxSource } from '../../engines/docx/index.js';
 	import { DOCX_MIME_TYPE as EXPORT_MIME_TYPE, exportDocxBytes } from './export.js';
 
-	type EngineModule = typeof import('#lib/engines/docx/index.js');
+	type EngineModule = typeof import('../../engines/docx/index.js');
 	type Status = 'idle' | 'loading' | 'ready' | 'error';
 
 	interface Props {
@@ -168,15 +186,19 @@
 		src?: string;
 		/** Display name used for the toolbar and the export download. */
 		fileName?: string;
-		/** Parent-controlled dark mode flag. */
-		isDark?: boolean;
-		/** Called when the user toggles dark mode in the toolbar. */
-		onIsDarkChange?: (isDark: boolean) => void;
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
+		/** Initial zoom in percent; must be one of ZOOM_OPTIONS. Defaults to 100, like upstream. */
+		defaultZoomScale?: number;
 		/** Show the formatting toolbar. */
 		showToolbar?: boolean;
-		/** Read-only mode: editing and import are disabled, export still works. */
+		/** Read-only mode: editing is disabled; upload and export still work, like upstream's read-only mode. */
 		readOnly?: boolean;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 		/** Called with the exported .docx bytes on every successful export. */
 		onExport?: (bytes: Uint8Array) => void;
 	}
@@ -188,7 +210,9 @@
 		onIsDarkChange,
 		showToolbar = true,
 		readOnly = false,
-		class: className = '',
+		defaultZoomScale,
+		class: classProp = '',
+		className = '',
 		onExport
 	}: Props = $props();
 
@@ -200,8 +224,21 @@
 	let status = $state<Status>('idle');
 	let errorMessage = $state('');
 	let exporting = $state(false);
-	let uploadedFile = $state.raw<File | null>(null);
+	// Like upstream's remount on key={src}: an upload applies only while src is
+	// unchanged, and a src change discards it for good.
+	let upload = $state.raw<{ file: File; sourceUrl: string | undefined } | null>(null);
+	const uploadedFile = $derived(upload && upload.sourceUrl === src ? upload.file : null);
+	$effect.pre(() => {
+		if (upload && upload.sourceUrl !== src) upload = null;
+	});
 	let blockStyle = $state('p');
+	let zoomScale = $state(untrack(() => normalizeZoomScale(defaultZoomScale)));
+	// Like upstream, zoom returns to defaultZoomScale when it or src changes.
+	$effect.pre(() => {
+		void src;
+		zoomScale = normalizeZoomScale(defaultZoomScale);
+	});
+	const zoomIndex = $derived((ZOOM_OPTIONS as readonly number[]).indexOf(zoomScale));
 	let generation = 0;
 
 	const displayFileName = $derived(
@@ -213,7 +250,7 @@
 	// top level. Importing this component stays DOM-free.
 	onMount(() => {
 		let cancelled = false;
-		import('#lib/engines/docx/index.js').then(
+		import('../../engines/docx/index.js').then(
 			(loaded) => {
 				if (!cancelled) engine = loaded;
 			},
@@ -248,6 +285,8 @@
 		const editor = editorEl;
 		const source: DocxSource | undefined = uploadedFile ?? src;
 		if (!source) {
+			// Invalidate any load still in flight so it cannot land after the clear.
+			generation += 1;
 			if (loaded) {
 				if (hidden) loaded.clearDocx(hidden);
 				if (editor) editor.innerHTML = '';
@@ -268,6 +307,8 @@
 		const id = (generation += 1);
 		status = 'loading';
 		errorMessage = '';
+		// Like upstream, the previous document is gone (not editable) once a new load starts.
+		editor.innerHTML = '';
 		loaded.renderDocx(source, hidden).then(
 			() => {
 				if (id !== generation) return;
@@ -307,7 +348,9 @@
 		const file = input.files?.[0] ?? null;
 		input.value = '';
 		if (!file) return;
-		uploadedFile = file;
+		// Like upstream, a new upload starts at defaultZoomScale.
+		zoomScale = normalizeZoomScale(defaultZoomScale);
+		upload = { file, sourceUrl: src };
 	}
 
 	function downloadBlob(blob: Blob, name: string): void {
@@ -347,7 +390,7 @@
 <div
 	data-testid="docx-editor"
 	data-dark={isDark ? 'true' : 'false'}
-	class="docx-editor {isDark ? 'dark' : ''} {className}"
+	class={['docx-editor', isDark && 'dark', classProp, className].filter(Boolean).join(' ')}
 >
 	{#if showToolbar}
 		<div class="docx-editor-toolbar" role="toolbar" aria-label="Document formatting">
@@ -389,13 +432,41 @@
 			>
 				Numbered list
 			</button>
-			<button type="button" disabled={readOnly} onclick={() => fileInputEl?.click()}>
+			<button
+				type="button"
+				aria-label="Zoom out"
+				disabled={status !== 'ready' || zoomIndex <= 0}
+				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex - 1])}
+			>
+				−
+			</button>
+			<select aria-label="Zoom level" disabled={status !== 'ready'} bind:value={zoomScale}>
+				{#each ZOOM_OPTIONS as value (value)}
+					<option {value}>{value}%</option>
+				{/each}
+			</select>
+			<button
+				type="button"
+				aria-label="Zoom in"
+				disabled={status !== 'ready' || zoomIndex >= ZOOM_OPTIONS.length - 1}
+				onclick={() => (zoomScale = ZOOM_OPTIONS[zoomIndex + 1])}
+			>
+				+
+			</button>
+			<!-- Like upstream's Import DOCX: disabled only while a document is importing. -->
+			<button type="button" disabled={status === 'loading'} onclick={() => fileInputEl?.click()}>
 				Upload
 			</button>
 			<button type="button" disabled={status !== 'ready' || exporting} onclick={handleExport}>
 				{exporting ? 'Exporting…' : 'Export .docx'}
 			</button>
-			<button type="button" role="switch" aria-checked={isDark} onclick={handleToggleDark}>
+			<button
+				type="button"
+				role="switch"
+				aria-checked={isDark}
+				disabled={status !== 'ready'}
+				onclick={handleToggleDark}
+			>
 				Toggle dark mode
 			</button>
 		</div>
@@ -410,10 +481,11 @@
 	/>
 	{#if status === 'idle'}
 		<div class="docx-editor-empty">
-			<p>Upload a Word document to edit</p>
+			<p>Upload a DOCX to edit</p>
 			<p class="docx-state-hint">
 				Pass a DOCX URL with the <code>src</code> prop or upload a file.
 			</p>
+			<button type="button" onclick={() => fileInputEl?.click()}>Upload DOCX</button>
 		</div>
 	{:else if status === 'loading'}
 		<div class="docx-editor-empty" data-testid="docx-editor-loading">
@@ -421,7 +493,7 @@
 		</div>
 	{:else if status === 'error'}
 		<div class="docx-editor-empty" data-testid="docx-editor-error" role="alert">
-			<p>Could not load the document.</p>
+			<p>Unable to edit DOCX</p>
 			<p class="docx-state-hint">{errorMessage}</p>
 		</div>
 	{/if}
@@ -430,6 +502,8 @@
 			bind:this={editorEl}
 			data-testid="docx-editor-content"
 			class="docx-editor-content"
+			style={`zoom: ${zoomScale}%;`}
+			hidden={status !== 'ready'}
 			contenteditable={readOnly ? 'false' : 'true'}
 			spellcheck="false"
 			role="textbox"

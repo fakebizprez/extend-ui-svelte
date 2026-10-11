@@ -43,6 +43,26 @@ export class DocxRenderError extends Error {
 	}
 }
 
+/**
+ * Rejection for a render that a newer renderDocx or clearDocx call on the same
+ * container superseded. Its output never reaches the DOM; callers can ignore it.
+ */
+export class DocxRenderCancelledError extends DocxRenderError {
+	constructor() {
+		super('DOCX render superseded by a newer render of the same container.');
+		this.name = 'DocxRenderCancelledError';
+	}
+}
+
+// Latest render ticket per container: renders are last-call-wins down to the DOM.
+const renderTickets = new WeakMap<object, number>();
+
+function takeTicket(container: object): number {
+	const ticket = (renderTickets.get(container) ?? 0) + 1;
+	renderTickets.set(container, ticket);
+	return ticket;
+}
+
 /** Default render options: no thumbnail sidebar, default wrapper class, paged output. */
 export const DEFAULT_DOCX_OPTIONS: ResolvedDocxRenderOptions = {
 	showThumbnails: false,
@@ -99,7 +119,7 @@ async function toBlob(source: DocxSource): Promise<Blob> {
 		return source;
 	}
 	if (source instanceof ArrayBuffer || source instanceof Uint8Array) {
-		return new Blob([source], {
+		return new Blob([source as BlobPart], {
 			type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 		});
 	}
@@ -123,24 +143,104 @@ export async function renderDocx(
 	if (!isBrowser()) {
 		throw new DocxRenderError('renderDocx requires a browser DOM (window/document are missing).');
 	}
+	const ticket = takeTicket(container);
+	const isCurrent = () => renderTickets.get(container) === ticket;
 	const resolved = resolveDocxOptions(options);
-	const blob = await toBlob(source);
-	const { renderAsync } = await import('docx-preview');
-
-	clearDocx(container);
+	let blob: Blob;
 	try {
-		await renderAsync(blob, container, undefined, {
-			className: resolved.className,
-			breakPages: resolved.breakPages,
-			useBase64URL: true
-		});
+		blob = await toBlob(source);
 	} catch (error) {
+		if (!isCurrent()) throw new DocxRenderCancelledError();
+		throw error;
+	}
+	const { parseAsync, renderDocument } = await import('docx-preview');
+	const renderOptions = {
+		className: resolved.className,
+		breakPages: resolved.breakPages,
+		useBase64URL: true
+	};
+
+	// renderAsync's steps, with a staleness check before the only DOM write, so
+	// a slow older render can never overwrite a newer document.
+	let nodes: Node[];
+	try {
+		nodes = await renderDocument(await parseAsync(blob, renderOptions), renderOptions);
+	} catch (error) {
+		if (!isCurrent()) throw new DocxRenderCancelledError();
 		throw new DocxRenderError('Failed to render the DOCX document.', { cause: error });
 	}
+	if (!isCurrent()) throw new DocxRenderCancelledError();
+	// docx-preview copies hyperlink targets from the file verbatim; sanitize
+	// before anything reaches the page.
+	const safeNodes = nodes.filter(sanitizeDocxNode);
+	container.innerHTML = '';
+	for (const node of safeNodes) container.appendChild(node);
 	return { container, showThumbnails: resolved.showThumbnails };
 }
 
-/** Removes previously rendered DOCX output from the container. */
+const SAFE_LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const BLOCKED_ELEMENTS = 'script, iframe, object, embed, frame, frameset';
+const URL_ATTRIBUTES = ['href', 'xlink:href', 'src'];
+
+/** Browsers ignore ASCII whitespace and control characters inside a URL scheme. */
+function normalizeUrl(value: string): string {
+	return value.replace(/[\u0000-\u0020\u007f]+/g, '');
+}
+
+/**
+ * True for link targets a rendered document may keep: http(s), mailto, tel,
+ * and in-document #anchors. Everything else (javascript:, data:, vbscript:,
+ * relative paths, ...) is unsafe. Browsers ignore ASCII whitespace and
+ * control characters inside a URL scheme, so those are removed first.
+ */
+export function isSafeDocxLinkTarget(target: string): boolean {
+	const normalized = normalizeUrl(target);
+	if (normalized.startsWith('#')) return true;
+	const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(normalized)?.[1]?.toLowerCase();
+	return scheme !== undefined && SAFE_LINK_SCHEMES.has(scheme);
+}
+
+/**
+ * True for image sources a rendered document may keep: embedded data:image/*
+ * and blob: URLs (docx-preview inlines pictures, including legacy VML
+ * pictures rendered as SVG <image>), and #fragment references. Script-bearing
+ * sources such as javascript:, vbscript:, or data:text/html are unsafe.
+ */
+export function isSafeDocxImageSource(source: string): boolean {
+	const normalized = normalizeUrl(source);
+	return normalized.startsWith('#') || /^(data:image\/|blob:)/i.test(normalized);
+}
+
+/**
+ * Defangs rendered DOCX markup in place: link targets on <a> (HTML or SVG)
+ * keep only isSafeDocxLinkTarget values, other href/xlink:href/src attributes
+ * (image sources) keep only isSafeDocxImageSource values,
+ * every on* event-handler attribute is removed, and script, iframe, object,
+ * embed, and frame elements are dropped. Returns false when the node itself
+ * is one of those elements and must not be inserted.
+ */
+export function sanitizeDocxNode(node: Node): boolean {
+	if (!(node instanceof Element)) return true;
+	if (node.matches(BLOCKED_ELEMENTS)) return false;
+	for (const blocked of Array.from(node.querySelectorAll(BLOCKED_ELEMENTS))) blocked.remove();
+	for (const element of [node, ...Array.from(node.querySelectorAll('*'))]) {
+		for (const name of element.getAttributeNames()) {
+			const lower = name.toLowerCase();
+			if (lower.startsWith('on')) {
+				element.removeAttribute(name);
+			} else if (URL_ATTRIBUTES.includes(lower)) {
+				const value = element.getAttribute(name) ?? '';
+				const isLink = element.localName.toLowerCase() === 'a' && lower !== 'src';
+				const safe = isLink ? isSafeDocxLinkTarget(value) : isSafeDocxImageSource(value);
+				if (!safe) element.removeAttribute(name);
+			}
+		}
+	}
+	return true;
+}
+
+/** Removes previously rendered DOCX output and cancels any render still in flight. */
 export function clearDocx(container: Pick<HTMLElement, 'innerHTML'>): void {
+	takeTicket(container);
 	container.innerHTML = '';
 }

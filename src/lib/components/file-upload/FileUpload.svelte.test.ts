@@ -84,6 +84,19 @@ describe('FileUpload', () => {
 		expect(screen.getByText('photo.png')).toBeInTheDocument();
 	});
 
+	it('lists two identical files dropped together, like upstream', async () => {
+		const onFilesChange = vi.fn();
+		const { container } = render(FileUpload, { onFilesChange });
+		const twin = () => new File(['x'], 'a.pdf', { type: 'application/pdf', lastModified: 1 });
+
+		await dropOn(screen.getByRole('button', { name: /click to upload/i }), [twin(), twin()]);
+
+		expect(container.querySelectorAll('.file-row')).toHaveLength(2);
+		const [items] = onFilesChange.mock.calls.at(-1)!;
+		// Upstream's id is kept even though the two files share it.
+		expect(items.map((item: { id: string }) => item.id)).toEqual(['a.pdf-1-1', 'a.pdf-1-1']);
+	});
+
 	it('accepts multiple files when multiple is true', async () => {
 		const onFilesAccepted = vi.fn();
 		render(FileUpload, { multiple: true, onFilesAccepted });
@@ -184,13 +197,33 @@ describe('FileUpload', () => {
 		expect((container.firstElementChild as HTMLElement)).toHaveClass('dark');
 	});
 
-	it('notifies the parent through onIsDarkChange from the theme toggle', async () => {
+	it('renders no dark-mode control of its own and never calls onIsDarkChange', async () => {
 		const onIsDarkChange = vi.fn();
 		render(FileUpload, { isDark: false, onIsDarkChange });
 
-		await fireEvent.click(screen.getByRole('button', { name: /toggle dark mode/i }));
+		expect(screen.queryByRole('button', { name: /dark mode/i })).not.toBeInTheDocument();
+		expect(screen.queryByText('Dark')).not.toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /click to upload/i }));
+		expect(onIsDarkChange).not.toHaveBeenCalled();
+	});
 
-		expect(onIsDarkChange).toHaveBeenCalledTimes(1);
-		expect(onIsDarkChange).toHaveBeenCalledWith(true);
+	it('renders a FileThumbnail per file row, with an image preview only for images', async () => {
+		render(FileUpload);
+		await dropOn(screen.getByRole('button', { name: /click to upload/i }), [pdfFile(), pngFile()]);
+
+		const thumbnails = screen.getAllByTestId('file-thumbnail');
+		expect(thumbnails).toHaveLength(2);
+		expect(thumbnails[0]?.querySelector('[data-testid="file-thumbnail-image"]')).toBeNull();
+		expect(
+			thumbnails[1]?.querySelector('[data-testid="file-thumbnail-image"]')
+		).toHaveAttribute('src', 'blob:mock-url');
+	});
+
+	it('merges class and className onto the root', () => {
+		const { container } = render(FileUpload, { class: 'from-class', className: 'from-classname' });
+		const root = container.firstElementChild as HTMLElement;
+
+		expect(root).toHaveClass('from-class');
+		expect(root).toHaveClass('from-classname');
 	});
 });

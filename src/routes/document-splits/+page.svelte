@@ -9,7 +9,8 @@
 	let pageCount = $state(0);
 	let loadError = $state<string | null>(null);
 	let splits = $state<DocumentSplit[]>(createInitialSplits(0));
-	let selectedPage = $state<number | null>(null);
+	// 0 means no page is selected yet.
+	let selectedPage = $state(0);
 
 	onMount(() => {
 		let cancelled = false;
@@ -46,7 +47,7 @@
 <p>
 	Organize long documents into named splits. Drag pages between groups, reorder groups with
 	the handles, or use the move, split, and remove controls. Dark mode is controlled by the
-	parent through <code>isDark</code> plus <code>onIsDarkChange</code>.
+	parent through <code>isDark</code>; the checkbox below is the page's own control.
 </p>
 <p>
 	<label>
@@ -65,19 +66,50 @@
 
 <div class="preview-frame">
 	<DocumentSplits
-		bind:splits
+		{splits}
 		activePage={selectedPage}
 		pdfUrl={PDF_URL}
 		{isDark}
-		onIsDarkChange={(value: boolean) => (isDark = value)}
 		onSelectPage={(pageNumber: number) => (selectedPage = pageNumber)}
 		onSplitsChange={(next: DocumentSplit[]) => (splits = next)}
 	/>
 </div>
 
-{#if selectedPage !== null}
+{#if selectedPage > 0}
 	<p>Selected page: {selectedPage}</p>
 {/if}
+
+<section aria-labelledby="differences-from-upstream">
+	<h2 id="differences-from-upstream">Differences from upstream</h2>
+	<ul>
+		<li>
+			Same export name, <code>DocumentSplits</code>. <code>class</code> is accepted alongside the
+			upstream <code>className</code>. <code>splits</code>, <code>activePage</code>,
+			<code>onSelectPage</code>, and <code>onSplitsChange</code> are required, as in the upstream
+			API table.
+		</li>
+		<li>
+			Native HTML5 drag-and-drop replaces dnd-kit, and every drag has a button equivalent (move
+			up/down/left/right, move to the previous/next split) for keyboard use.
+		</li>
+		<li>
+			<code>activePage</code> highlights that page (<code>0</code> for none); the upstream
+			component lists the prop but does not render it.
+		</li>
+		<li>
+			Port additions: rename a split through its title input, split a group in two at the
+			midpoint, and <code>pdfUrl</code>, which renders each page lazily through
+			FileThumbnail when <code>thumbnailImages</code> has no cached image for it.
+		</li>
+		<li>
+			Dark mode is set by the parent through <code>isDark</code>; there is no theme switch inside
+			the component.
+		</li>
+		<li>
+			Port-only exports, the pure split helpers behind every edit (upstream keeps them private): <code>addSplit</code>, <code>areSplitGroupsEqual</code>, <code>arrayMove</code>, <code>createPageRangeLabel</code>, <code>findGroupId</code>, <code>getGroupPages</code>, <code>getPageNumber</code>, <code>movePage</code>, <code>movePageToAdjacentGroup</code>, <code>movePageToGroup</code>, <code>nextSplitId</code>, <code>removeSplit</code>, <code>renameSplit</code>, <code>reorderPageInGroup</code>, <code>reorderSplits</code>, and <code>splitGroup</code>.
+		</li>
+	</ul>
+</section>
 
 <p><a href="/">Back to all components</a></p>
 

@@ -2,22 +2,45 @@
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 	FileSystem: file/folder tree browser with expand/collapse, selection,
 	keyboard navigation, and inline rename.
+	Ported from apps/v4/components/extend/file-system.tsx (FileSystem).
+
+	Deliberate changes vs the React version:
+	- One tree view instead of the icons/list/columns/gallery views, so
+	  defaultView/view/onViewChange, toolbar navigation (back/forward, search,
+	  sort, filters), thumbnails and the preview pager (previewImageUrl(s),
+	  loadPreviewImageUrl, renderFilePreview), lazy loadChildren, and the
+	  built-in viewer dialog are not ported. onFileOpen is called on file
+	  double-click or Enter (with the url from `url` or getFileUrl); without it
+	  nothing opens. Double-click or Enter on a folder expands it in place
+	  instead of navigating into it. `class` is accepted alongside the
+	  upstream `className`.
+	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
+	  switch, so onIsDarkChange is accepted and never called.
+	- defaultPath expands the tree down to that folder instead of opening a
+	  view inside it (the tree has no inside-a-folder view).
+	- Types for unported features (FileSystemView, FileSystemLoadChildrenArgs,
+	  FileSystemLoadChildrenResult, FileSystemViewerKind, FileSystemSortKey,
+	  FileSystemFilterType) are not exported.
+	- Port additions: bind:selectedPath, onRename, renamable (inline F2 rename).
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { resolveIsDark } from '#lib/dark-mode.js';
+	import { resolveIsDark } from '../../dark-mode.js';
 	import {
 		ancestorFolderPaths,
 		buildFileSystemIndex,
-		flattenVisibleEntries
+		flattenVisibleEntries,
+		pathParent
 	} from './tree.js';
-	import type { FileSystemEntry, FileSystemItem } from './types.js';
+	import type { FileSystemEntry, FileSystemFileItem, FileSystemItem } from './types.js';
 
 	interface Props {
 		/** Flat manifest. Folders are optional; missing prefixes are inferred from file paths. */
-		items?: FileSystemItem[];
+		items: FileSystemItem[];
 		className?: string;
+		/** Alias of the upstream `className`. */
+		class?: string;
 		/** Label for the root folder. */
 		title?: string;
 		/** Folder prefix to open initially, e.g. `"invoices/"`. */
@@ -25,27 +48,35 @@
 		/** Path of the selected entry. Two-way bindable. */
 		selectedPath?: string | null;
 		onSelectionChange?: (item: FileSystemItem | null) => void;
+		/** Called when a file is double-clicked, with its `url` or the getFileUrl result. */
+		onFileOpen?: (file: FileSystemFileItem, url: string | null) => void;
+		/** Resolve a URL (e.g. presigned) for a file without one. */
+		getFileUrl?: (file: FileSystemFileItem) => string | Promise<string>;
 		/** Called when an inline rename commits. The tree applies the new name locally. */
 		onRename?: (item: FileSystemItem, name: string) => void;
 		/** Whether inline rename (F2) is available. Defaults to `true`. */
 		renamable?: boolean;
 		isDark?: boolean;
+		/** Accepted for contract parity; the tree renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 	}
 
 	let {
-		items = [],
+		items,
 		className = '',
+		class: classProp = '',
 		title = 'Files',
 		defaultPath = '',
 		selectedPath = $bindable(null),
 		onSelectionChange,
+		onFileOpen,
+		getFileUrl,
 		onRename,
 		renamable = true,
-		isDark = false,
-		onIsDarkChange
+		isDark = false
 	}: Props = $props();
 
+	// svelte-ignore state_referenced_locally: `defaultPath` intentionally seeds the initial expansion only.
 	const expanded = new SvelteSet(ancestorFolderPaths(defaultPath));
 	const renames = new SvelteMap<string, string>();
 	let focusPath = $state<string | null>(null);
@@ -62,7 +93,14 @@
 			return { ...row, entry: { ...row.entry, name: override } };
 		})
 	);
-	const tabbedPath = $derived(focusPath ?? rows[0]?.entry.path ?? null);
+	// Roving tabindex: the focused row, or its nearest visible ancestor once a
+	// folder above it collapses, so the tree always keeps one Tab stop.
+	const tabbedPath = $derived.by(() => {
+		const visible = new Set(rows.map((row) => row.entry.path));
+		let path = focusPath;
+		while (path && !visible.has(path)) path = pathParent(path) || null;
+		return path ?? rows[0]?.entry.path ?? null;
+	});
 
 	function rowElements(): HTMLElement[] {
 		if (!treeElement) return [];
@@ -74,15 +112,65 @@
 		rowElements().find((row) => row.dataset.path === path)?.focus();
 	}
 
+	// Like upstream's views, keyboard moves select the entry they reach.
+	function moveTo(entry: FileSystemEntry): void {
+		focusRow(entry.path);
+		select(entry);
+	}
+
+	// Like upstream: re-selecting the same entry is a no-op.
 	function select(entry: FileSystemEntry): void {
+		if (selectedPath === entry.path) return;
 		selectedPath = entry.path;
 		onSelectionChange?.(entry);
+	}
+
+	// Like upstream, removing the selected entry from items keeps the selection
+	// quietly (upstream reports null only when search or a filter hides it, and
+	// the tree has neither), so a parent-set path survives items still loading.
+
+	// Upstream's Finder-style type-ahead: letters and digits build a buffer
+	// that resets after 700ms idle; a single letter advances past the focused
+	// row, a longer buffer refines the match in place.
+	const TYPE_AHEAD_RESET_MS = 700;
+	let typeAheadBuffer = '';
+	let typeAheadTimer: ReturnType<typeof setTimeout> | undefined;
+	onDestroy(() => clearTimeout(typeAheadTimer));
+
+	function typeAhead(event: KeyboardEvent, at: number): void {
+		if (event.key.length !== 1 || !/^[\p{L}\p{N}]$/u.test(event.key)) return;
+		if (event.altKey || event.ctrlKey || event.metaKey) return;
+		event.preventDefault();
+		clearTimeout(typeAheadTimer);
+		typeAheadTimer = setTimeout(() => (typeAheadBuffer = ''), TYPE_AHEAD_RESET_MS);
+		typeAheadBuffer += event.key.toLowerCase();
+		const start = at < 0 ? 0 : at + (typeAheadBuffer.length === 1 ? 1 : 0);
+		for (let step = 0; step < rows.length; step += 1) {
+			const row = rows[(start + step) % rows.length];
+			if (row.entry.name.toLowerCase().startsWith(typeAheadBuffer)) {
+				moveTo(row.entry);
+				return;
+			}
+		}
 	}
 
 	function toggle(entry: FileSystemEntry): void {
 		if (entry.kind !== 'folder') return;
 		if (expanded.has(entry.path)) expanded.delete(entry.path);
 		else expanded.add(entry.path);
+	}
+
+	async function openFile(entry: FileSystemEntry): Promise<void> {
+		if (entry.kind !== 'file' || !onFileOpen) return;
+		let url: string | null = entry.url ?? null;
+		if (!url && getFileUrl) {
+			try {
+				url = await getFileUrl(entry);
+			} catch {
+				url = null;
+			}
+		}
+		onFileOpen(entry, url);
 	}
 
 	function startRename(entry: FileSystemEntry): void {
@@ -129,25 +217,25 @@
 			case 'ArrowDown': {
 				event.preventDefault();
 				const next = rows[at + 1];
-				if (next) focusRow(next.entry.path);
+				if (next) moveTo(next.entry);
 				break;
 			}
 			case 'ArrowUp': {
 				event.preventDefault();
 				const previous = rows[at - 1];
-				if (previous) focusRow(previous.entry.path);
+				if (previous) moveTo(previous.entry);
 				break;
 			}
 			case 'Home': {
 				event.preventDefault();
 				const first = rows[0];
-				if (first) focusRow(first.entry.path);
+				if (first) moveTo(first.entry);
 				break;
 			}
 			case 'End': {
 				event.preventDefault();
 				const last = rows[rows.length - 1];
-				if (last) focusRow(last.entry.path);
+				if (last) moveTo(last.entry);
 				break;
 			}
 			case 'ArrowRight': {
@@ -157,7 +245,7 @@
 					expanded.add(entry.path);
 				} else {
 					const child = index.children.get(entry.path)?.[0];
-					if (child) focusRow(child.path);
+					if (child) moveTo(child);
 				}
 				break;
 			}
@@ -165,14 +253,19 @@
 				event.preventDefault();
 				if (entry.kind === 'folder' && expanded.has(entry.path)) {
 					expanded.delete(entry.path);
-				} else if (entry.parentPath) {
-					focusRow(entry.parentPath);
+				} else {
+					const parent = index.folders.get(entry.parentPath);
+					if (parent) moveTo(parent);
 				}
 				break;
 			}
+			// Like upstream, Enter opens: files go to onFileOpen, folders toggle
+			// (the tree's double-click action).
 			case 'Enter': {
 				event.preventDefault();
 				select(entry);
+				if (entry.kind === 'folder') toggle(entry);
+				else void openFile(entry);
 				break;
 			}
 			case 'F2': {
@@ -180,26 +273,20 @@
 				startRename(entry);
 				break;
 			}
+			default:
+				typeAhead(event, at);
 		}
 	}
 </script>
 
 <div
 	data-testid="file-system"
-	class={className ? `file-system ${className}` : 'file-system'}
+	class={['file-system', classProp, className].filter(Boolean).join(' ')}
 	class:dark
 	data-theme={dark ? 'dark' : 'light'}
 >
 	<div class="file-system-header">
 		<h2>{title}</h2>
-		<button
-			type="button"
-			aria-label="Toggle dark mode"
-			aria-pressed={dark}
-			onclick={() => onIsDarkChange?.(!dark)}
-		>
-			{dark ? 'Light' : 'Dark'}
-		</button>
 	</div>
 
 	{#if rows.length === 0}
@@ -221,18 +308,22 @@
 					class:selected={selectedPath === entry.path}
 					style={`--fs-depth: ${row.depth}`}
 					onclick={() => select(entry)}
-					ondblclick={() => toggle(entry)}
+					ondblclick={() => (entry.kind === 'folder' ? toggle(entry) : void openFile(entry))}
 					onfocus={() => {
 						focusPath = entry.path;
 					}}
 					onkeydown={(event) => onRowKeyDown(event, entry)}
 				>
 					{#if entry.kind === 'folder'}
-						<button
-							type="button"
+						<!-- Like upstream, the chevron is decoration: the row's aria-expanded
+							carries the state and ArrowRight, ArrowLeft, or Enter toggle it, so this
+							mouse target stays out of the accessibility tree. -->
+						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+						<span
 							class="file-system-chevron"
 							class:open={isExpanded}
-							aria-label={isExpanded ? `Collapse ${entry.name}` : `Expand ${entry.name}`}
+							aria-hidden="true"
+							data-testid="file-system-toggle"
 							onclick={(event) => {
 								event.stopPropagation();
 								toggle(entry);
@@ -248,7 +339,7 @@
 									stroke-linejoin="round"
 								/>
 							</svg>
-						</button>
+						</span>
 						<svg
 							class="file-system-icon"
 							viewBox="0 0 24 24"

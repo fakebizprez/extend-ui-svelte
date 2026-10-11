@@ -3,6 +3,8 @@ import type { ComponentProps } from 'svelte';
 import type XlsxEditor from './XlsxEditor.svelte';
 
 export { default as XlsxEditor } from './XlsxEditor.svelte';
+/** Upstream React name. */
+export { default as XlsxEditorPreview } from './XlsxEditor.svelte';
 export { default } from './XlsxEditor.svelte';
 export type XlsxEditorProps = ComponentProps<typeof XlsxEditor>;
 export type {

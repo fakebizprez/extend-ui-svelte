@@ -19,7 +19,9 @@
 	"files": [
 		"dist",
 		"!dist/**/*.test.*",
-		"!dist/**/*.spec.*"
+		"!dist/**/*.spec.*",
+		"!dist/**/*Harness.svelte",
+		"!dist/**/*Harness.svelte.d.ts"
 	],
 	"sideEffects": [
 		"**/*.css"
@@ -31,6 +33,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"svelte": "./dist/index.js"
+		},
+		"./components/*": {
+			"types": "./dist/components/*/index.d.ts",
+			"svelte": "./dist/components/*/index.js"
 		}
 	},
 	"peerDependencies": {
@@ -42,14 +48,17 @@
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/package": "^2.5.8",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@tailwindcss/vite": "4.3.3",
 		"@testing-library/jest-dom": "^7.0.1",
 		"@testing-library/svelte": "^5.4.2",
+		"@types/jsdom": "30.0.0",
 		"@types/papaparse": "^5.5.2",
 		"jsdom": "^30.1.2",
 		"playwright": "^1.60.0",
 		"publint": "^0.3.21",
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
+		"tailwindcss": "4.3.3",
 		"typescript": "^6.0.3",
 		"vite": "^8.3.0",
 		"vitest": "^4.1.8"
@@ -70,6 +79,9 @@
 	},
 	"dependencies": {
 		"docx-preview": "^0.4.1",
+		"hast-util-from-html": "^2.0.3",
+		"hast-util-sanitize": "^5.0.2",
+		"hast-util-to-html": "^9.0.5",
 		"jszip": "^3.10.2",
 		"marked": "^18.1.0",
 		"papaparse": "^5.7.0",
@@ -77,6 +89,6 @@
 		"pdfjs-dist": "^6.4.299",
 		"pptx-browser": "^4.1.5",
 		"signature_pad": "^5.1.4",
-		"xlsx": "^0.18.5"
+		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 	}
 }

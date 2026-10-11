@@ -5,12 +5,6 @@
 
 	const FIXTURE_URL = '/fixtures/sample.docx';
 
-	declare global {
-		interface Window {
-			__docxHarness?: { render: (bytes: number[]) => Promise<DocxRenderResult> };
-		}
-	}
-
 	type EngineModule = typeof import('#lib/engines/docx/index.js');
 
 	let engine = $state<EngineModule | null>(null);

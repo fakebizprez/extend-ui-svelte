@@ -3,6 +3,8 @@ import type { ComponentProps } from 'svelte';
 import type DocxViewer from './DocxViewer.svelte';
 
 export { default as DocxViewer } from './DocxViewer.svelte';
+/** Upstream React export name. */
+export { default as DocxViewerPreview } from './DocxViewer.svelte';
 export { default } from './DocxViewer.svelte';
 export {
 	DEFAULT_ZOOM,
@@ -10,9 +12,11 @@ export {
 	DOCX_UPLOAD_ACCEPT,
 	ensureDocxExtension,
 	formatDocumentName,
+	resolveZoomLevel,
 	stepZoom,
 	THUMBNAIL_ITEM_HEIGHT,
+	ZOOM_MODE_LABELS,
 	ZOOM_OPTIONS
 } from './DocxViewer.svelte';
-export type { DocxViewerPage } from './DocxViewer.svelte';
+export type { DocxViewerPage, DocxViewerZoomLevel, DocxZoomMetrics } from './DocxViewer.svelte';
 export type DocxViewerProps = ComponentProps<typeof DocxViewer>;

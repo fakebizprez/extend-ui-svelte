@@ -30,8 +30,13 @@ export type FileSystemFileItem = {
 	createdAt?: string;
 	updatedAt?: string;
 	etag?: string;
-	/** Optional if already public/presigned. */
+	/** Optional if already public/presigned. Otherwise resolved via `getFileUrl`. */
 	url?: string;
+	/** Upstream preview fields: accepted so upstream manifests type-check; the tree does not render them. */
+	previewImageUrl?: string | null;
+	previewImageUrls?: string[] | null;
+	previewPageCount?: number;
+	previewAspectRatio?: number;
 	metadata?: Record<string, string>;
 };
 

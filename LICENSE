@@ -2,9 +2,14 @@ MIT License
 
 Copyright (c) 2026 extend-ui-svelte contributors
 
-Upstream: Extend UI by extend-hq (https://github.com/extend-hq/ui), MIT licensed.
-This project is a Svelte 5 port of that work. Upstream copyright and license
-notices are preserved in the ported components.
+This project is a Svelte 5 port of Extend UI (https://github.com/extend-hq/ui),
+which is MIT licensed and carries these notices, preserved here:
+
+Copyright (c) 2026 CrowdView Inc, dba Extend
+Portions Copyright (c) 2023 shadcn
+
+Fixture documents and sample data copied from upstream fall under the same
+upstream notices.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

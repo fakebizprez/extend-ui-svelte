@@ -3,6 +3,8 @@ import type { ComponentProps } from 'svelte';
 import type CsvTsvViewer from './CsvTsvViewer.svelte';
 
 export { default as CsvTsvViewer } from './CsvTsvViewer.svelte';
+/** Upstream React name. */
+export { default as CsvViewer } from './CsvTsvViewer.svelte';
 export { default } from './CsvTsvViewer.svelte';
 export { parseDelimitedText, type ParsedTable } from './parse.js';
 export type CsvTsvViewerProps = ComponentProps<typeof CsvTsvViewer>;

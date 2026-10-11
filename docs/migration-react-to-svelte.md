@@ -47,21 +47,37 @@ Dark mode stays controlled by the parent, exactly as in React:
 <PdfViewer {isDark} onIsDarkChange={(value) => (isDark = value)} />
 ```
 
-## Bindable values replace value-plus-callback pairs
+## Controlled props stay controlled
 
-Where React needs a `value` prop plus an `onChange` callback, the Svelte
-port uses `$bindable` props, so plain `bind:` works:
+Value-plus-callback pairs work as they do in React: pass the value down and
+update it from the change callback. The component renders only what the
+parent passes, so a parent can reject an edit by not updating its state.
 
 | React | Svelte |
 |---|---|
-| `value` + `onChange` | `bind:value` |
-| `splits` + `onSplitsChange` | `bind:splits` |
-| `collapsed` + `onCollapsedChange` | `bind:collapsed` |
-| `selectedPath` + `onSelectedPathChange` | `bind:selectedPath` |
+| `splits` + `onSplitsChange` | `{splits}` + `onSplitsChange` |
+| `schema` + `onSchemaChange` | `{schema}` + `onSchemaChange` |
+| `value` + `onValueChange` (ToggleGroup) | `{value}` + `onValueChange` |
+| `value` + `onChange` (ColorPicker) | `{value}` + `onChange` |
 
 ```svelte
-<DocumentSplits bind:splits bind:activeFieldKey />
+<script>
+	let splits = $state(createInitialSplits(pageCount));
+</script>
+
+<DocumentSplits
+	{splits}
+	activePage={1}
+	onSelectPage={(page) => (selectedPage = page)}
+	onSplitsChange={(next) => (splits = next)}
+/>
 ```
+
+A few props are also `$bindable` as a port convenience, so `bind:` works for
+them: `values` and `activeFieldKey` on `BoundingBoxCitations`, `selectedPath`
+on `FileSystem`, and `positionX`, `positionY`, `signatureWidth`,
+`signatureHeight`, and `scale` on `ESignature`. Each component's docs page
+lists its bindable props.
 
 Event-style notifications that are not state mirrors (file acceptance,
 page changes, export, save) stay callback props with the React names:
@@ -84,11 +100,23 @@ Components that overlay custom UI (PDF page overlays, viewer sidebars,
 toggle groups) document which snippet they accept and what data it
 receives; the shape mirrors the React render-prop arguments.
 
+## Sidebar: `DocumentViewerSidebar` is now `DocumentViewerThumbnailSidebar`
+
+Early registry versions shipped a section/nav `DocumentViewerSidebar` with the
+`DocumentViewerSidebarItem` and `DocumentViewerSidebarSection` types. That
+component does not exist upstream, so it was replaced by
+`DocumentViewerThumbnailSidebar` (props: `open`, `inline`, `className`,
+`closedInlineClassName`, `widthClassName`, `children`), plus
+`DocumentViewerSidebarSkeleton` and the `useInlineThumbnailSidebar` helpers.
+This is a deliberate breaking change: update imports from
+`document-viewer-sidebar` when you re-run the registry install.
+
 ## Checklist
 
 1. Install each component with the registry command above.
 2. Move theme state to the parent and pass `isDark` down.
-3. Replace `value`/`onChange` pairs with `bind:`.
+3. Keep value-plus-callback pairs controlled; use `bind:` only for the props a
+   component lists as bindable.
 4. Replace render props with snippets.
 5. Keep engine usage client-side: the wrappers already dynamic-import
    their libraries, but do not import engine modules in server-only code.

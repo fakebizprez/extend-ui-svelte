@@ -1,15 +1,37 @@
 <!--
 	MIT License — Svelte 5 port of Extend UI xlsx-editor. Upstream: extend-hq/ui (MIT).
-	Built on the XLSX viewer/engine: workbook loading reuses the SheetJS engine
-	wrapper, rows render through the shared VirtualList, and dark mode follows
-	the parent-controlled isDark + onIsDarkChange contract.
-	Deliberate changes vs the React xlsx-editor:
-	- Formulas (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT plus arithmetic over A1
-	  references) are evaluated locally instead of through @extend-ai/react-xlsx.
-	- Cell styling (bold, alignment, fill) is editor state applied to the grid;
-	  the community SheetJS writer drops cell styles, so export preserves values
-	  and formulas but not fills or fonts.
-	- The grid is a virtualized native table; the header row is editable data.
+	Exported as XlsxEditor and under the upstream name XlsxEditorPreview.
+	Built on the XLSX engine: sheets load as A1-anchored grids (blank rows and
+	columns kept, so addresses match the file), formulas are kept and shown in
+	the formula bar, and export writes cells back at the same addresses.
+	Differences from upstream (keep in sync with the docs page,
+	src/routes/xlsx-editor/+page.svelte):
+	- Formulas show the file's saved value until they or an input is edited,
+	  then recalculate locally (SUM/AVERAGE/MIN/MAX/COUNT/PRODUCT with Excel's
+	  argument rules, TRUE/FALSE, arithmetic over same-sheet A1 references)
+	  instead of through @extend-ai/react-xlsx. Other formulas (cross-sheet,
+	  other functions, comparisons) keep the saved value.
+	- Styling is limited to bold, horizontal alignment, and fill, kept as editor
+	  state; the community SheetJS writer drops styles on export.
+	- Added props: data, showToolbar, rowHeight, height, overscan, onCellChange,
+	  onExport, plus an Export .xlsx button.
+	- The dark-mode control is a toolbar switch, not a workbook actions menu
+	  item; it only calls onIsDarkChange.
+	- Not ported: italic/underline/strikethrough, font family and size, text
+	  color, borders, number formats, merge cells, wrap text, vertical
+	  alignment, undo/redo, add/remove sheet, cell formatting from the file,
+	  frozen panes, column resize, zoom, upload menu, and the read-only mode for
+	  files over 5 MB.
+	- Keyboard follows upstream react-xlsx: the grid is one Tab stop; arrows,
+	  Ctrl/Cmd+arrows, Home/End, PageUp/PageDown, Tab/Shift+Tab, and
+	  Enter/Shift+Enter move the active cell; typing or F2 edits; Delete or
+	  Backspace clears. In the cell editor Enter commits and stays, Escape
+	  cancels, and arrows commit and move. Not ported: range selection
+	  (Shift+arrows move instead of extending), undo/redo, copy/paste, and the
+	  column sort menu (upstream WorkbookTableHeaderMenu).
+	- Exports: XlsxEditorSurface (a react-xlsx context surface) is not ported;
+	  XlsxEditor is self-contained. Sheet tabs reuse xlsx-viewer's
+	  WorkbookSheetTabs, as upstream does.
 -->
 <script lang="ts" module>
 	import type { CellValue } from './formulas.js';
@@ -30,19 +52,30 @@
 	}
 </script>
 <script lang="ts">
-	import { VirtualList } from '#lib/virtual-list/index.js';
-	import type { DarkModeProps } from '#lib/dark-mode.js';
-	import type { WorkBook } from '#lib/engines/xlsx/index.js';
-	import { columnIndexToLetter, evaluateCell } from './formulas.js';
+	import { VirtualList } from '../../virtual-list/index.js';
+	import WorkbookSheetTabs from '../xlsx-viewer/WorkbookSheetTabs.svelte';
+	import {
+		isPrintableKey,
+		navigateGrid,
+		scrollCellIntoView,
+		usedRange,
+		type GridPosition
+	} from '../xlsx-viewer/grid-navigation.js';
+	import { XlsxCellError, type WorkBook } from '../../engines/xlsx/index.js';
+	import { columnIndexToLetter, createSheetEvaluator } from './formulas.js';
 	import {
 		downloadXlsxBytes,
 		sheetsToXlsxBytes,
 		type EditableSheet
 	} from './workbook-export.js';
 
-	type EngineModule = typeof import('#lib/engines/xlsx/index.js');
+	type EngineModule = typeof import('../../engines/xlsx/index.js');
 
-	interface Props extends DarkModeProps {
+	interface Props {
+		/** Parent-controlled dark mode flag. Required, like upstream. */
+		isDark: boolean;
+		/** Called when the user toggles dark mode in the toolbar. Required, like upstream. */
+		onIsDarkChange: (isDark: boolean) => void;
 		/** Workbook URL. Loaded with fetch on the client. */
 		src?: string;
 		/** Workbook bytes. Takes precedence over src when both are given. */
@@ -58,6 +91,8 @@
 		/** Extra rows rendered above/below the visible window. */
 		overscan?: number;
 		class?: string;
+		/** Alias of `class`, matching the React prop name. Both are applied. */
+		className?: string;
 		/** Called after a cell edit commits, with zero-based coordinates. */
 		onCellChange?: (change: XlsxCellChange) => void;
 		/** Called after export with the .xlsx bytes and file name. */
@@ -74,7 +109,8 @@
 		rowHeight = 34,
 		height = 480,
 		overscan = 5,
-		class: className = '',
+		class: classProp = '',
+		className = '',
 		onCellChange,
 		onExport
 	}: Props = $props();
@@ -90,6 +126,13 @@
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
 	let grids = $state.raw<Record<string, CellValue[][]>>({});
 	let styles = $state.raw<Record<string, Record<string, XlsxCellStyle>>>({});
+	// Grids hold cell values; for a formula cell, the result saved in the file.
+	// Formulas live here (text without `=`, keyed by sheet then `row:col`), so
+	// text that starts with `=` stays text.
+	let formulas = $state.raw<Record<string, Record<string, string>>>({});
+	// Cells edited since load, by sheet. Formulas keep the file's saved value
+	// until they or their inputs are edited.
+	let edited = $state.raw<Record<string, ReadonlySet<string>>>({});
 	let revision = $state(0);
 	let loadingSheet = $state(false);
 	let exporting = $state(false);
@@ -98,6 +141,13 @@
 	let selected = $state<{ row: number; col: number } | null>(null);
 	let editing = $state(false);
 	let draft = $state('');
+	let draftInitial = '';
+	// The grid is the single Tab stop; the active cell is announced through
+	// aria-activedescendant, which survives virtualization better than moving
+	// focus between cells that scroll out of the DOM.
+	const uid = $props.id();
+	let gridEl: HTMLDivElement | null = $state(null);
+	let scrollEl: HTMLDivElement | null = $state(null);
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 130;
@@ -132,15 +182,46 @@
 	const exportFileName = $derived(
 		displayName.toLowerCase().endsWith('.xlsx') ? displayName : `${displayName}.xlsx`
 	);
-	const rowCountLabel = $derived(`${activeGrid.length} rows`);
+	const rowCountLabel = $derived(`${activeGrid.length} ${activeGrid.length === 1 ? 'row' : 'rows'}`);
 
 	function rawAt(row: number, col: number): CellValue {
 		return activeGrid[row]?.[col] ?? null;
 	}
 
+	function evaluatorFor(sheet: string) {
+		const grid = grids[sheet] ?? [];
+		const sheetFormulas = formulas[sheet] ?? {};
+		return createSheetEvaluator({
+			value: (row, col) => grid[row]?.[col],
+			formula: (row, col) => sheetFormulas[`${row}:${col}`],
+			formulaKeys: () => Object.keys(sheetFormulas),
+			edited: edited[sheet]
+		});
+	}
+
+	// ponytail: cross-sheet and unsupported formulas keep the file's saved value
+	// and do not recalculate; a full formula engine would be needed for that.
+	const activeEvaluator = $derived.by(() => {
+		void revision;
+		return evaluatorFor(activeSheetName);
+	});
+
+	/** A value as spreadsheets print it: TRUE/FALSE, error codes, blanks empty. */
+	function valueText(value: CellValue): string {
+		if (value === null) return '';
+		if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+		return String(value);
+	}
+
 	function displayAt(row: number, col: number): string {
-		const evaluated = evaluateCell(rawAt(row, col), (r, c) => activeGrid[r]?.[c]);
-		return evaluated === null || evaluated === undefined ? '' : String(evaluated);
+		return valueText(activeEvaluator(row, col));
+	}
+
+	/** What the formula bar and cell editor show: `=formula`, or the value. */
+	function cellText(row: number, col: number): string {
+		void revision;
+		const formula = formulas[activeSheetName]?.[styleKey(row, col)];
+		return formula !== undefined ? `=${formula}` : valueText(rawAt(row, col));
 	}
 
 	function styleKey(row: number, col: number): string {
@@ -164,14 +245,10 @@
 	const selectedAddress = $derived(
 		selected ? `${columnIndexToLetter(selected.col)}${selected.row + 1}` : '—'
 	);
-	const selectedRawText = $derived(selected ? rawToText(rawAt(selected.row, selected.col)) : '');
+	const selectedRawText = $derived(selected ? cellText(selected.row, selected.col) : '');
 	const selectedStyle = $derived(
 		selected ? (styleAt(selected.row, selected.col) ?? {}) : ({} as XlsxCellStyle)
 	);
-
-	function rawToText(value: CellValue): string {
-		return value === null || value === undefined ? '' : String(value);
-	}
 
 	function touch(): void {
 		revision += 1;
@@ -179,7 +256,12 @@
 
 	function normalizeCell(value: unknown): CellValue {
 		if (value === null || value === undefined) return null;
-		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+		if (
+			typeof value === 'string' ||
+			typeof value === 'number' ||
+			typeof value === 'boolean' ||
+			value instanceof XlsxCellError
+		) {
 			return value;
 		}
 		return String(value);
@@ -208,15 +290,124 @@
 		touch();
 	}
 
+	/**
+	 * Commits typed text to a cell. Unchanged text is a no-op, so opening and
+	 * closing the editor never turns `=text` into a formula. Like upstream,
+	 * text starting with `=` becomes a formula; anything else is a value.
+	 */
+	function commitText(row: number, col: number, text: string, initial: string): void {
+		if (text === initial) return;
+		const sheet = activeSheetName;
+		const key = styleKey(row, col);
+		const sheetFormulas = { ...(formulas[sheet] ?? {}) };
+		let value: CellValue;
+		if (text.trim().startsWith('=')) {
+			value = text.trim();
+			sheetFormulas[key] = value.slice(1);
+			setRaw(row, col, null);
+		} else {
+			value = coerceDraft(text);
+			delete sheetFormulas[key];
+			setRaw(row, col, value);
+		}
+		formulas = { ...formulas, [sheet]: sheetFormulas };
+		edited = { ...edited, [sheet]: new Set(edited[sheet]).add(key) };
+		touch();
+		onCellChange?.({ sheet, row, col, value });
+	}
+
 	function selectCell(row: number, col: number): void {
 		if (editing) commitEdit();
 		selected = { row, col };
 	}
 
-	function startEdit(): void {
+	/** Edits the active cell; `initial` replaces its text (typing to edit). */
+	function startEdit(initial?: string): void {
 		if (!selected || status !== 'ready') return;
-		draft = rawToText(rawAt(selected.row, selected.col));
+		draftInitial = cellText(selected.row, selected.col);
+		draft = initial ?? draftInitial;
 		editing = true;
+	}
+
+	function cellId(row: number, col: number): string {
+		return `${uid}-r${row}c${col}`;
+	}
+
+	function focusGrid(): void {
+		gridEl?.focus({ preventScroll: true });
+	}
+
+	function moveTo(next: GridPosition): void {
+		selected = next;
+		if (scrollEl) {
+			scrollCellIntoView(scrollEl, next, {
+				rowHeight,
+				height,
+				rowHeaderWidth: ROWNUM_WIDTH,
+				columnWidth: COLUMN_WIDTH
+			});
+		}
+	}
+
+	function gridBounds() {
+		return {
+			rowCount: activeGrid.length,
+			colCount: columnCount,
+			pageRows: Math.max(1, Math.floor(height / rowHeight)),
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH)),
+			used: usedRange(activeGrid, Object.keys(formulas[activeSheetName] ?? {}))
+		};
+	}
+
+	/** Upstream react-xlsx grid keys: navigate, type to edit, F2, Delete/Backspace. */
+	function handleGridKeydown(event: KeyboardEvent): void {
+		if (event.target !== gridEl || editing || status !== 'ready') return;
+		if (activeGrid.length === 0 || columnCount === 0) return;
+		// With no active cell, keys act from A1, as upstream does.
+		const current = selected ?? { row: 0, col: 0 };
+		if (isPrintableKey(event)) {
+			event.preventDefault();
+			selected = current;
+			startEdit(event.key);
+			return;
+		}
+		if (event.key === 'F2') {
+			event.preventDefault();
+			selected = current;
+			startEdit();
+			return;
+		}
+		if (event.key === 'Delete' || event.key === 'Backspace') {
+			event.preventDefault();
+			selected = current;
+			commitText(current.row, current.col, '', cellText(current.row, current.col));
+			return;
+		}
+		const next = navigateGrid(event, current, gridBounds());
+		if (!next) return;
+		event.preventDefault();
+		moveTo(next);
+	}
+
+	/** Keys inside the cell editor, as upstream: Enter commits, Escape cancels, arrows commit and move. */
+	function handleEditKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			commitEdit();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelEdit();
+		} else if (event.key.startsWith('Arrow')) {
+			event.preventDefault();
+			const from = selected;
+			commitEdit();
+			const plain = { key: event.key, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false };
+			const next = from && navigateGrid(plain, from, gridBounds());
+			if (next) moveTo(next);
+		} else {
+			return;
+		}
+		focusGrid();
 	}
 
 	function commitEdit(): void {
@@ -225,28 +416,30 @@
 			return;
 		}
 		const { row, col } = selected;
-		const previous = rawAt(row, col);
-		const next = coerceDraft(draft);
 		editing = false;
-		if (next !== previous) {
-			setRaw(row, col, next);
-			onCellChange?.({ sheet: activeSheetName, row, col, value: next });
-		}
+		commitText(row, col, draft, draftInitial);
 	}
 
 	function cancelEdit(): void {
 		editing = false;
 	}
 
+	/**
+	 * Mounts the cell editor as an overlay in the virtual list's scrolling
+	 * content, like upstream's editor overlay, so it stays mounted (and keeps
+	 * focus) when its row scrolls out of the rendered window. Then focuses it
+	 * with the caret at the end, as upstream does. Moving happens before focus,
+	 * since moving a focused element blurs it.
+	 */
+	function mountEditor(input: HTMLInputElement): void {
+		scrollEl?.querySelector('[data-testid="virtual-spacer"]')?.appendChild(input);
+		input.focus();
+		input.setSelectionRange(input.value.length, input.value.length);
+	}
+
 	function commitFormulaBar(value: string): void {
 		if (!selected) return;
-		const { row, col } = selected;
-		const previous = rawAt(row, col);
-		const next = coerceDraft(value);
-		if (next !== previous) {
-			setRaw(row, col, next);
-			onCellChange?.({ sheet: activeSheetName, row, col, value: next });
-		}
+		commitText(selected.row, selected.col, value, cellText(selected.row, selected.col));
 	}
 
 	function updateSelectedStyle(mutator: (style: XlsxCellStyle) => XlsxCellStyle): void {
@@ -289,10 +482,17 @@
 		exporting = true;
 		exportError = '';
 		try {
-			const sheets: EditableSheet[] = sheetNames.map((name) => ({
-				name,
-				grid: grids[name] ?? [[]]
-			}));
+			const sheets: EditableSheet[] = sheetNames.map((name) => {
+				// Formula cells are saved with the value the grid shows.
+				const evaluate = evaluatorFor(name);
+				const sheetFormulas = formulas[name] ?? {};
+				const grid = (grids[name] ?? []).map((row) => [...row]);
+				for (const key of Object.keys(sheetFormulas)) {
+					const [row, col] = key.split(':').map(Number) as [number, number];
+					(grid[row] ??= [])[col] = evaluate(row, col);
+				}
+				return { name, grid, formulas: sheetFormulas };
+			});
 			const bytes = await sheetsToXlsxBytes(sheets);
 			downloadXlsxBytes(bytes, exportFileName);
 			onExport?.(bytes, exportFileName);
@@ -307,15 +507,19 @@
 	// (with SheetJS inside it) is loaded through a dynamic import.
 	$effect(() => {
 		const sourceKey: unknown = data ?? src ?? null;
+		// A new source is a new workbook: drop every per-workbook edit, style,
+		// and selection, as upstream does by remounting with key={src}.
+		sheetNames = [];
+		activeSheetIndex = 0;
+		grids = {};
+		formulas = {};
+		edited = {};
+		styles = {};
+		selected = null;
+		editing = false;
+		errorMessage = '';
 		if (sourceKey === null || sourceKey === undefined) {
 			workbookCache = null;
-			sheetNames = [];
-			activeSheetIndex = 0;
-			grids = {};
-			styles = {};
-			selected = null;
-			editing = false;
-			errorMessage = '';
 			status = 'empty';
 			return;
 		}
@@ -324,7 +528,7 @@
 		errorMessage = '';
 		(async () => {
 			try {
-				const engine: EngineModule = await import('#lib/engines/xlsx/index.js');
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
 				if (cancelled) return;
 				let workbook = workbookCache?.key === sourceKey ? workbookCache.workbook : null;
 				if (!workbook) {
@@ -366,24 +570,18 @@
 		loadingSheet = true;
 		(async () => {
 			try {
-				const XLSX = await import('xlsx');
+				const engine: EngineModule = await import('../../engines/xlsx/index.js');
 				const next: Record<string, CellValue[][]> = {};
+				const nextFormulas: typeof formulas = {};
 				for (const name of names) {
-					const worksheet = cached.workbook.Sheets?.[name];
-					if (!worksheet) {
-						next[name] = [];
-						continue;
-					}
-					const aoa = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-						header: 1,
-						defval: null,
-						blankrows: false
-					});
-					next[name] = (aoa as unknown[][]).map((row) =>
-						(Array.isArray(row) ? row : []).map(normalizeCell)
-					);
+					// A1-anchored with blank rows kept, so addresses match the file.
+					// Only real formula cells (cell.f) become formulas.
+					const sheet = await engine.sheetToGrid(cached.workbook, name);
+					next[name] = sheet.values.map((row) => row.map(normalizeCell));
+					nextFormulas[name] = sheet.formulas;
 				}
 				if (cancelled) return;
+				formulas = nextFormulas;
 				grids = next;
 				touch();
 			} catch (failure) {
@@ -403,7 +601,7 @@
 </script>
 
 <div
-	class={`xlsx-editor${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={['xlsx-editor', isDark ? 'dark' : '', classProp, className].filter(Boolean).join(' ')}
 	data-dark={String(isDark)}
 	data-testid="xlsx-editor"
 >
@@ -525,29 +723,17 @@
 		<div class="xlsx-state">
 			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
-		{#if sheetNames.length > 0}
-			<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-				{#each sheetNames as name, i (name)}
-					<button
-						type="button"
-						role="tab"
-						data-testid="sheet-tab"
-						aria-selected={i === activeSheetIndex}
-						class:active={i === activeSheetIndex}
-						onclick={() => selectSheet(i)}
-					>
-						{name}
-					</button>
-				{/each}
-			</div>
-		{/if}
 	{:else}
-		<div class="xlsx-scroll">
+		<div class="xlsx-scroll" bind:this={scrollEl}>
 			<div
 				class="xlsx-grid"
 				role="grid"
+				tabindex="0"
 				aria-label={activeSheetName}
+				aria-activedescendant={selected ? cellId(selected.row, selected.col) : undefined}
 				style={`min-width: ${gridMinWidth}px;`}
+				bind:this={gridEl}
+				onkeydown={handleGridKeydown}
 			>
 				<div role="row" class="xlsx-header-row" style={`grid-template-columns: ${gridTemplate};`}>
 					<div role="columnheader" class="xlsx-rownum" aria-label="Row numbers"></div>
@@ -569,9 +755,12 @@
 									{@const isSelected =
 										selected !== null && selected.row === index && selected.col === col}
 									{@const isEditing = isSelected && editing}
+									<!-- Keyboard use goes through the grid, the single Tab stop, which
+										points at the active cell with aria-activedescendant. -->
+									<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
 									<div
 										role="gridcell"
-										tabindex="0"
+										id={cellId(index, col)}
 										class="xlsx-cell"
 										class:selected={isSelected}
 										data-testid="editor-cell"
@@ -583,42 +772,15 @@
 											// Ignore events bubbling up from the edit input.
 											if (event.target !== event.currentTarget) return;
 											selectCell(index, col);
+											focusGrid();
 										}}
 										ondblclick={(event) => {
 											if (event.target !== event.currentTarget) return;
 											selectCell(index, col);
 											startEdit();
 										}}
-										onkeydown={(event) => {
-											if (event.target !== event.currentTarget) return;
-											if (event.key === 'Enter' && !editing) {
-												event.preventDefault();
-												selectCell(index, col);
-												startEdit();
-											}
-										}}
 									>
-										{#if isEditing}
-											<input
-												class="xlsx-cell-input"
-												data-testid="cell-input"
-												aria-label={`Edit ${columnIndexToLetter(col)}${index + 1}`}
-												value={draft}
-												oninput={(event) => {
-													draft = event.currentTarget.value;
-												}}
-												onkeydown={(event) => {
-													if (event.key === 'Enter') {
-														event.preventDefault();
-														commitEdit();
-													} else if (event.key === 'Escape') {
-														event.preventDefault();
-														cancelEdit();
-													}
-												}}
-												onblur={() => commitEdit()}
-											/>
-										{:else}
+										{#if !isEditing}
 											{displayAt(index, col)}
 										{/if}
 									</div>
@@ -627,22 +789,31 @@
 						{/snippet}
 					</VirtualList>
 				{/key}
+				{#if editing && selected}
+					<input
+						class="xlsx-cell-input"
+						data-testid="cell-input"
+						aria-label={`Edit ${columnIndexToLetter(selected.col)}${selected.row + 1}`}
+						style={`top: ${selected.row * rowHeight}px; left: ${ROWNUM_WIDTH + selected.col * COLUMN_WIDTH}px; width: ${COLUMN_WIDTH}px; height: ${rowHeight}px;`}
+						value={draft}
+						{@attach mountEditor}
+						oninput={(event) => {
+							draft = event.currentTarget.value;
+						}}
+						onkeydown={handleEditKeydown}
+						onblur={() => commitEdit()}
+					/>
+				{/if}
 			</div>
 		</div>
-		<div class="xlsx-tabs" role="tablist" aria-label="Sheets">
-			{#each sheetNames as name, i (name)}
-				<button
-					type="button"
-					role="tab"
-					data-testid="sheet-tab"
-					aria-selected={i === activeSheetIndex}
-					class:active={i === activeSheetIndex}
-					onclick={() => selectSheet(i)}
-				>
-					{name}
-				</button>
-			{/each}
-		</div>
+	{/if}
+	<!-- Outside the state branches so the tabs (and their focus) survive sheet loads. -->
+	{#if status === 'ready'}
+		<WorkbookSheetTabs
+			sheets={sheetNames}
+			{activeSheetIndex}
+			onActiveSheetIndexChange={selectSheet}
+		/>
 	{/if}
 </div>
 
@@ -889,38 +1060,24 @@
 		outline: 2px solid var(--xlsx-selected-border);
 	}
 
+	.xlsx-grid:focus {
+		outline: none;
+	}
+
+	.xlsx-grid:focus-visible {
+		box-shadow: inset 0 0 0 2px var(--xlsx-selected-border);
+	}
+
 	.xlsx-cell-input {
-		width: 100%;
-		padding: 0.125rem 0.25rem;
+		position: absolute;
+		z-index: 2;
+		box-sizing: border-box;
+		margin: 0;
+		padding: 0.125rem 0.5rem;
 		border: 1px solid var(--xlsx-selected-border);
 		border-radius: 0.25rem;
 		background: var(--xlsx-bg);
 		color: var(--xlsx-fg);
 		font: inherit;
-	}
-
-	.xlsx-tabs {
-		display: flex;
-		gap: 0.25rem;
-		overflow-x: auto;
-		padding: 0.5rem 0.75rem;
-		border-top: 1px solid var(--xlsx-border);
-	}
-
-	.xlsx-tabs [role='tab'] {
-		flex: none;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid transparent;
-		border-radius: 0.375rem;
-		background: transparent;
-		color: var(--xlsx-muted);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.xlsx-tabs [role='tab'].active {
-		border-color: var(--xlsx-border);
-		color: var(--xlsx-tab-active);
-		font-weight: 600;
 	}
 </style>

@@ -6,6 +6,7 @@
 
 	let isDark = $state(false);
 	let darkPreview = $state(true);
+	let emptyDark = $state(false);
 </script>
 
 <h1>XLSX Viewer</h1>
@@ -29,7 +30,45 @@
 />
 
 <h2>Empty state</h2>
-<XlsxViewer />
+<XlsxViewer isDark={emptyDark} onIsDarkChange={(value) => (emptyDark = value)} />
+
+<h2>Differences from upstream</h2>
+<p>Also exported as <code>XlsxViewerPreview</code>, the upstream name.</p>
+<ul data-testid="differences">
+	<li>
+		The grid is a virtualized native grid over SheetJS values, not
+		<code>@extend-ai/react-xlsx</code> (React-only). Like upstream it shows column letters and
+		row numbers from A1, with row 1 as data and blank rows kept.
+	</li>
+	<li>
+		Added props: <code>data</code> (workbook bytes), <code>rowHeight</code>,
+		<code>height</code>, <code>overscan</code>. The toolbar shows a row count.
+	</li>
+	<li>
+		The dark-mode control is a toolbar switch instead of an item in the workbook actions menu.
+		It only calls <code>onIsDarkChange</code>; the parent owns <code>isDark</code>.
+	</li>
+	<li>
+		Not ported: cell formatting (fonts, fills, borders, number formats, merged cells), frozen
+		panes, column resize, zoom, search, sheet thumbnails, and the upload/download menu
+		(<code>showDownload</code>, <code>showUpload</code>, <code>toolbarActions</code>).
+	</li>
+	<li>
+		Exports: <code>WorkbookSheetTabs</code> is ported and shared with the editor. It takes
+		<code>sheets</code>, <code>activeSheetIndex</code>, and
+		<code>onActiveSheetIndexChange</code> instead of <code>workbookIdentity</code> plus the
+		react-xlsx context, and has no hover thumbnails. Not ported:
+		<code>renderXlsxScroller</code> (a react-xlsx scroll-area helper),
+		<code>WorkbookTableHeaderMenu</code> (the column sort menu; the port has no sorting), and
+		<code>XlsxWorkbookSurface</code> (a context surface; <code>XlsxViewer</code> is
+		self-contained).
+	</li>
+	<li>
+		Like upstream's read-only grid, cells can be selected and the grid (one Tab stop) navigates
+		with the arrows, Ctrl/Cmd+arrows, Home/End, PageUp/PageDown, Tab, and Enter. Not ported:
+		range selection (Shift+arrows move instead of extending) and copy.
+	</li>
+</ul>
 
 <p><a href="/">Back to all components</a></p>
 

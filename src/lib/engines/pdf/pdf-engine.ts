@@ -19,7 +19,7 @@ export type PdfPageChangeHandler = (page: number) => void;
 export interface PdfRenderOptions {
 	/** Render scale. Defaults to 1. */
 	scale?: number;
-	/** Rotation in degrees. Defaults to 0. */
+	/** Extra rotation in degrees, added to the page's own rotation. Defaults to 0. */
 	rotation?: number;
 }
 
@@ -33,8 +33,18 @@ export interface PdfEngine {
 	readonly pageCount: number;
 	/** Current page (1-based), or 0 when no document is loaded. */
 	readonly currentPage: number;
-	/** Load a document from a URL or raw bytes. Resolves with the page count. */
+	/**
+	 * Load a document from a URL or raw bytes. Resolves with the page count.
+	 * Last call wins: a load that a newer load() or destroy() supersedes
+	 * destroys its own loading task, leaves the engine state alone, and rejects
+	 * with an error for which isPdfLoadSuperseded() is true.
+	 */
 	load(source: PdfSource): Promise<number>;
+	/**
+	 * Size of every page at scale 1, in CSS pixels, with each page's own
+	 * rotation applied. Used to lay out pages before they render.
+	 */
+	getPageSizes(): Promise<PdfPageSize[]>;
 	/** Render a page (1-based) into a canvas. Resolves with the page size in CSS pixels. */
 	renderPage(pageNumber: number, canvas: HTMLCanvasElement, options?: PdfRenderOptions): Promise<PdfPageSize>;
 	/** Set the current page, clamped to [1, pageCount]; notifies page-change listeners. */
@@ -46,6 +56,20 @@ export interface PdfEngine {
 }
 
 type PdfjsModule = typeof import('pdfjs-dist');
+
+/** Error name of a load() that a newer load() or destroy() superseded. */
+const SUPERSEDED = 'AbortError';
+
+function supersededError(): Error {
+	const error = new Error('PdfEngine.load: superseded by a newer load or destroy.');
+	error.name = SUPERSEDED;
+	return error;
+}
+
+/** True when a load() rejected only because a newer load() or destroy() replaced it. */
+export function isPdfLoadSuperseded(error: unknown): boolean {
+	return error instanceof Error && error.name === SUPERSEDED;
+}
 
 let workerSrcOverride: string | null = null;
 let pdfjsPromise: Promise<PdfjsModule> | null = null;
@@ -102,8 +126,26 @@ export function createPdfEngine(): PdfEngine {
 	let loadingTask: PDFDocumentLoadingTask | null = null;
 	let pageCount = 0;
 	let currentPage = 0;
-	let renderTask: { cancel(): void } | null = null;
+	// One in-flight render per canvas: redrawing a canvas cancels its previous
+	// render, while different canvases (several pages in view) render in parallel.
+	const renderTasks = new Map<HTMLCanvasElement, { cancel(): void }>();
 	const listeners = new Set<PdfPageChangeHandler>();
+	let loadGeneration = 0;
+	let pendingTask: PDFDocumentLoadingTask | null = null;
+
+	/** Drop the loaded document and any load still in flight, destroying their tasks. */
+	function releaseDocument(): Promise<unknown> {
+		for (const task of renderTasks.values()) {
+			task.cancel();
+		}
+		renderTasks.clear();
+		const tasks = [loadingTask, pendingTask];
+		loadingTask = null;
+		pendingTask = null;
+		doc = null;
+		pageCount = 0;
+		return Promise.all(tasks.map((task) => task?.destroy()));
+	}
 
 	function notify(page: number): void {
 		for (const handler of listeners) {
@@ -129,19 +171,45 @@ export function createPdfEngine(): PdfEngine {
 
 		async load(source: PdfSource): Promise<number> {
 			const params = toDocumentSource(source);
+			// Last call wins: a newer load() or destroy() supersedes this one.
+			const generation = ++loadGeneration;
+			void releaseDocument();
 			const pdfjs = await loadPdfjs();
-			const previousTask = loadingTask;
-			loadingTask = null;
-			doc = null;
+			if (generation !== loadGeneration) throw supersededError();
 			const task = pdfjs.getDocument(params);
-			doc = await task.promise;
-			loadingTask = task;
-			if (previousTask) {
-				await previousTask.destroy();
+			pendingTask = task;
+			let loaded: PDFDocumentProxy;
+			try {
+				loaded = await task.promise;
+			} catch (failure) {
+				if (generation !== loadGeneration) throw supersededError();
+				throw failure;
+			} finally {
+				if (pendingTask === task) pendingTask = null;
 			}
-			pageCount = doc.numPages;
+			if (generation !== loadGeneration) {
+				void task.destroy();
+				throw supersededError();
+			}
+			loadingTask = task;
+			doc = loaded;
+			pageCount = loaded.numPages;
 			setPage(pageCount > 0 ? 1 : 0);
 			return pageCount;
+		},
+
+		async getPageSizes(): Promise<PdfPageSize[]> {
+			const loaded = doc;
+			if (!loaded) {
+				throw new Error('PdfEngine.getPageSizes: no document loaded.');
+			}
+			const pages = await Promise.all(
+				Array.from({ length: loaded.numPages }, (_, index) => loaded.getPage(index + 1))
+			);
+			return pages.map((page) => {
+				const { width, height } = page.getViewport({ scale: 1 });
+				return { width, height };
+			});
 		},
 
 		async renderPage(
@@ -162,26 +230,25 @@ export function createPdfEngine(): PdfEngine {
 				throw new Error('PdfEngine.renderPage: canvas 2d context unavailable.');
 			}
 			const page: PDFPageProxy = await doc.getPage(pageNumber);
+			// PDF.js replaces the page's own /Rotate when `rotation` is passed, so add it back.
 			const viewport = page.getViewport({
 				scale: options.scale ?? 1,
-				rotation: options.rotation ?? 0
+				rotation: (((page.rotate + (options.rotation ?? 0)) % 360) + 360) % 360
 			});
+			// Stop the canvas's previous render before resizing it under that render.
+			renderTasks.get(canvas)?.cancel();
 			canvas.width = Math.ceil(viewport.width);
 			canvas.height = Math.ceil(viewport.height);
-			if (renderTask) {
-				renderTask.cancel();
-				renderTask = null;
-			}
 			const task = page.render({
 				canvasContext: context,
 				viewport
 			} as RenderParameters);
-			renderTask = task;
+			renderTasks.set(canvas, task);
 			try {
 				await task.promise;
 			} finally {
-				if (renderTask === task) {
-					renderTask = null;
+				if (renderTasks.get(canvas) === task) {
+					renderTasks.delete(canvas);
 				}
 			}
 			return { width: viewport.width, height: viewport.height };
@@ -203,18 +270,10 @@ export function createPdfEngine(): PdfEngine {
 		},
 
 		async destroy(): Promise<void> {
-			if (renderTask) {
-				renderTask.cancel();
-				renderTask = null;
-			}
-			if (loadingTask) {
-				const previousTask = loadingTask;
-				loadingTask = null;
-				doc = null;
-				await previousTask.destroy();
-			}
-			pageCount = 0;
+			loadGeneration += 1;
+			await releaseDocument();
 			currentPage = 0;
 		}
+
 	};
 }

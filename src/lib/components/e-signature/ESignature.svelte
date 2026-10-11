@@ -4,18 +4,32 @@
 	preview through the shared PDF.js engine wrapper, download the result.
 	Browser-only libraries load on the client via dynamic import() in onMount.
 	Placement coordinates are PDF points from the bottom-left page corner.
+	Ported from apps/v4/registry/new-york-v4/blocks/e-signature.tsx (ESignatureBlock).
+
+	Deliberate changes vs the React block:
+	- Also exported as the upstream name ESignatureBlock. The upstream `file`
+	  prop is accepted; `src` is kept as an alias (file wins). `className` is an
+	  alias of `class`.
+	- One signature, placed by numeric position/size/scale controls instead of
+	  the draggable field overlay on the shared PDF viewer, and drawn on an
+	  inline pad instead of the signature dialog. The resizable two-pane shell,
+	  the field list panel, initials/date/checkbox/text fields, recipients,
+	  required-field validation, and signed/pending/declined states are not ported.
+	- The signed file is named "<name>-signed.pdf" (fileName or the source name)
+	  instead of upstream's fixed "signed-document.pdf".
+	- Dark mode is parent-controlled (isDark). Like upstream there is no theme
+	  switch inside the block, so onIsDarkChange is accepted and never called.
+	- Port additions: fileName, page, position/size/scale bindables, penColor,
+	  backgroundColor, showDownload, and the on* event callbacks.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
 	import {
 		clampPage,
 		dataUrlToBytes,
-		DEFAULT_POSITION_X,
-		DEFAULT_POSITION_Y,
 		DEFAULT_SCALE,
-		DEFAULT_SIGNATURE_HEIGHT,
-		DEFAULT_SIGNATURE_WIDTH,
+		defaultPlacementForPage,
 		embedSignaturePng,
 		getSignedDownloadFileName,
 		MAX_SCALE,
@@ -24,19 +38,21 @@
 	} from './sign-pdf.js';
 
 	export interface ESignatureProps {
-		/** PDF URL to sign. Empty renders the no-document prompt. */
+		/** PDF URL to sign, matching the upstream prop. Empty renders the no-document prompt. */
+		file?: string;
+		/** Alias of `file`; `file` wins when both are given. */
 		src?: string;
 		/** Download base name; "-signed.pdf" is appended. */
 		fileName?: string;
 		/** Initial 1-based page; the component owns the active page after mount. */
 		page?: number;
-		/** Signature offset from the left page edge in PDF points. */
+		/** Signature offset from the left page edge in PDF points. Defaults to upstream's field scaled to the page. */
 		positionX?: number;
-		/** Signature offset from the bottom page edge in PDF points. */
+		/** Signature offset from the bottom page edge in PDF points. Defaults to upstream's field scaled to the page. */
 		positionY?: number;
-		/** Signature box width in PDF points before scaling. */
+		/** Signature box width in PDF points before scaling. Defaults to upstream's field scaled to the page. */
 		signatureWidth?: number;
-		/** Signature box height in PDF points before scaling. */
+		/** Signature box height in PDF points before scaling. Defaults to upstream's field scaled to the page. */
 		signatureHeight?: number;
 		/** Placement scale multiplier. */
 		scale?: number;
@@ -48,7 +64,7 @@
 		showDownload?: boolean;
 		/** Parent-controlled dark mode flag. */
 		isDark?: boolean;
-		/** Called when the user toggles dark mode. */
+		/** Accepted for contract parity; the block renders no theme switch, so it is never called. */
 		onIsDarkChange?: (isDark: boolean) => void;
 		/** Called when the pad gains or loses a signature. */
 		onSignatureChange?: (hasSignature: boolean) => void;
@@ -59,33 +75,40 @@
 		/** Called with the file name when the signed PDF downloads. */
 		onSignedDownload?: (fileName: string) => void;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop. */
+		className?: string;
 	}
 
 	let {
+		file,
 		src,
 		fileName,
 		page = 1,
-		positionX = $bindable(DEFAULT_POSITION_X),
-		positionY = $bindable(DEFAULT_POSITION_Y),
-		signatureWidth = $bindable(DEFAULT_SIGNATURE_WIDTH),
-		signatureHeight = $bindable(DEFAULT_SIGNATURE_HEIGHT),
+		positionX = $bindable(),
+		positionY = $bindable(),
+		signatureWidth = $bindable(),
+		signatureHeight = $bindable(),
 		scale = $bindable(DEFAULT_SCALE),
-		penColor = '#111827',
+		penColor = '#000000',
 		backgroundColor = 'rgba(0,0,0,0)',
 		showDownload = true,
 		isDark = false,
-		onIsDarkChange,
 		onSignatureChange,
 		onDocumentLoadSuccess,
 		onPageChange,
 		onSignedDownload,
-		class: className = ''
+		class: classProp = '',
+		className = ''
 	}: ESignatureProps = $props();
+
+	const pdfUrl = $derived(file ?? src);
 
 	type SignaturePadInstance = {
 		isEmpty(): boolean;
 		clear(): void;
 		toDataURL(type?: string): string;
+		toData(): unknown[];
+		fromData(data: unknown[]): void;
 		off(): void;
 		addEventListener(type: string, listener: () => void): void;
 		removeEventListener(type: string, listener: () => void): void;
@@ -99,62 +122,87 @@
 	let padReady = $state(false);
 	// svelte-ignore state_referenced_locally: `page` intentionally seeds the initial page only.
 	let activePage = $state(page);
-	// svelte-ignore state_referenced_locally: `src` intentionally seeds the initial status only.
-	let status: 'empty' | 'loading' | 'ready' | 'error' = $state(src ? 'loading' : 'empty');
+	// svelte-ignore state_referenced_locally: the source intentionally seeds the initial status only.
+	let status = $state<'empty' | 'loading' | 'ready' | 'error'>(file ?? src ? 'loading' : 'empty');
 	let loadError = $state('');
 	let placeError = $state('');
 	let numPages = $state(0);
 	let placing = $state(false);
 	let originalBytes: Uint8Array | null = $state.raw(null);
 	let signedBytes: Uint8Array | null = $state.raw(null);
+	// Bumped on every source change so an in-flight placement can tell it is stale.
+	let loadGeneration = 0;
+
+	// Until the parent or the user sets them, position and size follow upstream's
+	// default field scaled to the active page (Letter until a page renders).
+	let pageSize = $state({ width: 612, height: 792 });
+	const fallback = $derived(defaultPlacementForPage(pageSize.width, pageSize.height));
+	const placeX = $derived(positionX ?? fallback.x);
+	const placeY = $derived(positionY ?? fallback.y);
+	const placeWidth = $derived(signatureWidth ?? fallback.width);
+	const placeHeight = $derived(signatureHeight ?? fallback.height);
+	const shown = (value: number) => Math.round(value * 10) / 10;
+	const typed = (input: HTMLInputElement) =>
+		Number.isNaN(input.valueAsNumber) ? undefined : input.valueAsNumber;
 
 	const pdfReady = $derived(status === 'ready' && numPages > 0);
 	const canPlace = $derived(pdfReady && hasSignature && !placing);
 	const canDownload = $derived(pdfReady && signedBytes !== null);
 
+	// Match the backing store to the displayed size so ink lands under the pointer.
+	function syncPadSize(canvas: HTMLCanvasElement): void {
+		const ratio = Math.max(window.devicePixelRatio || 1, 1);
+		canvas.width = Math.floor(Math.max(canvas.offsetWidth, 1) * ratio);
+		canvas.height = Math.floor(Math.max(canvas.offsetHeight, 1) * ratio);
+		const context = canvas.getContext('2d');
+		context?.setTransform?.(1, 0, 0, 1, 0, 0);
+		context?.scale?.(ratio, ratio);
+	}
+
 	// Browser-only: signature_pad and the PDF engine load on the client.
 	onMount(() => {
 		let cancelled = false;
 		let handleStroke: (() => void) | null = null;
+		let resizeObserver: ResizeObserver | null = null;
 
 		(async () => {
 			const [{ default: SignaturePad }, { createPdfEngine }] = await Promise.all([
 				import('signature_pad'),
-				import('#lib/engines/pdf/index.js')
+				import('../../engines/pdf/index.js')
 			]);
 			if (cancelled) return;
 			const created = createPdfEngine();
 			engine = created;
 			const canvas = padCanvas;
-			if (canvas) {
-				const context = canvas.getContext('2d');
-				if (context) {
-					const ratio =
-						typeof window !== 'undefined' && window.devicePixelRatio > 1
-							? window.devicePixelRatio
-							: 1;
-					if (ratio !== 1 && typeof context.scale === 'function') {
-						canvas.width *= ratio;
-						canvas.height *= ratio;
-						context.scale(ratio, ratio);
+			if (canvas && canvas.getContext('2d')) {
+				const instance = new SignaturePad(canvas, { penColor, backgroundColor });
+				syncPadSize(canvas);
+				handleStroke = () => {
+					const drawn = !instance.isEmpty();
+					if (drawn !== hasSignature) {
+						hasSignature = drawn;
+						onSignatureChange?.(drawn);
 					}
-					const instance = new SignaturePad(canvas, { penColor, backgroundColor });
-					handleStroke = () => {
-						const drawn = !instance.isEmpty();
-						if (drawn !== hasSignature) {
-							hasSignature = drawn;
-							onSignatureChange?.(drawn);
-						}
-					};
-					instance.addEventListener('endStroke', handleStroke);
-					pad = instance;
-					padReady = true;
+				};
+				instance.addEventListener('endStroke', handleStroke);
+				// signature_pad's resize pattern: resize the backing store, then
+				// replay the stroke data so the drawing survives layout changes.
+				if (typeof ResizeObserver !== 'undefined') {
+					resizeObserver = new ResizeObserver(() => {
+						const strokes = instance.toData();
+						syncPadSize(canvas);
+						instance.fromData(strokes);
+					});
+					resizeObserver.observe(canvas);
 				}
+				pad = instance;
+				padReady = true;
 			}
 		})();
 
 		return () => {
 			cancelled = true;
+			resizeObserver?.disconnect();
 			if (pad && handleStroke) {
 				pad.removeEventListener('endStroke', handleStroke);
 				pad.off();
@@ -170,9 +218,10 @@
 
 	// Client-only: $effect never runs on the server.
 	$effect(() => {
-		const source = src;
+		const source = pdfUrl;
 		const eng = engine;
 		if (!eng) return;
+		loadGeneration += 1;
 		if (!source) {
 			status = 'empty';
 			numPages = 0;
@@ -219,13 +268,27 @@
 		};
 	});
 
+	// Only the latest render may report an error: a newer render on the same
+	// canvas cancels the older one, and PDF.js rejects it with
+	// RenderingCancelledException.
+	let renderGeneration = 0;
+	// load() drops the open document at once, so renders wait for a reload in
+	// progress (the signed PDF after Place signature) instead of failing.
+	let reloading: Promise<unknown> = Promise.resolve();
+
 	async function renderPreview(): Promise<void> {
 		const eng = engine;
 		const canvas = previewCanvas;
 		if (!eng || !canvas || status !== 'ready' || numPages === 0) return;
+		const generation = ++renderGeneration;
 		try {
-			await eng.renderPage(activePage, canvas, { scale: 1 });
+			await reloading;
+			if (generation !== renderGeneration || engine !== eng) return;
+			const size = await eng.renderPage(activePage, canvas, { scale: 1 });
+			if (generation === renderGeneration && size) pageSize = { width: size.width, height: size.height };
 		} catch (failure: unknown) {
+			if (generation !== renderGeneration) return;
+			if (failure instanceof Error && failure.name === 'RenderingCancelledException') return;
 			status = 'error';
 			loadError =
 				failure instanceof Error ? failure.message : 'Unable to render the PDF preview.';
@@ -261,23 +324,32 @@
 		}
 		placing = true;
 		placeError = '';
+		const generation = loadGeneration;
 		try {
 			const pngBytes = dataUrlToBytes(instance.toDataURL('image/png'));
 			const placement = resolvePlacement({
 				page: activePage,
-				x: positionX,
-				y: positionY,
-				width: signatureWidth,
-				height: signatureHeight,
+				x: placeX,
+				y: placeY,
+				width: placeWidth,
+				height: placeHeight,
 				scale,
 				pageCount: numPages
 			});
 			// Stamp onto the original bytes so re-placing replaces the stamp.
 			const stamped = await embedSignaturePng(bytes, pngBytes, placement);
+			// The document changed mid-placement: drop the stamp for the old file.
+			if (generation !== loadGeneration) return;
 			signedBytes = stamped;
-			numPages = await eng.load(new Uint8Array(stamped));
+			const loading = eng.load(new Uint8Array(stamped));
+			reloading = loading.catch(() => undefined);
+			const count = await loading;
+			if (generation !== loadGeneration) return;
+			numPages = count;
+			// Re-render whatever page is current now; paging may have moved it.
 			await renderPreview();
 		} catch (failure: unknown) {
+			if (generation !== loadGeneration) return;
 			placeError =
 				failure instanceof Error ? failure.message : 'Unable to place the signature.';
 		} finally {
@@ -288,7 +360,7 @@
 	function downloadSigned(): void {
 		const stamped = signedBytes;
 		if (!stamped) return;
-		const name = getSignedDownloadFileName(fileName, src ?? '');
+		const name = getSignedDownloadFileName(fileName, pdfUrl ?? '');
 		const bytes = new Uint8Array(stamped);
 		const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
 		const url = URL.createObjectURL(blob);
@@ -304,35 +376,25 @@
 </script>
 
 <div
-	class={`e-signature${isDark ? ' dark' : ''}${className ? ` ${className}` : ''}`}
+	class={['e-signature', isDark && 'dark', classProp, className].filter(Boolean).join(' ')}
 	data-dark={String(isDark)}
 	data-pdf-ready={String(pdfReady)}
 	data-signed={String(signedBytes !== null)}
 	data-testid="e-signature"
 >
-	<div role="toolbar" aria-label="E-signature toolbar" class="es-toolbar">
+	<div class="es-toolbar">
 		<span class="es-title">E-Signature</span>
-		<button
-			type="button"
-			class="es-button es-theme-toggle"
-			role="switch"
-			aria-checked={String(isDark)}
-			aria-label="Toggle dark mode"
-			onclick={() => onIsDarkChange?.(!isDark)}
-		>
-			{isDark ? 'Light' : 'Dark'}
-		</button>
 	</div>
 
 	<div class="es-panels">
-		<section aria-label="Draw your signature" class="es-panel">
+		<!-- Groups, not landmarks: upstream's block has no labelled landmarks, and
+			several instances on one page must not repeat them. -->
+		<div role="group" aria-label="Draw your signature" class="es-panel">
 			<canvas
 				bind:this={padCanvas}
 				class="es-pad"
 				data-pad-ready={String(padReady)}
 				data-testid="e-signature-pad"
-				width="560"
-				height="200"
 			></canvas>
 			<p class="es-status" data-testid="e-signature-status">
 				{hasSignature ? 'Signature ready' : 'Draw your signature above'}
@@ -347,20 +409,20 @@
 					Clear signature
 				</button>
 			</div>
-		</section>
+		</div>
 
-		<section aria-label="Place the signature on the PDF" class="es-panel">
+		<div role="group" aria-label="Place the signature on the PDF" class="es-panel">
 			{#if status === 'loading'}
 				<div class="es-state" role="status">Loading PDF…</div>
 			{:else if status === 'error'}
 				<div class="es-state es-error" role="alert">
 					{loadError || 'Unable to load the PDF preview.'}
 				</div>
-			{:else if !src}
+			{:else if !pdfUrl}
 				<div class="es-state">
 					<p class="es-state-title">Choose a PDF to sign</p>
 					<p class="es-state-hint">
-						Pass a PDF URL with the <code>src</code> prop.
+						Pass a PDF URL with the <code>file</code> prop.
 					</p>
 				</div>
 			{:else}
@@ -395,19 +457,43 @@
 				<div class="es-grid">
 					<label class="es-field">
 						Position X (pt)
-						<input type="number" min="0" step="1" bind:value={positionX} />
+						<input
+							type="number"
+							min="0"
+							step="1"
+							value={shown(placeX)}
+							oninput={(event) => (positionX = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Position Y (pt)
-						<input type="number" min="0" step="1" bind:value={positionY} />
+						<input
+							type="number"
+							min="0"
+							step="1"
+							value={shown(placeY)}
+							oninput={(event) => (positionY = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Width (pt)
-						<input type="number" min="1" step="1" bind:value={signatureWidth} />
+						<input
+							type="number"
+							min="1"
+							step="1"
+							value={shown(placeWidth)}
+							oninput={(event) => (signatureWidth = typed(event.currentTarget))}
+						/>
 					</label>
 					<label class="es-field">
 						Height (pt)
-						<input type="number" min="1" step="1" bind:value={signatureHeight} />
+						<input
+							type="number"
+							min="1"
+							step="1"
+							value={shown(placeHeight)}
+							oninput={(event) => (signatureHeight = typed(event.currentTarget))}
+						/>
 					</label>
 				</div>
 				<label class="es-field es-scale">
@@ -447,7 +533,7 @@
 					{/if}
 				</div>
 			{/if}
-		</section>
+		</div>
 	</div>
 </div>
 
@@ -526,9 +612,11 @@
 		touch-action: none;
 	}
 
+	/* Upstream keeps the signature pad white in both themes. */
 	.es-pad {
 		height: 200px;
 		cursor: crosshair;
+		background: #ffffff;
 	}
 
 	.es-status {
@@ -553,12 +641,15 @@
 	.es-field {
 		display: grid;
 		gap: 0.25rem;
+		min-width: 0;
 		font-size: 12px;
 		color: var(--es-muted);
 	}
 
 	.es-field input[type='number'] {
+		box-sizing: border-box;
 		width: 100%;
+		min-width: 0;
 		padding: 0.375rem 0.5rem;
 		border: 1px solid var(--es-border);
 		border-radius: 0.375rem;
@@ -568,12 +659,19 @@
 	}
 
 	.es-scale {
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
+	}
+
+	.es-scale input[type='range'] {
+		width: 100%;
+		min-width: 0;
+		margin: 0;
 	}
 
 	.es-button {
 		flex: none;
+		max-width: 100%;
 		padding: 0.375rem 0.625rem;
 		border: 1px solid var(--es-border);
 		border-radius: 0.375rem;

@@ -3,14 +3,17 @@
 	Ported from apps/v4/components/extend/file-thumbnail.tsx.
 
 	Deliberate changes from the React version:
-	- previewContent is a Svelte Snippet instead of React.ReactNode.
+	- previewContent is a Svelte Snippet instead of React.ReactNode. `class`
+	  is accepted alongside the upstream `className`. The loading overlay is
+	  inlined instead of exported as FileThumbnailLoadingOverlay.
 	- PDF rendering is built in: pass pdfUrl (or pdfFile) plus pageNumber and
 	  width and the requested page renders onto a canvas through the shared PDF
 	  engine wrapper (dynamically imported on the client). Upstream renders
 	  thumbnails in docs-level wrappers around @embedpdf; here PDF.js does it
 	  in-component. Only the requested page is rendered, never the document.
-	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange) with a
-	  small theme toggle, matching the other ported components.
+	- Dark mode follows the repo-wide contract (isDark + onIsDarkChange). Like
+	  upstream it renders no theme toggle (it is often nested inside a parent
+	  button), so it reflects `isDark` and never invokes the callback.
 -->
 <script module lang="ts">
 	export interface ThumbnailFile {
@@ -26,16 +29,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import type { PdfEngine } from '#lib/engines/pdf/index.js';
+	import type { PdfEngine } from '../../engines/pdf/index.js';
 	import {
 		DEFAULT_THUMBNAIL_PAGE,
 		DEFAULT_THUMBNAIL_WIDTH,
-		renderPdfThumbnail
+		renderLoadedPdfThumbnail
 	} from './pdf-thumbnail.js';
 
 	interface Props {
-		file?: ThumbnailFile | File;
+		/** The file being previewed. Required, like upstream. */
+		file: ThumbnailFile | File;
 		className?: string;
+		/** Alias of the upstream `className`. */
+		class?: string;
 		previewAspectRatio?: number;
 		previewClassName?: string;
 		previewContent?: Snippet;
@@ -55,8 +61,8 @@
 	}
 
 	let {
-		file,
 		className,
+		class: classProp,
 		previewAspectRatio,
 		previewClassName,
 		previewContent,
@@ -67,8 +73,7 @@
 		pdfFile = null,
 		pageNumber = DEFAULT_THUMBNAIL_PAGE,
 		width = DEFAULT_THUMBNAIL_WIDTH,
-		isDark = false,
-		onIsDarkChange
+		isDark = false
 	}: Props = $props();
 
 	// PDF mode is the fallback source: explicit image/snippet previews win.
@@ -105,10 +110,8 @@
 				(pdfActive && pdfStatus === 'error') ||
 				(!previewImageUrl && !hasPreviewContent && !pdfActive))
 	);
+	// CSS aspect-ratio is width / height.
 	const aspectRatio = $derived(previewAspectRatio ?? (pdfActive ? (pdfAspect ?? 1) : 1));
-	const fallbackGlyph = $derived(
-		file?.name.split('.').pop()?.toUpperCase().slice(0, 4) || 'FILE'
-	);
 
 	function cancelImageReveal(): void {
 		if (revealFrame === null) return;
@@ -142,7 +145,7 @@
 
 	async function ensureEngine(): Promise<PdfEngine> {
 		// Browser-only: the engine (and PDF.js behind it) loads on the client.
-		enginePromise ??= import('#lib/engines/pdf/index.js').then((module) =>
+		enginePromise ??= import('../../engines/pdf/index.js').then((module) =>
 			module.createPdfEngine()
 		);
 		return enginePromise;
@@ -182,13 +185,16 @@
 				const source = sourceFile ? await sourceFile.arrayBuffer() : (sourceUrl as string);
 				if (run !== pdfRun) return;
 				const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-				const result = await renderPdfThumbnail(engine, source, canvas, {
+				const pageCount = await engine.load(source);
+				// A newer source may have started while this one loaded; never draw a stale page.
+				if (run !== pdfRun) return;
+				const result = await renderLoadedPdfThumbnail(engine, pageCount, canvas, {
 					pageNumber: page,
 					width: targetWidth,
 					dpr
 				});
 				if (run !== pdfRun) return;
-				pdfAspect = result.width > 0 ? result.height / result.width : null;
+				pdfAspect = result.height > 0 ? result.width / result.height : null;
 				pdfStatus = 'ready';
 			} catch {
 				if (run !== pdfRun) return;
@@ -208,16 +214,7 @@
 	});
 </script>
 
-<div class={['file-thumbnail', className]} class:dark={isDark} data-testid="file-thumbnail">
-	<button
-		type="button"
-		class="theme-toggle"
-		aria-label="Toggle dark mode"
-		aria-pressed={isDark}
-		onclick={() => onIsDarkChange?.(!isDark)}
-	>
-		{isDark ? 'Light' : 'Dark'}
-	</button>
+<div class={['file-thumbnail', classProp, className]} class:dark={isDark} data-testid="file-thumbnail">
 	<div
 		class={['preview', previewClassName]}
 		class:preview-loading={showLoading}
@@ -236,7 +233,7 @@
 				class="preview-image"
 				class:image-loading={showLoading}
 				data-testid="file-thumbnail-image"
-				onload={(event) => markImageLoaded(event.currentTarget, previewImageUrl)}
+				onload={(event) => markImageLoaded(event.currentTarget as HTMLImageElement, previewImageUrl)}
 				onerror={handleImageError}
 			/>
 		{/if}
@@ -263,9 +260,7 @@
 			</div>
 		{/if}
 		{#if showFallback}
-			<div class="fallback" aria-hidden="true" data-testid="file-thumbnail-fallback">
-				{fallbackGlyph}
-			</div>
+			<div class="fallback" aria-hidden="true" data-testid="file-thumbnail-fallback"></div>
 		{/if}
 	</div>
 </div>
@@ -275,7 +270,6 @@
 		--ft-bg: #ffffff;
 		--ft-fg: #111827;
 		--ft-muted: #f3f4f6;
-		--ft-muted-fg: #6b7280;
 		--ft-border: rgba(17, 24, 39, 0.12);
 		position: relative;
 		overflow: hidden;
@@ -289,22 +283,7 @@
 		--ft-bg: #111827;
 		--ft-fg: #f3f4f6;
 		--ft-muted: #1f2937;
-		--ft-muted-fg: #9ca3af;
 		--ft-border: rgba(243, 244, 246, 0.16);
-	}
-
-	.theme-toggle {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		z-index: 20;
-		border: 1px solid var(--ft-border);
-		border-radius: 999px;
-		background: var(--ft-bg);
-		color: var(--ft-muted-fg);
-		font-size: 0.75rem;
-		padding: 0.15rem 0.6rem;
-		cursor: pointer;
 	}
 
 	.preview {
@@ -383,12 +362,6 @@
 	.fallback {
 		position: absolute;
 		inset: 0;
-		display: grid;
-		place-items: center;
 		background: var(--ft-muted);
-		color: var(--ft-muted-fg);
-		font-size: 0.875rem;
-		font-weight: 700;
-		letter-spacing: 0.06em;
 	}
 </style>

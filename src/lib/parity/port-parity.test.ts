@@ -119,7 +119,7 @@ const UPSTREAM_PROPS: Record<string, { upstream: string; props: string[] }> = {
 		upstream: 'ESignatureBlock',
 		props: ['file']
 	},
-	'document-viewer-sidebar/DocumentViewerSidebar.svelte': {
+	'document-viewer-sidebar/DocumentViewerThumbnailSidebar.svelte': {
 		upstream: 'DocumentViewerThumbnailSidebar',
 		props: ['children', 'className', 'closedInlineClassName', 'inline', 'open', 'widthClassName']
 	},
@@ -201,7 +201,6 @@ const read = (path: string) => readFileSync(join(COMPONENTS_DIR, path), 'utf8');
 // Upstream props the port neither implements nor records as a deliberate change.
 const KNOWN_UNRECORDED_PROPS: Record<string, string[]> = {
 	'pdf-viewer/PdfViewer.svelte': [
-		'resolveScrollAreaViewport',
 		'onPagePointerDown',
 		'onPagePointerMove',
 		'onPagePointerUp',
@@ -227,31 +226,6 @@ const KNOWN_UNRECORDED_PROPS: Record<string, string[]> = {
 		'onCapture',
 		'onToast',
 		'onSelectionAction'
-	],
-	'docx-viewer/DocxViewer.svelte': ['className'],
-	'docx-editor/DocxEditor.svelte': ['className', 'defaultZoomScale'],
-	'xlsx-viewer/XlsxViewer.svelte': ['className', 'toolbarActions'],
-	'xlsx-editor/XlsxEditor.svelte': ['className'],
-	'file-system/FileSystem.svelte': [
-		'defaultView',
-		'view',
-		'onViewChange',
-		'onFileOpen',
-		'getFileUrl',
-		'loadChildren',
-		'renderFilePreview',
-		'loadPreviewImageUrl'
-	],
-	'bounding-box-citations/BoundingBoxCitations.svelte': ['resolveArrayItemMetadataPath'],
-	'schema-builder/SchemaBuilder.svelte': ['className', 'theme'],
-	'e-signature/ESignature.svelte': ['file'],
-	// The port is a section/nav sidebar, not upstream's thumbnail sidebar shell.
-	'document-viewer-sidebar/DocumentViewerSidebar.svelte': [
-		'className',
-		'closedInlineClassName',
-		'inline',
-		'open',
-		'widthClassName'
 	],
 	'toggle/ToggleGroupItem.svelte': ['className', 'variant', 'size']
 };
@@ -288,10 +262,7 @@ describe('port parity: props', () => {
 });
 
 // Components that change `isDark` themselves instead of leaving it to the parent.
-const KNOWN_SELF_THEMING = [
-	'document-viewer-sidebar/DocumentViewerSidebar.svelte',
-	'schema-builder/SchemaBuilder.svelte'
-];
+const KNOWN_SELF_THEMING: string[] = [];
 
 describe('port parity: dark mode is owned by the parent', () => {
 	for (const path of Object.keys(UPSTREAM_PROPS)) {
@@ -307,24 +278,7 @@ describe('port parity: dark mode is owned by the parent', () => {
 });
 
 // Registry components whose main export is missing from the package entry point.
-const KNOWN_MISSING_EXPORTS = [
-	'PdfViewer',
-	'PdfEditor',
-	'DocxViewer',
-	'DocxEditor',
-	'XlsxViewer',
-	'XlsxEditor',
-	'PptxViewer',
-	'FileUpload',
-	'FileThumbnail',
-	'FileSystem',
-	'DocumentSplits',
-	'LayoutBlocks',
-	'BoundingBoxCitations',
-	'SchemaBuilder',
-	'ESignature',
-	'DocumentViewerSidebar'
-];
+const KNOWN_MISSING_EXPORTS: string[] = [];
 
 describe('port parity: package entry exports every component', () => {
 	const barrel = readFileSync('src/lib/index.ts', 'utf8');
@@ -338,7 +292,7 @@ describe('port parity: package entry exports every component', () => {
 });
 
 // Docs pages that are still placeholders instead of rendering the component.
-const KNOWN_PLACEHOLDER_PAGES = ['group', 'color-picker', 'toggle'];
+const KNOWN_PLACEHOLDER_PAGES: string[] = [];
 
 describe('port parity: docs site renders each component', () => {
 	const slugs = [...new Set(Object.keys(UPSTREAM_PROPS).map((path) => path.split('/')[0]))];

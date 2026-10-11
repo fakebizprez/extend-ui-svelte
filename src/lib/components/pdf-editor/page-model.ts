@@ -1,5 +1,6 @@
 // MIT License — Svelte 5 port of Extend UI pdf-editor. Upstream: extend-hq/ui (MIT).
 // Framework-free page-order model plus the pdf-lib export used by PdfEditor.
+import { ensurePdfExtension } from '../pdf-viewer/zoom.js';
 
 /** One page in the edited document: which source page it came from and its rotation. */
 export interface EditedPdfPage {
@@ -45,9 +46,11 @@ export function rotateEditPage(
 	};
 }
 
-/** Remove the page at `index`. Out-of-range indexes return the state unchanged. */
+/** Remove the page at `index`; the last remaining page is never removed. Out-of-range indexes return the state unchanged. */
 export function deleteEditPage(state: PdfEditState, index: number): PdfEditState {
 	if (!Number.isInteger(index) || index < 0 || index >= state.pages.length) return state;
+	// Like upstream, a document always keeps at least one page.
+	if (state.pages.length <= 1) return state;
 	return { pages: state.pages.filter((_, i) => i !== index) };
 }
 
@@ -88,4 +91,24 @@ export async function exportEditedPdf(
 		output.addPage(copied);
 	}
 	return await output.save();
+}
+
+/**
+ * Editor file name, matching the upstream helper: the explicit name wins,
+ * then the last URL path segment (not for blob: or data: URLs), then
+ * "document.pdf".
+ */
+export function getPdfFileName(fileName: string | undefined, src?: string): string {
+	if (fileName?.trim()) return ensurePdfExtension(fileName.trim());
+	if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
+		const rawName = (src.split(/[?#]/)[0] ?? '').split('/').pop() || '';
+		if (rawName) {
+			try {
+				return ensurePdfExtension(decodeURIComponent(rawName));
+			} catch {
+				return ensurePdfExtension(rawName);
+			}
+		}
+	}
+	return 'document.pdf';
 }

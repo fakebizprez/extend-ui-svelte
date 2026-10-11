@@ -5,11 +5,12 @@
 	Deliberate changes from the React version:
 	- border-beam is replaced with a pure-CSS conic-gradient beam effect
 	  (the showBorderBeam prop is kept); borderBeamTheme is replaced by the
-	  repo-wide dark-mode contract (isDark + onIsDarkChange).
+	  repo-wide dark-mode contract (isDark + onIsDarkChange). Like upstream it
+	  renders no theme toggle: it reflects isDark and never calls
+	  onIsDarkChange (accepted for API parity only).
 	- acceptedFileTypes icons are text glyphs ({ label, glyph }) instead of
 	  React icon components; no icon set decision has been made yet.
-	- File list rows render a native <img> preview for images instead of the
-	  FileThumbnail component (wired up once file-thumbnail lands).
+	- `class` is accepted alongside `className`; both merge onto the root.
 -->
 <script module lang="ts">
 	export interface FileUploadItem {
@@ -86,10 +87,13 @@
 </script>
 
 <script lang="ts">
+	import FileThumbnail from '../file-thumbnail/FileThumbnail.svelte';
+
 	interface Props {
 		accept?: string;
 		acceptedFileTypes?: AcceptedFileType[];
 		browseLabel?: string;
+		class?: string;
 		className?: string;
 		description?: string;
 		draggingLabel?: string;
@@ -107,6 +111,7 @@
 		accept = DEFAULT_ACCEPT,
 		acceptedFileTypes = DEFAULT_ACCEPTED_FILE_TYPES,
 		browseLabel = 'Browse files',
+		class: classProp,
 		className,
 		description = 'PDF, DOC/DOCX, XLSX, CSV, PNG, or JPG',
 		draggingLabel = 'Drop to add',
@@ -115,7 +120,6 @@
 		showFileList = true,
 		title = 'Click to upload or drop files',
 		isDark = false,
-		onIsDarkChange,
 		onFilesAccepted,
 		onFilesChange
 	}: Props = $props();
@@ -278,16 +282,7 @@
 	</div>
 {/snippet}
 
-<div class={['file-upload', className]} class:dark={isDark}>
-	<button
-		type="button"
-		class="theme-toggle"
-		aria-label="Toggle dark mode"
-		aria-pressed={isDark}
-		onclick={() => onIsDarkChange?.(!isDark)}
-	>
-		{isDark ? 'Light' : 'Dark'}
-	</button>
+<div class={['file-upload', classProp, className]} class:dark={isDark}>
 	{#if showBorderBeam}
 		<div class="beam" class:beam-active={isDragging}>
 			{@render dropzone()}
@@ -297,15 +292,16 @@
 	{/if}
 	{#if showFileList && files.length > 0}
 		<ul class="file-list">
-			{#each files as file (file.id)}
+			<!-- Upstream's id repeats for identical files; each drop replaces the whole
+				list, so the position makes the key unique without changing the id. -->
+			{#each files as file, index (`${index}:${file.id}`)}
 				<li class="file-row">
-					{#if file.type.startsWith('image/')}
-						<img class="file-thumb" src={file.url} alt="" />
-					{:else}
-						<div class="file-thumb file-thumb-fallback" aria-hidden="true">
-							{file.name.split('.').pop()?.toUpperCase().slice(0, 4) ?? 'FILE'}
-						</div>
-					{/if}
+					<FileThumbnail
+						file={{ name: file.name, type: file.type }}
+						previewImageUrl={file.type.startsWith('image/') ? file.url : null}
+						className="file-thumb"
+						{isDark}
+					/>
 					<div class="file-meta">
 						<div class="file-name">{file.name}</div>
 						<div class="file-detail">{file.type} - {formatBytes(file.size)}</div>
@@ -344,25 +340,18 @@
 		--fu-danger: #f87171;
 	}
 
-	.theme-toggle {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		z-index: 20;
-		border: 1px solid var(--fu-border);
-		border-radius: 999px;
-		background: var(--fu-bg);
-		color: var(--fu-muted);
-		font-size: 0.75rem;
-		padding: 0.15rem 0.6rem;
-		cursor: pointer;
-	}
-
-	/* Pure-CSS replacement for the upstream border-beam effect. */
+	/*
+	 * Pure-CSS replacement for the upstream border-beam effect. Like upstream
+	 * (BorderBeam active={isDragging}) the beam only shows while dragging; idle,
+	 * the drop area keeps its dashed border.
+	 */
 	.beam {
 		--beam-angle: 0deg;
 		padding: 2px;
 		border-radius: 1.125rem;
+	}
+
+	.beam-active {
 		background: conic-gradient(
 			from var(--beam-angle),
 			var(--fu-border),
@@ -370,9 +359,6 @@
 			#818cf8,
 			var(--fu-border)
 		);
-	}
-
-	.beam-active {
 		animation: beam-spin 2.4s linear infinite;
 	}
 
@@ -406,10 +392,6 @@
 		transition:
 			border-color 200ms ease-out,
 			background-color 200ms ease-out;
-	}
-
-	.beam .dropzone {
-		border-color: transparent;
 	}
 
 	.dropzone:hover {
@@ -523,21 +505,13 @@
 		border-bottom: 0;
 	}
 
-	.file-thumb {
+	/* Upstream passes "size-10 shrink-0 rounded-lg" to FileThumbnail. */
+	.file-row :global(.file-thumb) {
+		box-sizing: border-box;
 		width: 2.5rem;
 		height: 2.5rem;
 		flex-shrink: 0;
 		border-radius: 0.5rem;
-		object-fit: cover;
-	}
-
-	.file-thumb-fallback {
-		display: grid;
-		place-items: center;
-		background: var(--fu-card);
-		color: var(--fu-muted);
-		font-size: 0.6rem;
-		font-weight: 700;
 	}
 
 	.file-meta {

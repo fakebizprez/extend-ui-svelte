@@ -11,6 +11,7 @@ import {
 	DEFAULT_SCALE,
 	DEFAULT_SIGNATURE_HEIGHT,
 	DEFAULT_SIGNATURE_WIDTH,
+	defaultPlacementForPage,
 	embedSignaturePng,
 	getSignedDownloadFileName,
 	MAX_SCALE,
@@ -29,12 +30,28 @@ async function blankPdfBytes(pages = 1): Promise<Uint8Array> {
 	return await doc.save();
 }
 
+describe('defaultPlacementForPage', () => {
+	it('keeps upstream\'s field on a Letter page', () => {
+		expect(defaultPlacementForPage(612, 792)).toEqual({ x: 300, y: 230, width: 250, height: 58 });
+	});
+
+	it('scales upstream\'s field by pageWidth/612 and pageHeight/792 on A4', () => {
+		const placement = defaultPlacementForPage(595.28, 841.89);
+		expect(placement.x).toBeCloseTo(291.8, 1);
+		expect(placement.y).toBeCloseTo(244.5, 1);
+		expect(placement.width).toBeCloseTo(243.2, 1);
+		expect(placement.height).toBeCloseTo(61.65, 1);
+	});
+});
+
 describe('signature placement helpers', () => {
 	it('exposes the documented defaults', () => {
-		expect(DEFAULT_SIGNATURE_WIDTH).toBe(150);
-		expect(DEFAULT_SIGNATURE_HEIGHT).toBe(50);
-		expect(DEFAULT_POSITION_X).toBe(72);
-		expect(DEFAULT_POSITION_Y).toBe(72);
+		// Upstream's INITIAL_FIELD bbox { x: 300, y: 504, width: 250, height: 58 } is
+		// measured from the top-left of a 612x792 page; y here is from the bottom.
+		expect(DEFAULT_SIGNATURE_WIDTH).toBe(250);
+		expect(DEFAULT_SIGNATURE_HEIGHT).toBe(58);
+		expect(DEFAULT_POSITION_X).toBe(300);
+		expect(DEFAULT_POSITION_Y).toBe(792 - (504 + 58));
 		expect(DEFAULT_SCALE).toBe(1);
 		expect(MIN_SCALE).toBe(0.25);
 		expect(MAX_SCALE).toBe(3);

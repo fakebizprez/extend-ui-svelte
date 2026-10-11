@@ -2,12 +2,21 @@
 	MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
 	Ported from apps/v4/components/ui/color-picker.tsx (ColorPicker).
 	Deliberate API changes vs React:
-	- `class` instead of `className` (Svelte / shadcn-svelte convention).
+	- `class` and `className` are both accepted and merged onto the root.
 	- `icon` is a Svelte snippet instead of a React component type.
 	- The format picker is a native `select` (no Select primitive ported yet).
-	- The popover is an inline disclosure panel (no Popover/floating port yet);
-	  it toggles from the trigger and closes on Escape.
-	- Copy buttons, focus-reselect, and alpha scrub-dragging are omitted.
+	- The popover renders inline below the trigger (no floating positioning or
+	  portal). It keeps upstream's Popover behavior: aria-expanded on the
+	  trigger, focus moves in on open, Escape / outside press / tabbing out
+	  close it, and focus returns to the trigger.
+	- Channel-row copy buttons, focus-reselect, and alpha scrub-dragging are
+	  omitted. Copying a fully selected value field copies the CSS color, like
+	  upstream.
+	- Like upstream, `disabled` reaches only the channel and opacity fields
+	  inside the panel; the plane, sliders, eyedropper, value field, and format
+	  select stay interactive.
+	- The panel wraps its fields column under the plane when its container is
+	  narrower than the panel (upstream keeps one row and overflows).
 	- Accepts the shared dark-mode contract (`isDark`, `onIsDarkChange`); the
 	  parent controls the theme, so `onIsDarkChange` is never invoked here.
 -->
@@ -16,6 +25,16 @@
 
 	export type ColorPickerVariant = 'input' | 'swatch' | 'panel';
 	export type { ColorFormat } from './color-utils.js';
+
+	// Upstream renders the swatch trigger (and the eyedropper) as <Button size="icon-sm"> with the
+	// outline variant (ghost when an icon or rainbow trigger is shown). These
+	// are the layout, size, and variant classes of that Button; `p-0` stands in
+	// for the preflight reset so native button padding never shrinks it.
+	const SWATCH_TRIGGER_BASE =
+		'relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border p-0 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 sm:size-7';
+	const SWATCH_TRIGGER_OUTLINE =
+		'border-input bg-popover text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/64';
+	const SWATCH_TRIGGER_GHOST = 'border-transparent bg-transparent text-foreground hover:bg-accent';
 
 	const OK_HUE_TRACK = `linear-gradient(to bottom, ${Array.from(
 		{ length: 25 },
@@ -28,6 +47,7 @@
 	import {
 		clamp,
 		formatColorValue,
+		formatCssColor,
 		getOklchPlanePixels,
 		hslToRgb,
 		hsvToHsl,
@@ -60,6 +80,8 @@
 		defaultFormat?: ColorFormat;
 		variant?: ColorPickerVariant;
 		class?: string;
+		/** Alias of `class`, matching the upstream React prop name. Both are merged. */
+		className?: string;
 		icon?: Snippet;
 		rainbowTrigger?: boolean;
 		onTriggerMouseDown?: (event: MouseEvent) => void;
@@ -101,6 +123,7 @@
 		defaultFormat = 'hex',
 		variant,
 		class: className = '',
+		className: classNameAlias = '',
 		icon,
 		rainbowTrigger = false,
 		onTriggerMouseDown,
@@ -240,11 +263,18 @@
 	}
 
 	const hsva = $derived({ ...picker.plane, a: picker.a });
-	const displayHsv = $derived(rgbToHsv(picker.rgb, picker.plane.h));
+	// Preserve the sRGB hue for achromatic colors, like upstream's `srgbHue`.
+	let srgbHue = $state(0);
+	const displayHsv = $derived(rgbToHsv(picker.rgb, srgbHue));
+	$effect.pre(() => {
+		srgbHue = displayHsv.h;
+	});
 	const hsl = $derived(hsvToHsl(displayHsv));
 	const rawOklch = $derived(rgbToOklch(picker.rgb, hsva.h));
 	const oklch = $derived(withHueContinuity(rawOklch, hsva.h, rawOklch.c / 0.33));
 	const parts = $derived<ColorParts>({ rgb: picker.rgb, hsl, oklch, alpha: hsva.a });
+	// Copied from a fully selected value field, like upstream's `cssColor`.
+	const cssColor = $derived(formatCssColor(format, parts, { includeAlpha: showAlpha }));
 	const opaqueColor = $derived(
 		`rgb(${Math.round(picker.rgb.r)} ${Math.round(picker.rgb.g)} ${Math.round(picker.rgb.b)})`
 	);
@@ -354,8 +384,45 @@
 		if (!disabled) open = !open;
 	}
 
-	function closeOnEscape(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
+	// Popover behavior, like upstream's Base UI Popover: focus moves to the first
+	// tabbable element on open; Escape, an outside press, or tabbing out closes
+	// it; focus returns to the trigger unless it already moved elsewhere.
+	const panelId = $props.id();
+	let triggerEl = $state<HTMLButtonElement | undefined>(undefined);
+	let popupEl = $state<HTMLDivElement | undefined>(undefined);
+	const TABBABLE =
+		'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+	$effect(() => {
+		const popup = popupEl;
+		if (!open || !popup) return;
+		popup.querySelector<HTMLElement>(TABBABLE)?.focus();
+		// Bubble phase, so a text field's Escape (which only reverts its draft) stops here.
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape' || event.defaultPrevented) return;
+			open = false;
+			triggerEl?.focus();
+		};
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (popup.contains(target) || triggerEl?.contains(target)) return;
+			open = false;
+			// After the press settles: return focus only if nothing else took it.
+			setTimeout(() => {
+				if (!document.activeElement || document.activeElement === document.body) triggerEl?.focus();
+			});
+		};
+		document.addEventListener('keydown', onKeyDown);
+		document.addEventListener('pointerdown', onPointerDown, true);
+		return () => {
+			document.removeEventListener('keydown', onKeyDown);
+			document.removeEventListener('pointerdown', onPointerDown, true);
+		};
+	});
+
+	function closeOnFocusOut(event: FocusEvent) {
+		const next = event.relatedTarget as Node | null;
+		if (next && !popupEl?.contains(next) && next !== triggerEl) open = false;
 	}
 
 	function handleFormatChange(event: Event) {
@@ -430,25 +497,24 @@
 {/snippet}
 
 {#snippet panel()}
-	<div class="flex items-stretch gap-3">
+	<!-- flex-wrap: in containers narrower than the panel (phones) the fields
+	     column drops under the plane instead of overflowing. Upstream never wraps. -->
+	<div class="flex flex-wrap items-stretch gap-3">
 		<button
 			type="button"
 			aria-label="Chroma and lightness"
 			class="relative size-53 shrink-0 cursor-crosshair touch-none rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-			{disabled}
 			onpointerdown={(event) => {
-				if (disabled) return;
 				event.preventDefault();
 				event.currentTarget.setPointerCapture?.(event.pointerId);
 				event.currentTarget.focus();
 				updatePlaneFromPointer(event);
 			}}
 			onpointermove={(event) => {
-				if (disabled || (event.buttons & 1) === 0) return;
+				if ((event.buttons & 1) === 0) return;
 				updatePlaneFromPointer(event);
 			}}
 			onkeydown={(event) => {
-				if (disabled) return;
 				const delta = event.shiftKey ? 10 : 1;
 				let next: [number, number] | null = null;
 				if (event.key === 'ArrowLeft') next = [hsva.s - delta, hsva.v];
@@ -486,7 +552,6 @@
 						onFraction={(fraction) => commitHsva({ ...hsva, a: 1 - fraction })}
 						onStep={(direction, big) =>
 							commitHsva({ ...hsva, a: clamp(hsva.a + direction * (big ? 0.1 : 0.01), 0, 1) })}
-						{disabled}
 					>
 						{#snippet track()}
 							{@render checkerboard(6)}
@@ -506,7 +571,6 @@
 					onFraction={(fraction) => commitHsva({ ...hsva, h: fraction * 360 })}
 					onStep={(direction, big) =>
 						commitHsva({ ...hsva, h: clamp(hsva.h - direction * (big ? 10 : 1), 0, 360) })}
-					{disabled}
 				>
 					{#snippet track()}
 						<span class="absolute inset-0" style="background: {OK_HUE_TRACK};"></span>
@@ -517,11 +581,27 @@
 				<button
 					type="button"
 					aria-label="Pick color from screen"
-					class="size-8 shrink-0"
-					{disabled}
+					title="Pick color from screen"
+					class={cn(SWATCH_TRIGGER_BASE, SWATCH_TRIGGER_OUTLINE, 'size-8! shrink-0')}
 					onclick={handleEyeDropper}
 				>
-					Pick
+					<!-- Lucide "pipette", the upstream IconPlaceholder default. -->
+					<svg
+						aria-hidden="true"
+						class="size-4"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="m2 22 1-1h3l9-9" />
+						<path d="M3 21v-3l9-9" />
+						<path
+							d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"
+						/>
+					</svg>
 				</button>
 			{/if}
 		</div>
@@ -535,15 +615,15 @@
 				<div class="flex h-8 min-w-0 flex-1 items-center rounded-md border border-input bg-popover">
 					<DraftInput
 						aria-label="Color value"
+						copyValue={() => cssColor}
 						class="h-full min-w-0 flex-1 rounded-[inherit] border-0 bg-transparent px-2 py-0 text-center text-sm leading-none tabular-nums outline-none"
 						value={formatColorValue(format, parts)}
 						onCommitText={commitText}
-						{disabled}
 					/>
 					{#if showAlpha}
 						<div class="flex h-full shrink-0 items-center gap-0.5 pr-2 pl-0.5">
 							<DraftInput
-								aria-label="Panel opacity"
+								aria-label="Opacity"
 								class="w-8 border-0 bg-transparent p-0 text-right text-sm tabular-nums outline-none"
 								{disabled}
 								inputMode="decimal"
@@ -563,7 +643,6 @@
 					aria-label="Color format"
 					class="size-8 shrink-0"
 					value={format}
-					{disabled}
 					onchange={handleFormatChange}
 				>
 					{#each COLOR_FORMAT_OPTIONS as option (option.value)}
@@ -576,7 +655,7 @@
 {/snippet}
 
 {#if resolvedVariant === 'panel'}
-	<div class={cn('flex items-stretch gap-3', className, isDark && 'dark')} {...rest}>
+	<div class={cn('flex items-stretch gap-3', className, classNameAlias, isDark && 'dark')} {...rest}>
 		{@render panel()}
 	</div>
 {:else}
@@ -586,8 +665,18 @@
 				type="button"
 				aria-label={label}
 				disabled={disabled}
+				aria-expanded={open}
+				aria-haspopup="dialog"
+				aria-controls={open ? panelId : undefined}
+				data-popup-open={open || undefined}
+				bind:this={triggerEl}
 				data-color-picker-trigger=""
-				class={cn('relative shrink-0', className)}
+				class={cn(
+					SWATCH_TRIGGER_BASE,
+					icon || rainbowTrigger ? SWATCH_TRIGGER_GHOST : SWATCH_TRIGGER_OUTLINE,
+					className,
+					classNameAlias
+				)}
 				onclick={toggleOpen}
 				onmousedown={(event) => onTriggerMouseDown?.(event)}
 				onpointerdown={(event) => onTriggerPointerDown?.(event)}
@@ -606,9 +695,21 @@
 						style="background-color: {currentColor};"
 					></span>
 				{:else}
-					<span class="relative size-4 shrink-0 overflow-hidden rounded-[4px]">
+					<span
+						data-slot="color-picker-swatch"
+						class="relative size-4 shrink-0 overflow-hidden rounded-[4px]"
+					>
 						{@render checkerboard(4)}
-						<span aria-hidden="true" class="absolute inset-0" style="background-color: {currentColor};"></span>
+						<span
+							aria-hidden="true"
+							data-slot="color-picker-swatch-fill"
+							class="absolute inset-0"
+							style="background-color: {currentColor};"
+						></span>
+						<span
+							aria-hidden="true"
+							class="absolute inset-0 rounded-[inherit] ring-1 ring-black/12 ring-inset dark:ring-white/16"
+						></span>
 					</span>
 				{/if}
 			</button>
@@ -618,13 +719,19 @@
 				data-slot="color-picker"
 				class={cn(
 					'relative flex h-10 w-full min-w-0 items-center rounded-md border border-input bg-popover text-base',
-					className
+					className,
+					classNameAlias
 				)}
 			>
 				<button
 					type="button"
 					aria-label={label}
 					disabled={disabled}
+					aria-expanded={open}
+					aria-haspopup="dialog"
+					aria-controls={open ? panelId : undefined}
+					data-popup-open={open || undefined}
+					bind:this={triggerEl}
 					class="relative ml-2 size-6 shrink-0 overflow-hidden rounded-[calc(var(--radius-md)-2px)]"
 					onclick={toggleOpen}
 				>
@@ -633,6 +740,7 @@
 				</button>
 				<DraftInput
 					aria-label="{label} value"
+					copyValue={() => cssColor}
 					class="h-full w-full min-w-0 grow border-0 bg-transparent px-[calc(--spacing(2.5)-1px)] text-base tabular-nums outline-none"
 					{disabled}
 					value={formatColorValue(format, parts)}
@@ -659,7 +767,14 @@
 			</div>
 		{/if}
 		{#if open}
-			<div role="dialog" aria-label="{label} panel" tabindex={-1} onkeydown={closeOnEscape}>
+			<div
+				bind:this={popupEl}
+				id={panelId}
+				role="dialog"
+				aria-label="{label} panel"
+				tabindex={-1}
+				onfocusout={closeOnFocusOut}
+			>
 				{@render panel()}
 			</div>
 		{/if}
