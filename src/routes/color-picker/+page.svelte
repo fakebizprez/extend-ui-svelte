@@ -105,6 +105,11 @@
 			Accepts <code>isDark</code> and <code>onIsDarkChange</code>; it reflects <code>isDark</code>
 			and never calls <code>onIsDarkChange</code>.
 		</li>
+		<li>
+			Port addition: <code>ColorPicker</code> passes any other attributes (for example
+			<code>id</code>, <code>data-*</code>, <code>aria-*</code>) through to its root element;
+			upstream's <code>ColorPickerProps</code> accepts no extra attributes.
+		</li>
 	</ul>
 </section>
 
