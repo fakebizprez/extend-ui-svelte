@@ -34,7 +34,7 @@ export interface ToggleGroupContext {
 	isDisabled: () => boolean;
 	/** Registers an item; returns the unregister function. */
 	register: (
-		itemValue: string,
+		itemValue: () => string,
 		isDisabled: () => boolean,
 		element: () => HTMLElement | undefined
 	) => () => void;
@@ -45,7 +45,8 @@ export interface ToggleGroupContext {
 }
 
 export interface RegisteredItem {
-	value: string;
+	/** Read on demand so a value prop that changes after mount stays in sync. */
+	value: () => string;
 	isDisabled: () => boolean;
 	/** The mounted button; undefined during SSR and before mount. */
 	element: () => HTMLElement | undefined;
@@ -65,8 +66,8 @@ export function findTabStop(items: RegisteredItem[], focused: string | undefined
 			)
 		: items;
 	const enabled = ordered.filter((item) => !item.isDisabled());
-	if (focused !== undefined && enabled.some((item) => item.value === focused)) return focused;
-	return enabled[0]?.value;
+	if (focused !== undefined && enabled.some((item) => item.value() === focused)) return focused;
+	return enabled[0]?.value();
 }
 
 const TOGGLE_GROUP_KEY = Symbol('extend-ui-toggle-group');

@@ -6,6 +6,7 @@ import Toggle from './Toggle.svelte';
 import ToggleGroup from './ToggleGroup.svelte';
 import ToggleGroupItem from './ToggleGroupItem.svelte';
 import ToggleGroupHarness from './ToggleGroupHarness.svelte';
+import ToggleReorderHarness from './ToggleReorderHarness.svelte';
 import { toggleGroupVariants, toggleVariants } from './index.js';
 
 function label(text: string) {
@@ -296,6 +297,41 @@ describe('ToggleGroup roving tab stop', () => {
 
 		await view.rerender({ items: threeItems() });
 		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'Left' })]);
+	});
+
+	it('moves the tab stop to the new first item when items are reordered', async () => {
+		const view = render(ToggleReorderHarness, {
+			items: [
+				{ label: 'A', value: 'a' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'A' })]);
+
+		await view.rerender({
+			items: [
+				{ label: 'B', value: 'b' },
+				{ label: 'A', value: 'a' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'B' })]);
+	});
+
+	it('keeps exactly one tab stop when an item value changes after mount', async () => {
+		const view = render(ToggleReorderHarness, {
+			items: [
+				{ label: 'A', value: 'a' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+
+		await view.rerender({
+			items: [
+				{ label: 'A', value: 'x' },
+				{ label: 'B', value: 'b' }
+			]
+		});
+		expect(tabbable()).toEqual([screen.getByRole('button', { name: 'A' })]);
 	});
 
 	it('moves the tab stop with focus and skips disabled items', async () => {

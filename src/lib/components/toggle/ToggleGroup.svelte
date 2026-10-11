@@ -139,7 +139,17 @@
 	// once, on the stop, and arrow keys move focus (and the stop) inside it.
 	let items = $state.raw<RegisteredItem[]>([]);
 	let focusedValue = $state<string | undefined>(undefined);
-	const tabStop = $derived(findTabStop(items, focusedValue));
+	// Keyed each blocks move buttons without touching any state, so watch the
+	// DOM: after a reorder the stop goes to the new first item, as in Base UI.
+	let rootEl = $state<HTMLDivElement | undefined>(undefined);
+	let domVersion = $state(0);
+	$effect(() => {
+		if (!rootEl) return;
+		const observer = new MutationObserver(() => (domVersion += 1));
+		observer.observe(rootEl, { childList: true, subtree: true });
+		return () => observer.disconnect();
+	});
+	const tabStop = $derived((void domVersion, findTabStop(items, focusedValue)));
 
 	setToggleGroupContext({
 		isSelected: (itemValue) => current.includes(itemValue),
@@ -172,6 +182,7 @@
 	data-slot="toggle-group"
 	data-spacing={resolvedSpacing}
 	role="group"
+	bind:this={rootEl}
 	onkeydown={handleKeyDown}
 	{...rest}
 >

@@ -108,8 +108,8 @@
 	const isDisabled = $derived(disabled || (group?.isDisabled() ?? false));
 
 	// Register at init (not in an effect) so server-rendered HTML already has
-	// the right tab stop. Initial capture of `value` is intended.
-	if (group) onDestroy(group.register(value || generatedId, () => disabled, () => buttonEl));
+	// the right tab stop. The value is read on demand, so later changes count.
+	if (group) onDestroy(group.register(() => itemValue, () => disabled, () => buttonEl));
 	const tabindex = $derived(group ? (group.isTabStop(itemValue) ? 0 : -1) : undefined);
 
 	function handleFocus(event: FocusEvent) {
