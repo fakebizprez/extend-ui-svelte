@@ -74,12 +74,37 @@
 		return Math.min(fitWidth, (viewportHeight / pageHeight) * 100);
 	}
 
+	/**
+	 * The page with the most visible height between viewportTop and
+	 * viewportBottom (rendered, zoomed coordinates); the earlier page wins ties.
+	 * Null when no page is visible.
+	 */
+	export function findMostVisiblePage(
+		viewportTop: number,
+		viewportBottom: number,
+		pages: { pageNumber: number; top: number; bottom: number }[]
+	): number | null {
+		let best: number | null = null;
+		let bestVisible = 0;
+		for (const page of pages) {
+			const visible = Math.min(page.bottom, viewportBottom) - Math.max(page.top, viewportTop);
+			if (visible > bestVisible) {
+				best = page.pageNumber;
+				bestVisible = visible;
+			}
+		}
+		return best;
+	}
+
 	function isZoomMode(value: string): value is keyof typeof ZOOM_MODE_LABELS {
 		return value in ZOOM_MODE_LABELS;
 	}
 
 	/** Fixed sidebar row height in px; shared with tests for scroll math. */
 	export const THUMBNAIL_ITEM_HEIGHT = 72;
+
+	/** Height of the virtualized thumbnail rail in px. */
+	const THUMBNAIL_RAIL_HEIGHT = 384;
 
 	export const DOCX_MIME_TYPE =
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -354,30 +379,91 @@
 		});
 	}
 
+	const listboxId = $props.id();
+	let thumbnailListEl = $state<HTMLDivElement | null>(null);
+
+	/** Upstream thumbnail keys: ArrowUp/ArrowDown step, Home/End jump to the ends. */
+	function handleThumbnailKeydown(event: KeyboardEvent): void {
+		if (pageCount < 1) return;
+		const next =
+			event.key === 'ArrowDown'
+				? Math.min(pageCount, activePage + 1)
+				: event.key === 'ArrowUp'
+					? Math.max(1, activePage - 1)
+					: event.key === 'Home'
+						? 1
+						: event.key === 'End'
+							? pageCount
+							: null;
+		if (next === null) return;
+		event.preventDefault();
+		selectPage(next);
+	}
+
+	// Like upstream's scrollToIndex(align: auto): keep the active thumbnail in view.
+	$effect(() => {
+		const rail = thumbnailListEl?.querySelector<HTMLElement>('[data-testid="virtual-viewport"]');
+		if (!rail || !sidebarOpen) return;
+		const top = (activePage - 1) * THUMBNAIL_ITEM_HEIGHT;
+		const bottom = top + THUMBNAIL_ITEM_HEIGHT;
+		const viewHeight = rail.clientHeight || THUMBNAIL_RAIL_HEIGHT;
+		let next = rail.scrollTop;
+		if (top < next) next = top;
+		else if (bottom > next + viewHeight) next = bottom - viewHeight;
+		if (next === rail.scrollTop) return;
+		rail.scrollTop = next;
+		// The virtual list windows on scroll events; jsdom never fires one for this.
+		rail.dispatchEvent(new Event('scroll'));
+	});
+
+	// A page jump in progress: its scroll event keeps that page active even when
+	// the page cannot reach the top (the last pages), instead of re-deriving it.
+	let pendingPage: number | null = null;
+	let pendingLanding: number | null = null;
+
+	// Positions come from getBoundingClientRect, which includes the CSS zoom;
+	// offsetTop does not, so it cannot be compared with scrollTop.
 	function selectPage(pageNumber: number): void {
 		const clamped = Math.min(Math.max(1, Math.round(pageNumber)), Math.max(1, pageCount));
 		activePage = clamped;
-		const target = containerEl?.querySelector(`[data-docx-page="${clamped}"]`);
-		if (target) {
-			target.scrollIntoView?.({ block: 'start' });
-		} else {
-			viewportEl?.scrollTo?.({ top: 0 });
-		}
+		const viewport = viewportEl;
+		const target = containerEl?.querySelector<HTMLElement>(`[data-docx-page="${clamped}"]`);
+		if (!viewport?.scrollTo) return;
+		const top = target
+			? viewport.scrollTop +
+				target.getBoundingClientRect().top -
+				viewport.getBoundingClientRect().top
+			: 0;
+		pendingPage = clamped;
+		pendingLanding = null;
+		viewport.scrollTo({ top });
+		if (pendingPage !== null) pendingLanding = viewport.scrollTop;
 	}
 
 	function handleViewportScroll(): void {
 		const viewport = viewportEl;
 		const element = containerEl;
 		if (!viewport || !element || pages.length === 0) return;
-		const top = viewport.scrollTop;
-		let current = 1;
-		for (const section of Array.from(element.querySelectorAll('[data-docx-page]'))) {
-			const pageNumber = Number((section as HTMLElement).dataset.docxPage);
-			if (!Number.isFinite(pageNumber)) continue;
-			if ((section as HTMLElement).offsetTop <= top + 24) current = pageNumber;
-			else break;
+		if (pendingPage !== null) {
+			const ours = pendingLanding === null || Math.abs(viewport.scrollTop - pendingLanding) < 2;
+			const page = pendingPage;
+			pendingPage = null;
+			pendingLanding = null;
+			if (ours) {
+				activePage = page;
+				return;
+			}
 		}
-		activePage = current;
+		const bounds = viewport.getBoundingClientRect();
+		const current = findMostVisiblePage(
+			bounds.top,
+			bounds.top + viewport.clientHeight,
+			Array.from(element.querySelectorAll<HTMLElement>('[data-docx-page]')).map((section) => {
+				const rect = section.getBoundingClientRect();
+				return { pageNumber: Number(section.dataset.docxPage), top: rect.top, bottom: rect.bottom };
+			})
+		);
+		if (current !== null) activePage = current;
 	}
 
 	function handleUpload(event: Event): void {
@@ -563,6 +649,7 @@
 					role="switch"
 					aria-checked={isDark}
 					aria-label="Toggle dark mode"
+					disabled={status !== 'ready'}
 					onclick={() => onIsDarkChange?.(!isDark)}
 				>
 					{isDark ? 'Light' : 'Dark'}
@@ -577,12 +664,25 @@
 				{#if pages.length === 0}
 					<p class="docx-state">No pages to preview.</p>
 				{:else}
-					<div role="listbox" aria-label="DOCX pages">
-						<VirtualList items={pages} itemHeight={THUMBNAIL_ITEM_HEIGHT} height={384}>
+					<!-- Upstream focus model: the listbox takes focus and points at the
+					     active page through aria-activedescendant; options are not tab stops. -->
+					<div
+						bind:this={thumbnailListEl}
+						class="docx-thumbnail-list"
+						role="listbox"
+						tabindex="0"
+						aria-label="DOCX pages"
+						aria-activedescendant={`${listboxId}-page-${activePage}`}
+						onkeydown={handleThumbnailKeydown}
+						onmousedown={(event) => event.currentTarget.focus({ preventScroll: true })}
+					>
+						<VirtualList items={pages} itemHeight={THUMBNAIL_ITEM_HEIGHT} height={THUMBNAIL_RAIL_HEIGHT}>
 							{#snippet children(page, index)}
-								<button
-									type="button"
+								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+								<div
+									id={`${listboxId}-page-${page.pageNumber}`}
 									role="option"
+									aria-current={page.pageNumber === activePage ? 'page' : undefined}
 									aria-selected={page.pageNumber === activePage}
 									aria-label={`Page ${page.pageNumber}`}
 									aria-posinset={page.pageNumber}
@@ -594,7 +694,7 @@
 								>
 									<span class="docx-thumbnail-page">{index + 1}</span>
 									<span class="docx-thumbnail-excerpt">{page.excerpt}</span>
-								</button>
+								</div>
 							{/snippet}
 						</VirtualList>
 					</div>
@@ -757,6 +857,15 @@
 		text-align: left;
 		cursor: pointer;
 		overflow: hidden;
+	}
+
+	.docx-thumbnail-list:focus-visible {
+		outline: none;
+	}
+
+	.docx-thumbnail-list:focus-visible .docx-thumbnail[data-active='true'] {
+		outline: 2px solid var(--docx-fg);
+		outline-offset: 1px;
 	}
 
 	.docx-thumbnail[data-active='true'] {

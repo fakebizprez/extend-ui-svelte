@@ -78,9 +78,9 @@ describe('XlsxViewer', () => {
 		expect(tabs.map((tab) => tab.textContent)).toEqual(['Inventory', 'Summary']);
 		expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
 
-		expect(await screen.findByRole('cell', { name: 'Resistor kit' })).toBeVisible();
-		expect(screen.getByRole('cell', { name: '120' })).toBeVisible();
-		expect(screen.getAllByRole('cell', { name: 'Reno' })).toHaveLength(2);
+		expect(await screen.findByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
+		expect(screen.getByRole('gridcell', { name: '120' })).toBeVisible();
+		expect(screen.getAllByRole('gridcell', { name: 'Reno' })).toHaveLength(2);
 		expect(screen.getByTestId('row-count')).toHaveTextContent('4 rows');
 	});
 
@@ -92,7 +92,7 @@ describe('XlsxViewer', () => {
 		expect(screen.queryByRole('columnheader', { name: 'SKU' })).not.toBeInTheDocument();
 		const firstRow = container.querySelector('[data-row-index="0"]') as HTMLElement;
 		expect(within(firstRow).getByRole('rowheader')).toHaveTextContent('1');
-		expect(within(firstRow).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+		expect(within(firstRow).getAllByRole('gridcell').map((cell) => cell.textContent)).toEqual([
 			'SKU',
 			'Item',
 			'Qty',
@@ -103,12 +103,12 @@ describe('XlsxViewer', () => {
 	it('keeps true positions: A1 origin and blank rows', async () => {
 		const { container } = render(XlsxViewer, { ...DARK, data: offsetBytes() });
 
-		expect(await screen.findByRole('cell', { name: 'Lane' })).toBeVisible();
+		expect(await screen.findByRole('gridcell', { name: 'Lane' })).toBeVisible();
 		expect(screen.getByTestId('row-count')).toHaveTextContent('5 rows');
 		expect(screen.getByRole('columnheader', { name: 'C' })).toBeVisible();
 		const rowCells = (index: number) =>
 			within(container.querySelector(`[data-row-index="${index}"]`) as HTMLElement)
-				.getAllByRole('cell')
+				.getAllByRole('gridcell')
 				.map((cell) => cell.textContent);
 		expect(rowCells(0)).toEqual(['', '', '']);
 		expect(rowCells(1)).toEqual(['', 'Lane', 'Loads']);
@@ -131,9 +131,9 @@ describe('XlsxViewer', () => {
 		const bytes = new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 		const { container } = render(XlsxViewer, { ...DARK, data: bytes });
 
-		await screen.findByRole('cell', { name: '3' });
+		await screen.findByRole('gridcell', { name: '3' });
 		const cells = within(container.querySelector('[data-row-index="0"]') as HTMLElement)
-			.getAllByRole('cell')
+			.getAllByRole('gridcell')
 			.map((cell) => cell.textContent);
 		expect(cells).toEqual(['#DIV/0!', 'TRUE', '3']);
 	});
@@ -142,8 +142,8 @@ describe('XlsxViewer', () => {
 		render(XlsxViewer, { ...DARK, data: offsetBytes() });
 		render(XlsxEditor, { ...DARK, data: offsetBytes() });
 
-		await screen.findByRole('cell', { name: 'Lane' });
-		await screen.findByRole('gridcell', { name: 'Lane' });
+		await within(await screen.findByTestId('xlsx-viewer')).findByRole('gridcell', { name: 'Lane' });
+		await within(await screen.findByTestId('xlsx-editor')).findByRole('gridcell', { name: 'Lane' });
 		expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
 	});
 
@@ -158,10 +158,52 @@ describe('XlsxViewer', () => {
 		expect(summary).toHaveFocus();
 		expect(summary).toHaveAttribute('aria-selected', 'false');
 		await fireEvent.click(summary);
-		expect(await screen.findByRole('cell', { name: 'Total SKUs' })).toBeVisible();
+		expect(await screen.findByRole('gridcell', { name: 'Total SKUs' })).toBeVisible();
 		expect(summary).toHaveAttribute('aria-selected', 'true');
 		// The tab strip stays mounted while the sheet loads, so focus stays put.
 		expect(summary).toHaveFocus();
+	});
+
+	it('selects cells and navigates by keyboard read-only, like upstream (readOnly grid)', async () => {
+		const { container } = render(XlsxViewer, { ...DARK, data: inventoryBytes() });
+		const kit = await screen.findByRole('gridcell', { name: 'Resistor kit' });
+		const grid = screen.getByRole('grid');
+
+		// One Tab stop: the grid, not each cell.
+		expect(grid).toHaveAttribute('tabindex', '0');
+		expect(grid).toHaveAttribute('aria-readonly', 'true');
+		expect(container.querySelectorAll('[role="gridcell"][tabindex]:not([tabindex="-1"])')).toHaveLength(0);
+
+		await fireEvent.click(kit);
+		expect(grid).toHaveFocus();
+		expect(kit).toHaveAttribute('aria-selected', 'true');
+		expect(grid).toHaveAttribute('aria-activedescendant', kit.id);
+
+		await fireEvent.keyDown(grid, { key: 'ArrowRight' });
+		const qty = screen.getByRole('gridcell', { name: '120' });
+		expect(qty).toHaveAttribute('aria-selected', 'true');
+		expect(kit).toHaveAttribute('aria-selected', 'false');
+		await fireEvent.keyDown(grid, { key: 'Enter' });
+		expect(screen.getByRole('gridcell', { name: '85' })).toHaveAttribute('aria-selected', 'true');
+
+		// Read-only: typing, F2, and Delete do not edit.
+		await fireEvent.keyDown(grid, { key: 'x' });
+		await fireEvent.keyDown(grid, { key: 'F2' });
+		await fireEvent.keyDown(grid, { key: 'Delete' });
+		expect(container.querySelector('input')).toBeNull();
+		expect(screen.getByRole('gridcell', { name: '85' })).toHaveAttribute('aria-selected', 'true');
+	});
+
+	it('scrolls to keep the selected cell rendered in a long sheet', async () => {
+		render(XlsxViewer, { ...DARK, data: bigSheetBytes(1000), height: 340 });
+		await screen.findByRole('gridcell', { name: 'id' });
+		const grid = screen.getByRole('grid');
+		grid.focus();
+
+		await fireEvent.keyDown(grid, { key: 'End', ctrlKey: true });
+		const last = await screen.findByRole('gridcell', { name: 'value-999' });
+		expect(last).toHaveAttribute('aria-selected', 'true');
+		expect(screen.getByTestId('virtual-viewport').scrollTop).toBe(1001 * 34 - 340);
 	});
 
 	it('reports the same row count as the editor for the same file', async () => {
@@ -169,8 +211,8 @@ describe('XlsxViewer', () => {
 		render(XlsxViewer, { ...DARK, data: bytes });
 		render(XlsxEditor, { ...DARK, data: bytes });
 
-		await screen.findByRole('cell', { name: 'Lane' });
-		await screen.findByRole('gridcell', { name: 'Lane' });
+		await within(await screen.findByTestId('xlsx-viewer')).findByRole('gridcell', { name: 'Lane' });
+		await within(await screen.findByTestId('xlsx-editor')).findByRole('gridcell', { name: 'Lane' });
 		const counts = screen.getAllByTestId('row-count').map((el) => el.textContent);
 		expect(counts).toEqual(['5 rows', '5 rows']);
 	});
@@ -189,10 +231,10 @@ describe('XlsxViewer', () => {
 		await fireEvent.click(summaryTab);
 
 		expect(summaryTab).toHaveAttribute('aria-selected', 'true');
-		expect(await screen.findByRole('cell', { name: 'Metric' })).toBeVisible();
-		expect(screen.getByRole('cell', { name: 'Total SKUs' })).toBeVisible();
-		expect(screen.getByRole('cell', { name: '247' })).toBeVisible();
-		expect(screen.queryByRole('cell', { name: 'Resistor kit' })).not.toBeInTheDocument();
+		expect(await screen.findByRole('gridcell', { name: 'Metric' })).toBeVisible();
+		expect(screen.getByRole('gridcell', { name: 'Total SKUs' })).toBeVisible();
+		expect(screen.getByRole('gridcell', { name: '247' })).toBeVisible();
+		expect(screen.queryByRole('gridcell', { name: 'Resistor kit' })).not.toBeInTheDocument();
 	});
 
 	it('loads a workbook from a src URL', async () => {
@@ -204,26 +246,26 @@ describe('XlsxViewer', () => {
 		render(XlsxViewer, { ...DARK, src: '/fixtures/sample.xlsx' });
 
 		expect(await screen.findByRole('tab', { name: 'Inventory' })).toBeVisible();
-		expect(await screen.findByRole('cell', { name: 'Resistor kit' })).toBeVisible();
+		expect(await screen.findByRole('gridcell', { name: 'Resistor kit' })).toBeVisible();
 		expect(fetch).toHaveBeenCalledWith('/fixtures/sample.xlsx');
 	});
 
 	it('virtualizes many rows instead of rendering them all', async () => {
 		const { container } = render(XlsxViewer, { ...DARK, data: bigSheetBytes(1000), height: 400 });
 
-		expect(await screen.findByRole('cell', { name: 'id' })).toBeVisible();
+		expect(await screen.findByRole('gridcell', { name: 'id' })).toBeVisible();
 		expect(screen.getByTestId('row-count')).toHaveTextContent('1001 rows');
 
 		const rendered = renderedRowIndexes(container);
 		expect(rendered.length).toBeGreaterThan(0);
 		expect(rendered.length).toBeLessThan(100);
-		expect(screen.queryByRole('cell', { name: 'row-999' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('gridcell', { name: 'row-999' })).not.toBeInTheDocument();
 
 		const viewport = screen.getByTestId('virtual-viewport');
 		viewport.scrollTop = 1001 * 34;
 		await fireEvent.scroll(viewport);
 
-		expect(await screen.findByRole('cell', { name: 'row-999' })).toBeVisible();
+		expect(await screen.findByRole('gridcell', { name: 'row-999' })).toBeVisible();
 	});
 
 	it('shows an empty state when neither src nor data is given', async () => {

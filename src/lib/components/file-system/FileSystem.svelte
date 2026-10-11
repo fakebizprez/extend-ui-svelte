@@ -30,7 +30,8 @@
 	import {
 		ancestorFolderPaths,
 		buildFileSystemIndex,
-		flattenVisibleEntries
+		flattenVisibleEntries,
+		pathParent
 	} from './tree.js';
 	import type { FileSystemEntry, FileSystemFileItem, FileSystemItem } from './types.js';
 
@@ -92,7 +93,14 @@
 			return { ...row, entry: { ...row.entry, name: override } };
 		})
 	);
-	const tabbedPath = $derived(focusPath ?? rows[0]?.entry.path ?? null);
+	// Roving tabindex: the focused row, or its nearest visible ancestor once a
+	// folder above it collapses, so the tree always keeps one Tab stop.
+	const tabbedPath = $derived.by(() => {
+		const visible = new Set(rows.map((row) => row.entry.path));
+		let path = focusPath;
+		while (path && !visible.has(path)) path = pathParent(path) || null;
+		return path ?? rows[0]?.entry.path ?? null;
+	});
 
 	function rowElements(): HTMLElement[] {
 		if (!treeElement) return [];
@@ -102,6 +110,12 @@
 	function focusRow(path: string): void {
 		focusPath = path;
 		rowElements().find((row) => row.dataset.path === path)?.focus();
+	}
+
+	// Like upstream's views, keyboard moves select the entry they reach.
+	function moveTo(entry: FileSystemEntry): void {
+		focusRow(entry.path);
+		select(entry);
 	}
 
 	// Like upstream: re-selecting the same entry is a no-op.
@@ -134,7 +148,7 @@
 		for (let step = 0; step < rows.length; step += 1) {
 			const row = rows[(start + step) % rows.length];
 			if (row.entry.name.toLowerCase().startsWith(typeAheadBuffer)) {
-				focusRow(row.entry.path);
+				moveTo(row.entry);
 				return;
 			}
 		}
@@ -203,25 +217,25 @@
 			case 'ArrowDown': {
 				event.preventDefault();
 				const next = rows[at + 1];
-				if (next) focusRow(next.entry.path);
+				if (next) moveTo(next.entry);
 				break;
 			}
 			case 'ArrowUp': {
 				event.preventDefault();
 				const previous = rows[at - 1];
-				if (previous) focusRow(previous.entry.path);
+				if (previous) moveTo(previous.entry);
 				break;
 			}
 			case 'Home': {
 				event.preventDefault();
 				const first = rows[0];
-				if (first) focusRow(first.entry.path);
+				if (first) moveTo(first.entry);
 				break;
 			}
 			case 'End': {
 				event.preventDefault();
 				const last = rows[rows.length - 1];
-				if (last) focusRow(last.entry.path);
+				if (last) moveTo(last.entry);
 				break;
 			}
 			case 'ArrowRight': {
@@ -231,7 +245,7 @@
 					expanded.add(entry.path);
 				} else {
 					const child = index.children.get(entry.path)?.[0];
-					if (child) focusRow(child.path);
+					if (child) moveTo(child);
 				}
 				break;
 			}
@@ -239,8 +253,9 @@
 				event.preventDefault();
 				if (entry.kind === 'folder' && expanded.has(entry.path)) {
 					expanded.delete(entry.path);
-				} else if (entry.parentPath) {
-					focusRow(entry.parentPath);
+				} else {
+					const parent = index.folders.get(entry.parentPath);
+					if (parent) moveTo(parent);
 				}
 				break;
 			}
@@ -303,6 +318,7 @@
 						<button
 							type="button"
 							class="file-system-chevron"
+							tabindex="-1"
 							class:open={isExpanded}
 							aria-label={isExpanded ? `Collapse ${entry.name}` : `Expand ${entry.name}`}
 							onclick={(event) => {

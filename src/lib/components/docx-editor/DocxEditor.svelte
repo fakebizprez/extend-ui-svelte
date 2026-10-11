@@ -307,6 +307,8 @@
 		const id = (generation += 1);
 		status = 'loading';
 		errorMessage = '';
+		// Like upstream, the previous document is gone (not editable) once a new load starts.
+		editor.innerHTML = '';
 		loaded.renderDocx(source, hidden).then(
 			() => {
 				if (id !== generation) return;
@@ -346,6 +348,8 @@
 		const file = input.files?.[0] ?? null;
 		input.value = '';
 		if (!file) return;
+		// Like upstream, a new upload starts at defaultZoomScale.
+		zoomScale = normalizeZoomScale(defaultZoomScale);
 		upload = { file, sourceUrl: src };
 	}
 
@@ -455,7 +459,13 @@
 			<button type="button" disabled={status !== 'ready' || exporting} onclick={handleExport}>
 				{exporting ? 'Exporting…' : 'Export .docx'}
 			</button>
-			<button type="button" role="switch" aria-checked={isDark} onclick={handleToggleDark}>
+			<button
+				type="button"
+				role="switch"
+				aria-checked={isDark}
+				disabled={status !== 'ready'}
+				onclick={handleToggleDark}
+			>
 				Toggle dark mode
 			</button>
 		</div>
@@ -482,7 +492,7 @@
 		</div>
 	{:else if status === 'error'}
 		<div class="docx-editor-empty" data-testid="docx-editor-error" role="alert">
-			<p>Could not load the document.</p>
+			<p>Unable to edit DOCX</p>
 			<p class="docx-state-hint">{errorMessage}</p>
 		</div>
 	{/if}
@@ -492,6 +502,7 @@
 			data-testid="docx-editor-content"
 			class="docx-editor-content"
 			style={`zoom: ${zoomScale}%;`}
+			hidden={status !== 'ready'}
 			contenteditable={readOnly ? 'false' : 'true'}
 			spellcheck="false"
 			role="textbox"

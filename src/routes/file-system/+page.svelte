@@ -101,6 +101,9 @@
 			Port additions: <code>bind:selectedPath</code>, <code>onRename</code>, and
 			<code>renamable</code> (inline rename with F2).
 		</li>
+		<li>
+			Port-only exports, the tree-building helpers and normalized entry types (upstream keeps them private): <code>ancestorFolderPaths</code>, <code>buildFileSystemIndex</code>, <code>flattenVisibleEntries</code>, <code>normalizeFolderPath</code>, <code>pathName</code>, <code>pathParent</code>, <code>FileSystemIndex</code>, <code>VisibleRow</code>, <code>FileEntry</code>, <code>FolderEntry</code>, and <code>FileSystemEntry</code>.
+		</li>
 	</ul>
 </section>
 

@@ -114,3 +114,14 @@ test('csv-tsv-viewer dark mode follows the parent', async ({ page }) => {
 	const darkBg = await csv.evaluate((el) => getComputedStyle(el).backgroundColor);
 	expect(darkBg).not.toBe(lightBg);
 });
+
+test('csv-tsv-viewer Escape closes search and returns focus to the trigger', async ({ page }) => {
+	const { csv } = await openPage(page);
+	const trigger = csv.getByRole('button', { name: 'Search CSV' });
+	await trigger.click();
+	await expect(csv.getByRole('searchbox', { name: 'Search CSV' })).toBeFocused();
+
+	await page.keyboard.press('Escape');
+	await expect(csv.getByRole('dialog', { name: 'Search CSV' })).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+});

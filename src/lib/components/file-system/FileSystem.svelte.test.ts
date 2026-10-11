@@ -312,6 +312,48 @@ describe('FileSystem', () => {
 		}
 	});
 
+	it('moves the Tab stop to the collapsed ancestor of the focused row', async () => {
+		render(FileSystem, { items: ITEMS, defaultPath: 'invoices/2026/' });
+
+		const folder = treeitem('2026');
+		folder.focus();
+		await fireEvent.focus(folder);
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse invoices' }));
+
+		const stops = screen.getAllByRole('treeitem').filter((row) => row.tabIndex === 0);
+		expect(stops).toEqual([treeitem('invoices')]);
+	});
+
+	it('keeps the expand buttons out of the Tab order, like upstream', () => {
+		render(FileSystem, { items: ITEMS, defaultPath: 'invoices/' });
+
+		const buttons = screen.getAllByRole('button', { name: /^(Expand|Collapse) / });
+		expect(buttons.length).toBeGreaterThan(1);
+		for (const button of buttons) expect(button.tabIndex).toBe(-1);
+	});
+
+	it('selection follows keyboard focus, like upstream', async () => {
+		const onSelectionChange = vi.fn();
+		render(FileSystem, { items: ITEMS, onSelectionChange });
+
+		await fireEvent.keyDown(treeitem('invoices'), { key: 'ArrowDown' });
+		expect(onSelectionChange).toHaveBeenLastCalledWith(
+			expect.objectContaining({ path: 'readme.txt' })
+		);
+		expect(treeitem('readme.txt')).toHaveAttribute('aria-selected', 'true');
+
+		await fireEvent.keyDown(treeitem('readme.txt'), { key: 'Home' });
+		expect(onSelectionChange).toHaveBeenLastCalledWith(
+			expect.objectContaining({ path: 'invoices/' })
+		);
+
+		await fireEvent.keyDown(treeitem('invoices'), { key: 'r' });
+		expect(onSelectionChange).toHaveBeenLastCalledWith(
+			expect.objectContaining({ path: 'readme.txt' })
+		);
+		expect(onSelectionChange).toHaveBeenCalledTimes(3);
+	});
+
 	it('resolves a missing file url through upstream getFileUrl before onFileOpen', async () => {
 		const onFileOpen = vi.fn();
 		const getFileUrl = vi.fn(async (file: FileSystemFileItem) => `https://signed/${file.path}`);
@@ -325,5 +367,18 @@ describe('FileSystem', () => {
 				'https://signed/invoices/2026/jan.pdf'
 			)
 		);
+	});
+});
+
+describe('file-system docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/file-system/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		const upstream = new Set(['default', 'FileSystem']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
 	});
 });

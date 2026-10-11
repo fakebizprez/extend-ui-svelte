@@ -7,17 +7,20 @@
 // in the component and loads on the client only.
 import { PDFDocument } from 'pdf-lib';
 
+// Defaults match upstream's INITIAL_FIELD bbox { x: 300, y: 504, width: 250,
+// height: 58 }, which is measured from the top-left of a 612x792 page.
+
 /** Signature box width in PDF points before scaling. */
-export const DEFAULT_SIGNATURE_WIDTH = 150;
+export const DEFAULT_SIGNATURE_WIDTH = 250;
 
 /** Signature box height in PDF points before scaling. */
-export const DEFAULT_SIGNATURE_HEIGHT = 50;
+export const DEFAULT_SIGNATURE_HEIGHT = 58;
 
 /** Placement offset from the left page edge in PDF points. */
-export const DEFAULT_POSITION_X = 72;
+export const DEFAULT_POSITION_X = 300;
 
-/** Placement offset from the bottom page edge in PDF points. */
-export const DEFAULT_POSITION_Y = 72;
+/** Placement offset from the bottom page edge in PDF points (792 - 504 - 58). */
+export const DEFAULT_POSITION_Y = 230;
 
 /** Default placement scale multiplier. */
 export const DEFAULT_SCALE = 1;

@@ -8,7 +8,10 @@
 	- Rendering runs on the shared PDF.js engine wrapper (#lib/engines/pdf)
 	  and download runs on pdf-lib, both loaded on the client.
 	- The layout is a page list beside a single-page preview instead of the
-	  upstream scrolling workspace with side panels.
+	  upstream scrolling workspace with side panels. The list is upstream's
+	  thumbnail listbox; rotate/move/delete act on the one selected page from a
+	  toolbar. Not ported: multi-page selection, insert blank page, append PDF,
+	  extract pages. Delete confirms in-component and keeps the last page.
 	- Dark mode is parent-controlled (isDark + onIsDarkChange) per project
 	  contract; the editor never renders its own dark toggle.
 	- `class` and `className` are both accepted and merged.
@@ -22,7 +25,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { VirtualList } from '../../virtual-list/index.js';
 	import type { PdfEngine, PdfPageSize } from '../../engines/pdf/index.js';
 	import PdfPage from '../pdf-viewer/PdfPage.svelte';
@@ -107,12 +110,15 @@
 
 	const THUMBNAIL_WIDTH = 96;
 	const THUMBNAIL_HEIGHT = 124;
-	const ROW_HEIGHT = 208;
+	const ROW_HEIGHT = 160;
+	const ACTIONS_HEIGHT = 40;
 	// Upstream editor zoom presets, limits, and viewport gap.
 	const ZOOM_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 	const MIN_ZOOM = 0.1;
 	const MAX_ZOOM = 8;
 	const PAGE_GAP = 24;
+
+	const uid = $props.id();
 
 	let {
 		src,
@@ -345,8 +351,93 @@
 		onPagesChange?.(next.pages);
 	}
 
-	function rotateSelected(index: number, direction: 'clockwise' | 'counter-clockwise'): void {
-		applyEdit(rotateEditPage(editState, index, direction));
+	function rotateSelected(direction: 'clockwise' | 'counter-clockwise'): void {
+		if (selectedSafeIndex < 0) return;
+		applyEdit(rotateEditPage(editState, selectedSafeIndex, direction));
+	}
+
+	// Upstream refuses to delete the last page and confirms every delete.
+	const NOTICE_DURATION_MS = 4200;
+	let pageNotice = $state('');
+	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+	let confirmingDelete = $state(false);
+	let deleteButton: HTMLButtonElement | null = $state(null);
+	let cancelButton: HTMLButtonElement | null = $state(null);
+	let pageList: HTMLDivElement | null = $state(null);
+
+	function notify(message: string): void {
+		pageNotice = message;
+		clearTimeout(noticeTimer);
+		noticeTimer = setTimeout(() => (pageNotice = ''), NOTICE_DURATION_MS);
+	}
+
+	$effect(() => () => clearTimeout(noticeTimer));
+
+	function requestDelete(): void {
+		if (editState.pages.length <= 1) {
+			notify('A document needs at least one page.');
+			return;
+		}
+		confirmingDelete = true;
+	}
+
+	// Move focus into the dialog when it opens, like upstream's Dialog.
+	$effect(() => {
+		cancelButton?.focus();
+	});
+
+	function closeDelete(): void {
+		confirmingDelete = false;
+		// The page area stays inert until the dialog unmounts, so restore focus after the update.
+		void tick().then(() => deleteButton?.focus());
+	}
+
+	function confirmDelete(): void {
+		deleteAt(selectedSafeIndex);
+		closeDelete();
+	}
+
+	function handleDialogKeyDown(event: KeyboardEvent): void {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			closeDelete();
+			return;
+		}
+		if (event.key !== 'Tab') return;
+		// Keep focus inside the modal dialog.
+		const buttons = [...(event.currentTarget as HTMLElement).querySelectorAll('button')];
+		const first = buttons[0];
+		const last = buttons[buttons.length - 1];
+		if (event.shiftKey && document.activeElement === first) {
+			event.preventDefault();
+			last?.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first?.focus();
+		}
+	}
+
+	/** Upstream's thumbnail listbox keys: ArrowUp/ArrowDown/Home/End move the selection. */
+	function handleListKeyDown(event: KeyboardEvent): void {
+		const count = editState.pages.length;
+		if (count < 1) return;
+		const current = selectedSafeIndex < 0 ? 0 : selectedSafeIndex;
+		let next: number | null = null;
+		if (event.key === 'ArrowDown') next = Math.min(count - 1, current + 1);
+		else if (event.key === 'ArrowUp') next = Math.max(0, current - 1);
+		else if (event.key === 'Home') next = 0;
+		else if (event.key === 'End') next = count - 1;
+		if (next === null) return;
+		event.preventDefault();
+		select(next);
+		// Keep the active option in the virtual list's view.
+		const viewport = pageList?.querySelector<HTMLElement>('[data-testid="virtual-viewport"]');
+		if (!viewport) return;
+		const top = next * ROW_HEIGHT;
+		if (top < viewport.scrollTop) viewport.scrollTop = top;
+		else if (top + ROW_HEIGHT > viewport.scrollTop + viewport.clientHeight) {
+			viewport.scrollTop = top + ROW_HEIGHT - viewport.clientHeight;
+		}
 	}
 
 	/** Last page number sent to onActivePageChange; 0 forces the next report. */
@@ -482,7 +573,12 @@
 	onkeydown={handleKeyDown}
 >
 	{#if showToolbar}
-		<div role="toolbar" aria-label="PDF editor toolbar" class="pdf-editor-toolbar">
+		<div
+			role="toolbar"
+			aria-label="PDF editor toolbar"
+			class="pdf-editor-toolbar"
+			inert={confirmingDelete}
+		>
 			<span class="pdf-editor-indicator" data-testid="pdf-editor-page-indicator">
 				Page {editState.pages.length ? activePage : 1} of {editState.pages.length || '–'}
 			</span>
@@ -578,95 +674,118 @@
 		{#if exportError}
 			<div class="pdf-editor-state pdf-editor-error" role="alert">{exportError}</div>
 		{/if}
-		<div class="pdf-editor-body" style={`height: ${height}px;`}>
-			<div
-				class="pdf-editor-sidebar"
-				data-testid="pdf-editor-page-list"
-				role="listbox"
-				aria-label="Document pages"
-			>
-				<VirtualList items={editState.pages} itemHeight={ROW_HEIGHT} height={height}>
-					{#snippet children(page, index)}
-						{@const thumbScale = thumbnailScale(page)}
-						{@const thumbSize = editedSize(page)}
-						<div
-							class={`pdf-editor-entry${index === selectedSafeIndex ? ' selected' : ''}`}
-							data-testid="pdf-editor-page"
-							data-source-page={page.sourcePage}
-							data-rotation={page.rotation}
-							role="option"
-							aria-selected={index === selectedSafeIndex}
-						>
-							<button
-								type="button"
-								class="pdf-editor-select"
-								aria-label={`Select page ${page.sourcePage}`}
+		{#if pageNotice}
+			<div class="pdf-editor-notice" role="alert">{pageNotice}</div>
+		{/if}
+		<div class="pdf-editor-body" style={`height: ${height}px;`} inert={confirmingDelete}>
+			<div class="pdf-editor-sidebar">
+				<!-- Like upstream's pages panel, page actions act on the selection from a toolbar. -->
+				<div
+					role="toolbar"
+					aria-label="Page actions"
+					class="pdf-editor-page-actions"
+					style={`height: ${ACTIONS_HEIGHT}px;`}
+				>
+					<button
+						type="button"
+						class="pdf-editor-icon-button"
+						aria-label="Rotate left"
+						disabled={!selectedPage}
+						onclick={() => rotateSelected('counter-clockwise')}
+					>
+						&#10226;
+					</button>
+					<button
+						type="button"
+						class="pdf-editor-icon-button"
+						aria-label="Rotate right"
+						disabled={!selectedPage}
+						onclick={() => rotateSelected('clockwise')}
+					>
+						&#10227;
+					</button>
+					<span class="pdf-editor-separator" aria-hidden="true"></span>
+					<button
+						type="button"
+						class="pdf-editor-icon-button"
+						aria-label="Move up"
+						disabled={!selectedPage || selectedSafeIndex === 0}
+						onclick={() => move(selectedSafeIndex, -1)}
+					>
+						&#8593;
+					</button>
+					<button
+						type="button"
+						class="pdf-editor-icon-button"
+						aria-label="Move down"
+						disabled={!selectedPage || selectedSafeIndex === editState.pages.length - 1}
+						onclick={() => move(selectedSafeIndex, 1)}
+					>
+						&#8595;
+					</button>
+					<span class="pdf-editor-separator" aria-hidden="true"></span>
+					<button
+						type="button"
+						class="pdf-editor-icon-button pdf-editor-delete"
+						aria-label="Delete pages"
+						disabled={!selectedPage}
+						bind:this={deleteButton}
+						onclick={requestDelete}
+					>
+						&#10005;
+					</button>
+				</div>
+				<!-- Upstream's thumbnail listbox: the list takes focus, arrows move the active option. -->
+				<div
+					class="pdf-editor-page-list"
+					data-testid="pdf-editor-page-list"
+					role="listbox"
+					aria-label="Pages"
+					tabindex="0"
+					aria-activedescendant={activePage > 0 ? `${uid}-page-${activePage}` : undefined}
+					bind:this={pageList}
+					onkeydown={handleListKeyDown}
+					onmousedown={(event) => event.currentTarget.focus({ preventScroll: true })}
+				>
+					<VirtualList items={editState.pages} itemHeight={ROW_HEIGHT} height={height - ACTIONS_HEIGHT}>
+						{#snippet children(page, index)}
+							{@const thumbScale = thumbnailScale(page)}
+							{@const thumbSize = editedSize(page)}
+							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus: the listbox owns focus and keys (aria-activedescendant). -->
+							<div
+								id={`${uid}-page-${index + 1}`}
+								class={`pdf-editor-entry${index === selectedSafeIndex ? ' selected' : ''}`}
+								data-testid="pdf-editor-page"
+								data-source-page={page.sourcePage}
+								data-rotation={page.rotation}
+								role="option"
+								aria-selected={index === selectedSafeIndex}
+								aria-current={index === selectedSafeIndex ? 'page' : undefined}
+								aria-label={`Page ${index + 1}`}
 								onclick={() => select(index)}
 							>
-								{#if engine}
-									<PdfPage
-										engine={engine}
-										pageNumber={page.sourcePage}
-										scale={thumbScale}
-										rotation={page.rotation}
-										width={thumbSize.width * thumbScale}
-										height={thumbSize.height * thumbScale}
-									/>
-								{/if}
+								<span class="pdf-editor-thumb">
+									{#if engine}
+										<PdfPage
+											engine={engine}
+											pageNumber={page.sourcePage}
+											scale={thumbScale}
+											rotation={page.rotation}
+											width={thumbSize.width * thumbScale}
+											height={thumbSize.height * thumbScale}
+										/>
+									{/if}
+								</span>
 								<span class="pdf-editor-entry-label">
-									Page {index + 1}
+									{index + 1}
 									{#if page.rotation !== 0}
 										<span class="pdf-editor-rotation-badge">{page.rotation}°</span>
 									{/if}
 								</span>
-							</button>
-							<div class="pdf-editor-entry-controls">
-								<button
-									type="button"
-									class="pdf-editor-icon-button"
-									aria-label={`Rotate page ${page.sourcePage} counter-clockwise`}
-									onclick={() => rotateSelected(index, 'counter-clockwise')}
-								>
-									&#10226;
-								</button>
-								<button
-									type="button"
-									class="pdf-editor-icon-button"
-									aria-label={`Rotate page ${page.sourcePage} clockwise`}
-									onclick={() => rotateSelected(index, 'clockwise')}
-								>
-									&#10227;
-								</button>
-								<button
-									type="button"
-									class="pdf-editor-icon-button"
-									aria-label={`Move page ${page.sourcePage} up`}
-									disabled={index === 0}
-									onclick={() => move(index, -1)}
-								>
-									&#8593;
-								</button>
-								<button
-									type="button"
-									class="pdf-editor-icon-button"
-									aria-label={`Move page ${page.sourcePage} down`}
-									disabled={index === editState.pages.length - 1}
-									onclick={() => move(index, 1)}
-								>
-									&#8595;
-								</button>
-								<button
-									type="button"
-									class="pdf-editor-icon-button pdf-editor-delete"
-									aria-label={`Delete page ${page.sourcePage}`}
-									onclick={() => deleteAt(index)}
-								>
-									&#10005;
-								</button>
 							</div>
-						</div>
-					{/snippet}
-				</VirtualList>
+						{/snippet}
+					</VirtualList>
+				</div>
 			</div>
 			<div class="pdf-editor-preview" data-testid="pdf-editor-preview" bind:this={preview}>
 				{#if selectedPage && engine}
@@ -679,12 +798,33 @@
 						width={size.width * zoom}
 						height={size.height * zoom}
 					/>
-				{:else}
-					<div class="pdf-editor-state">
-						<p class="pdf-editor-state-title">No pages left</p>
-						<p class="pdf-editor-state-hint">Reset the edits to restore the document.</p>
-					</div>
 				{/if}
+			</div>
+		</div>
+	{/if}
+	{#if confirmingDelete}
+		<div class="pdf-editor-dialog-backdrop">
+			<div
+				class="pdf-editor-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={`${uid}-delete-title`}
+				aria-describedby={`${uid}-delete-description`}
+				tabindex="-1"
+				onkeydown={handleDialogKeyDown}
+			>
+				<h2 id={`${uid}-delete-title`} class="pdf-editor-dialog-title">Delete this page?</h2>
+				<p id={`${uid}-delete-description`} class="pdf-editor-dialog-description">
+					Content and annotations on the deleted pages are removed permanently.
+				</p>
+				<div class="pdf-editor-dialog-actions">
+					<button type="button" class="pdf-editor-button" bind:this={cancelButton} onclick={closeDelete}>
+						Cancel
+					</button>
+					<button type="button" class="pdf-editor-button pdf-editor-destructive" onclick={confirmDelete}>
+						Delete
+					</button>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -698,6 +838,7 @@
 		--pdf-editor-border: #e5e5e5;
 		--pdf-editor-canvas-bg: #f5f5f5;
 		--pdf-editor-accent: #2563eb;
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		width: 100%;
@@ -820,10 +961,92 @@
 
 	.pdf-editor-sidebar {
 		flex: none;
+		display: flex;
+		flex-direction: column;
 		width: 13rem;
 		border-right: 1px solid var(--pdf-editor-border);
 		background: var(--pdf-editor-canvas-bg);
 		overflow: hidden;
+	}
+
+	.pdf-editor-page-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0 0.5rem;
+		border-bottom: 1px solid var(--pdf-editor-border);
+		box-sizing: border-box;
+	}
+
+	.pdf-editor-page-list:focus-visible {
+		outline: 2px solid var(--pdf-editor-accent);
+		outline-offset: -2px;
+	}
+
+	.pdf-editor-page-list:focus-visible .pdf-editor-entry.selected .pdf-editor-thumb {
+		outline-width: 3px;
+	}
+
+	.pdf-editor-thumb {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 104px;
+		height: 128px;
+		border-radius: 0.375rem;
+	}
+
+	.pdf-editor-entry.selected .pdf-editor-thumb {
+		outline: 2px solid var(--pdf-editor-accent);
+		outline-offset: 2px;
+	}
+
+	.pdf-editor-notice {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--pdf-editor-border);
+		color: #b91c1c;
+		font-size: 12px;
+	}
+
+	.pdf-editor-dialog-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 10;
+		display: grid;
+		place-items: center;
+		background: rgb(0 0 0 / 0.4);
+	}
+
+	.pdf-editor-dialog {
+		width: min(28rem, calc(100% - 2rem));
+		padding: 1.25rem;
+		border: 1px solid var(--pdf-editor-border);
+		border-radius: 0.75rem;
+		background: var(--pdf-editor-bg);
+		color: var(--pdf-editor-fg);
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+	}
+
+	.pdf-editor-dialog-title {
+		margin: 0 0 0.5rem;
+		font-size: 15px;
+	}
+
+	.pdf-editor-dialog-description {
+		margin: 0 0 1rem;
+		color: var(--pdf-editor-muted);
+	}
+
+	.pdf-editor-dialog-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+
+	.pdf-editor-destructive {
+		border-color: #b91c1c;
+		background: #b91c1c;
+		color: #ffffff;
 	}
 
 	.pdf-editor-entry {
@@ -834,24 +1057,6 @@
 		height: 100%;
 		padding: 0.5rem;
 		box-sizing: border-box;
-	}
-
-	.pdf-editor-entry.selected .pdf-editor-select {
-		outline: 2px solid var(--pdf-editor-accent);
-		outline-offset: 2px;
-	}
-
-	.pdf-editor-select {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.25rem;
-		border: none;
-		border-radius: 0.375rem;
-		background: transparent;
-		color: inherit;
-		font: inherit;
 		cursor: pointer;
 	}
 
@@ -867,11 +1072,6 @@
 		background: var(--pdf-editor-accent);
 		color: #ffffff;
 		font-size: 11px;
-	}
-
-	.pdf-editor-entry-controls {
-		display: flex;
-		gap: 0.25rem;
 	}
 
 	.pdf-editor-icon-button {

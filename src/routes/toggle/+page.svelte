@@ -198,6 +198,10 @@
 			Accepts <code>isDark</code> and <code>onIsDarkChange</code>; it reflects <code>isDark</code>
 			and never calls <code>onIsDarkChange</code>.
 		</li>
+		<li>
+			<code>ToggleGroup</code> renders <code>data-orientation</code> but not Base UI's
+			<code>aria-orientation</code>, which ARIA does not allow on <code>role="group"</code>.
+		</li>
 	</ul>
 </section>
 

@@ -93,7 +93,10 @@
 			moves into the panel on open, Escape, a click outside, or tabbing out closes it, and focus
 			returns to the trigger.
 		</li>
-		<li>Copy buttons, focus-reselect, and opacity scrub-dragging are not ported.</li>
+		<li>
+			The copy button beside each channel row, focus-reselect, and opacity scrub-dragging are
+			not ported. Copying a fully selected value field copies the CSS color, like upstream.
+		</li>
 		<li>
 			In containers narrower than the panel (phones), the fields column wraps under the plane;
 			upstream keeps one row and overflows.

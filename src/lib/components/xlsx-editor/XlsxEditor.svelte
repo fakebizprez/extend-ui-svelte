@@ -22,6 +22,13 @@
 	  alignment, undo/redo, add/remove sheet, cell formatting from the file,
 	  frozen panes, column resize, zoom, upload menu, and the read-only mode for
 	  files over 5 MB.
+	- Keyboard follows upstream react-xlsx: the grid is one Tab stop; arrows,
+	  Ctrl/Cmd+arrows, Home/End, PageUp/PageDown, Tab/Shift+Tab, and
+	  Enter/Shift+Enter move the active cell; typing or F2 edits; Delete or
+	  Backspace clears. In the cell editor Enter commits and stays, Escape
+	  cancels, and arrows commit and move. Not ported: range selection
+	  (Shift+arrows move instead of extending), undo/redo, copy/paste, and the
+	  column sort menu (upstream WorkbookTableHeaderMenu).
 	- Exports: XlsxEditorSurface (a react-xlsx context surface) is not ported;
 	  XlsxEditor is self-contained. Sheet tabs reuse xlsx-viewer's
 	  WorkbookSheetTabs, as upstream does.
@@ -47,6 +54,12 @@
 <script lang="ts">
 	import { VirtualList } from '../../virtual-list/index.js';
 	import WorkbookSheetTabs from '../xlsx-viewer/WorkbookSheetTabs.svelte';
+	import {
+		isPrintableKey,
+		navigateGrid,
+		scrollCellIntoView,
+		type GridPosition
+	} from '../xlsx-viewer/grid-navigation.js';
 	import { XlsxCellError, type WorkBook } from '../../engines/xlsx/index.js';
 	import { columnIndexToLetter, createSheetEvaluator } from './formulas.js';
 	import {
@@ -128,6 +141,12 @@
 	let editing = $state(false);
 	let draft = $state('');
 	let draftInitial = '';
+	// The grid is the single Tab stop; the active cell is announced through
+	// aria-activedescendant, which survives virtualization better than moving
+	// focus between cells that scroll out of the DOM.
+	const uid = $props.id();
+	let gridEl: HTMLDivElement | null = $state(null);
+	let scrollEl: HTMLDivElement | null = $state(null);
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 130;
@@ -301,11 +320,92 @@
 		selected = { row, col };
 	}
 
-	function startEdit(): void {
+	/** Edits the active cell; `initial` replaces its text (typing to edit). */
+	function startEdit(initial?: string): void {
 		if (!selected || status !== 'ready') return;
-		draft = cellText(selected.row, selected.col);
-		draftInitial = draft;
+		draftInitial = cellText(selected.row, selected.col);
+		draft = initial ?? draftInitial;
 		editing = true;
+	}
+
+	function cellId(row: number, col: number): string {
+		return `${uid}-r${row}c${col}`;
+	}
+
+	function focusGrid(): void {
+		gridEl?.focus({ preventScroll: true });
+	}
+
+	function moveTo(next: GridPosition): void {
+		selected = next;
+		if (scrollEl) {
+			scrollCellIntoView(scrollEl, next, {
+				rowHeight,
+				height,
+				rowHeaderWidth: ROWNUM_WIDTH,
+				columnWidth: COLUMN_WIDTH
+			});
+		}
+	}
+
+	function gridBounds() {
+		return {
+			rowCount: activeGrid.length,
+			colCount: columnCount,
+			pageRows: Math.max(1, Math.floor(height / rowHeight)),
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH))
+		};
+	}
+
+	/** Upstream react-xlsx grid keys: navigate, type to edit, F2, Delete/Backspace. */
+	function handleGridKeydown(event: KeyboardEvent): void {
+		if (event.target !== gridEl || editing || status !== 'ready') return;
+		if (activeGrid.length === 0 || columnCount === 0) return;
+		// With no active cell, keys act from A1, as upstream does.
+		const current = selected ?? { row: 0, col: 0 };
+		if (isPrintableKey(event)) {
+			event.preventDefault();
+			selected = current;
+			startEdit(event.key);
+			return;
+		}
+		if (event.key === 'F2') {
+			event.preventDefault();
+			selected = current;
+			startEdit();
+			return;
+		}
+		if (event.key === 'Delete' || event.key === 'Backspace') {
+			event.preventDefault();
+			selected = current;
+			commitText(current.row, current.col, '', cellText(current.row, current.col));
+			return;
+		}
+		const next = navigateGrid(event, current, gridBounds());
+		if (!next) return;
+		event.preventDefault();
+		moveTo(next);
+	}
+
+	/** Keys inside the cell editor, as upstream: Enter commits, Escape cancels, arrows commit and move. */
+	function handleEditKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			commitEdit();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelEdit();
+		} else if (event.key.startsWith('Arrow')) {
+			event.preventDefault();
+			const from = selected;
+			commitEdit();
+			const plain = { key: event.key, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false };
+			const next = from && navigateGrid(plain, from, gridBounds());
+			if (next) moveTo(next);
+		} else {
+			return;
+		}
+		focusGrid();
 	}
 
 	function commitEdit(): void {
@@ -615,12 +715,16 @@
 			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
 	{:else}
-		<div class="xlsx-scroll">
+		<div class="xlsx-scroll" bind:this={scrollEl}>
 			<div
 				class="xlsx-grid"
 				role="grid"
+				tabindex="0"
 				aria-label={activeSheetName}
+				aria-activedescendant={selected ? cellId(selected.row, selected.col) : undefined}
 				style={`min-width: ${gridMinWidth}px;`}
+				bind:this={gridEl}
+				onkeydown={handleGridKeydown}
 			>
 				<div role="row" class="xlsx-header-row" style={`grid-template-columns: ${gridTemplate};`}>
 					<div role="columnheader" class="xlsx-rownum" aria-label="Row numbers"></div>
@@ -642,9 +746,12 @@
 									{@const isSelected =
 										selected !== null && selected.row === index && selected.col === col}
 									{@const isEditing = isSelected && editing}
+									<!-- Keyboard use goes through the grid, the single Tab stop, which
+										points at the active cell with aria-activedescendant. -->
+									<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
 									<div
 										role="gridcell"
-										tabindex="0"
+										id={cellId(index, col)}
 										class="xlsx-cell"
 										class:selected={isSelected}
 										data-testid="editor-cell"
@@ -656,19 +763,12 @@
 											// Ignore events bubbling up from the edit input.
 											if (event.target !== event.currentTarget) return;
 											selectCell(index, col);
+											focusGrid();
 										}}
 										ondblclick={(event) => {
 											if (event.target !== event.currentTarget) return;
 											selectCell(index, col);
 											startEdit();
-										}}
-										onkeydown={(event) => {
-											if (event.target !== event.currentTarget) return;
-											if (event.key === 'Enter' && !editing) {
-												event.preventDefault();
-												selectCell(index, col);
-												startEdit();
-											}
 										}}
 									>
 										{#if isEditing}
@@ -681,19 +781,7 @@
 												oninput={(event) => {
 													draft = event.currentTarget.value;
 												}}
-												onkeydown={(event) => {
-													if (event.key === 'Enter') {
-														event.preventDefault();
-														commitEdit();
-													} else if (event.key === 'Escape') {
-														event.preventDefault();
-														cancelEdit();
-													} else {
-														return;
-													}
-													// Hand focus back to the cell so keyboard use continues.
-													event.currentTarget.parentElement?.focus();
-												}}
+												onkeydown={handleEditKeydown}
 												onblur={() => commitEdit()}
 											/>
 										{:else}
@@ -959,6 +1047,14 @@
 	.xlsx-cell.selected {
 		background: var(--xlsx-selected);
 		outline: 2px solid var(--xlsx-selected-border);
+	}
+
+	.xlsx-grid:focus {
+		outline: none;
+	}
+
+	.xlsx-grid:focus-visible {
+		box-shadow: inset 0 0 0 2px var(--xlsx-selected-border);
 	}
 
 	.xlsx-cell-input {

@@ -63,6 +63,11 @@
 		<code>XlsxWorkbookSurface</code> (a context surface; <code>XlsxViewer</code> is
 		self-contained).
 	</li>
+	<li>
+		Like upstream's read-only grid, cells can be selected and the grid (one Tab stop) navigates
+		with the arrows, Ctrl/Cmd+arrows, Home/End, PageUp/PageDown, Tab, and Enter. Not ported:
+		range selection (Shift+arrows move instead of extending) and copy.
+	</li>
 </ul>
 
 <p><a href="/">Back to all components</a></p>

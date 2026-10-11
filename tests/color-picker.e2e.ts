@@ -179,3 +179,22 @@ test('the panel opacity field is labelled "Opacity", like upstream', async ({ pa
 	const dialog = page.getByRole('dialog', { name: 'Overlay color panel' });
 	await expect(dialog.getByRole('textbox', { name: 'Opacity', exact: true })).toHaveValue('50');
 });
+
+test('copying a fully selected value field copies the CSS color, like upstream', async ({ page }) => {
+	const panel = page.getByTestId('panel-demo');
+	await panel.getByLabel('Color format').selectOption('rgb');
+	const field = panel.getByLabel('Color value');
+	await expect(field).toHaveValue('239 68 68');
+
+	await field.focus();
+	const copied = await field.evaluate((input: HTMLInputElement) => {
+		let text = '';
+		document.addEventListener('copy', (event) => (text = event.clipboardData!.getData('text/plain')), {
+			once: true
+		});
+		input.setSelectionRange(0, input.value.length);
+		document.execCommand('copy');
+		return text;
+	});
+	expect(copied).toBe('rgb(239, 68, 68)');
+});

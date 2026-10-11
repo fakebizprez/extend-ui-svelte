@@ -13,6 +13,10 @@
 	- Not ported: cell formatting (fonts, fills, borders, number formats, merged
 	  cells), frozen panes, column resize, zoom, search, sheet thumbnails, and
 	  the upload/download menu (showDownload, showUpload, toolbarActions).
+	- Like upstream's read-only grid, cells can be selected and the grid (one
+	  Tab stop) navigates with the arrows, Ctrl/Cmd+arrows, Home/End,
+	  PageUp/PageDown, Tab, and Enter. Not ported: range selection
+	  (Shift+arrows move instead of extending) and copy.
 	- Exports: WorkbookSheetTabs is ported (it takes sheets, activeSheetIndex,
 	  and onActiveSheetIndexChange instead of workbookIdentity plus the
 	  react-xlsx context, and has no hover thumbnails). Not ported:
@@ -23,6 +27,7 @@
 <script lang="ts">
 	import { VirtualList } from '../../virtual-list/index.js';
 	import WorkbookSheetTabs from './WorkbookSheetTabs.svelte';
+	import { navigateGrid, scrollCellIntoView, type GridPosition } from './grid-navigation.js';
 	import type { WorkBook } from '../../engines/xlsx/index.js';
 
 	type EngineModule = typeof import('../../engines/xlsx/index.js');
@@ -84,6 +89,13 @@
 	let workbookCache = $state.raw<{ key: unknown; workbook: WorkBook } | null>(null);
 	let rows = $state.raw<unknown[][]>([]);
 	let loadingSheet = $state(false);
+
+	// Like upstream's readOnly grid: one Tab stop, a selectable active cell,
+	// and keyboard navigation, but no editing.
+	const uid = $props.id();
+	let selected = $state<GridPosition | null>(null);
+	let gridEl: HTMLDivElement | null = $state(null);
+	let scrollEl: HTMLDivElement | null = $state(null);
 
 	const ROWNUM_WIDTH = 48;
 	const COLUMN_WIDTH = 150;
@@ -203,6 +215,38 @@
 
 	function selectSheet(index: number): void {
 		activeSheetIndex = index;
+		selected = null;
+	}
+
+	function cellId(row: number, col: number): string {
+		return `${uid}-r${row}c${col}`;
+	}
+
+	function selectCell(row: number, col: number): void {
+		selected = { row, col };
+		gridEl?.focus({ preventScroll: true });
+	}
+
+	function handleGridKeydown(event: KeyboardEvent): void {
+		if (event.target !== gridEl || rows.length === 0 || columns.length === 0) return;
+		// With no active cell, keys act from A1, as upstream does.
+		const next = navigateGrid(event, selected ?? { row: 0, col: 0 }, {
+			rowCount: rows.length,
+			colCount: columns.length,
+			pageRows: Math.max(1, Math.floor(height / rowHeight)),
+			pageCols: Math.max(1, Math.floor((scrollEl?.clientWidth ?? 0) / COLUMN_WIDTH))
+		});
+		if (!next) return;
+		event.preventDefault();
+		selected = next;
+		if (scrollEl) {
+			scrollCellIntoView(scrollEl, next, {
+				rowHeight,
+				height,
+				rowHeaderWidth: ROWNUM_WIDTH,
+				columnWidth: COLUMN_WIDTH
+			});
+		}
 	}
 </script>
 
@@ -246,8 +290,18 @@
 			<p class="xlsx-state-title">This sheet is empty.</p>
 		</div>
 	{:else}
-		<div class="xlsx-scroll">
-			<div class="xlsx-grid" role="table" aria-label={activeSheetName} style={`min-width: ${gridMinWidth}px;`}>
+		<div class="xlsx-scroll" bind:this={scrollEl}>
+			<div
+				class="xlsx-grid"
+				role="grid"
+				tabindex="0"
+				aria-readonly="true"
+				aria-label={activeSheetName}
+				aria-activedescendant={selected ? cellId(selected.row, selected.col) : undefined}
+				style={`min-width: ${gridMinWidth}px;`}
+				bind:this={gridEl}
+				onkeydown={handleGridKeydown}
+			>
 				<div role="row" class="xlsx-header-row" style={`grid-template-columns: ${gridTemplate};`}>
 					<div role="columnheader" class="xlsx-rownum" aria-label="Row numbers"></div>
 					{#each columns as column (column)}
@@ -265,7 +319,20 @@
 							>
 								<div role="rowheader" class="xlsx-rownum">{index + 1}</div>
 								{#each columns as column, col (column)}
-									<div role="cell" class="xlsx-cell">{formatCell(row[col])}</div>
+									{@const isSelected = selected?.row === index && selected?.col === col}
+									<!-- Keyboard use goes through the grid, the single Tab stop, which
+										points at the active cell with aria-activedescendant. -->
+									<!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+									<div
+										role="gridcell"
+										id={cellId(index, col)}
+										class="xlsx-cell"
+										class:selected={isSelected}
+										aria-selected={isSelected}
+										onclick={() => selectCell(index, col)}
+									>
+										{formatCell(row[col])}
+									</div>
 								{/each}
 							</div>
 						{/snippet}
@@ -293,6 +360,8 @@
 		--xlsx-header-bg: #fafafa;
 		--xlsx-row-alt: #fafafa;
 		--xlsx-tab-active: #171717;
+		--xlsx-selected: #dbeafe;
+		--xlsx-selected-border: #2563eb;
 		display: flex;
 		flex-direction: column;
 		width: 100%;
@@ -317,6 +386,8 @@
 		--xlsx-header-bg: #171717;
 		--xlsx-row-alt: #111111;
 		--xlsx-tab-active: #ffffff;
+		--xlsx-selected: #1e3a8a;
+		--xlsx-selected-border: #60a5fa;
 	}
 
 	.xlsx-toolbar {
@@ -423,5 +494,20 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: cell;
+	}
+
+	.xlsx-cell.selected {
+		background: var(--xlsx-selected);
+		outline: 2px solid var(--xlsx-selected-border);
+		outline-offset: -2px;
+	}
+
+	.xlsx-grid:focus {
+		outline: none;
+	}
+
+	.xlsx-grid:focus-visible {
+		box-shadow: inset 0 0 0 2px var(--xlsx-selected-border);
 	}
 </style>

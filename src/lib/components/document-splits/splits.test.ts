@@ -1,5 +1,5 @@
 // MIT License — Svelte 5 port of Extend UI. Upstream: extend-hq/ui (MIT).
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	addSplit,
 	areSplitGroupsEqual,
@@ -243,17 +243,34 @@ describe('removeSplit', () => {
 });
 
 describe('nextSplitId / addSplit', () => {
-	it('generates the first unused split id', () => {
-		expect(nextSplitId(makeSplits())).toBe('split-3');
-		expect(nextSplitId([])).toBe('split-1');
-		expect(nextSplitId([{ id: 'split-1', title: 'A', pages: [] }])).toBe('split-2');
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('uses upstream\'s timestamp id scheme', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(2_000_000_000_000);
+
+		expect(nextSplitId(makeSplits())).toBe('split-2000000000000');
+	});
+
+	it('never reuses an id, even after a removal or within one millisecond', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(2_100_000_000_000);
+		const added = addSplit(makeSplits());
+		const id = added[2].id;
+		const removed = removeSplit(added, id);
+
+		const readded = addSplit(removed);
+		expect(readded[2].id).not.toBe(id);
+		expect(new Set([id, readded[2].id, ...makeSplits().map((group) => group.id)]).size).toBe(4);
 	});
 
 	it('appends an empty named split', () => {
 		const next = addSplit(makeSplits());
 
 		expect(next).toHaveLength(3);
-		expect(next[2]).toEqual({ id: 'split-3', title: 'Split 3', pages: [] });
+		expect(next[2]).toEqual({ id: expect.stringMatching(/^split-\d+$/), title: 'Split 3', pages: [] });
 	});
 });
 

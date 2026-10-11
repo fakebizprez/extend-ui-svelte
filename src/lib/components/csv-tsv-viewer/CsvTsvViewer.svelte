@@ -284,7 +284,10 @@
 				tabindex="-1"
 				bind:this={searchPanel}
 				onkeydown={(event) => {
-					if (event.key === 'Escape') searchOpen = false;
+					if (event.key !== 'Escape') return;
+					// Like upstream's popover, Escape hands focus back to the trigger.
+					searchOpen = false;
+					searchTrigger?.focus();
 				}}
 			>
 				<!-- Focus on open, as upstream's popover does. -->

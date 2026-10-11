@@ -77,7 +77,14 @@ vi.mock('signature_pad', () => {
 	return { default: MockSignaturePad };
 });
 
-const engineMock = vi.hoisted(() => ({ pageCount: 3, rendered: [] as number[], loads: 0 }));
+const engineMock = vi.hoisted(() => ({
+	pageCount: 3,
+	rendered: [] as number[],
+	loads: 0,
+	// Like PDF.js on one canvas: a new render cancels the one still in flight.
+	cancelSuperseded: false,
+	inFlight: null as ((reason: Error) => void) | null
+}));
 
 // Lets a test hold a placement mid-flight; null passes through to pdf-lib.
 const embedGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
@@ -108,6 +115,16 @@ vi.mock('../../engines/pdf/index.js', () => ({
 			},
 			renderPage: async (pageNumber: number) => {
 				engineMock.rendered.push(pageNumber);
+				if (engineMock.cancelSuperseded) {
+					const cancelled = new Error(`Rendering cancelled, page ${pageNumber}`);
+					cancelled.name = 'RenderingCancelledException';
+					engineMock.inFlight?.(cancelled);
+					await new Promise<void>((resolve, reject) => {
+						engineMock.inFlight = reject;
+						setTimeout(resolve, 5);
+					});
+					engineMock.inFlight = null;
+				}
 				return { width: 612, height: 792 };
 			},
 			setCurrentPage: (page: number) => {
@@ -169,6 +186,8 @@ beforeEach(async () => {
 	engineMock.pageCount = 3;
 	engineMock.rendered.length = 0;
 	engineMock.loads = 0;
+	engineMock.cancelSuperseded = false;
+	engineMock.inFlight = null;
 	embedGate.wait = null;
 	vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
 		{} as CanvasRenderingContext2D
@@ -248,6 +267,39 @@ describe('ESignature', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
 		expect(screen.getByTestId('e-signature-page-indicator')).toHaveTextContent('Page 1 of 3');
+	});
+
+	it('ignores a render superseded by a quick second page change', async () => {
+		engineMock.cancelSuperseded = true;
+		render(ESignature, { src: SRC });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		const next = screen.getByRole('button', { name: 'Next page' });
+		await fireEvent.click(next);
+		await fireEvent.click(next);
+		await new Promise((resolve) => setTimeout(resolve, 30));
+
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		expect(screen.getByTestId('e-signature-preview')).toBeInTheDocument();
+		expect(screen.getByTestId('e-signature-page-indicator')).toHaveTextContent('Page 3 of 3');
+		expect(engineMock.rendered.slice(-2)).toEqual([2, 3]);
+	});
+
+	it('still shows a real error from the latest render', async () => {
+		render(ESignature, { src: SRC });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+		// Make the next render fail for real.
+		const original = engineMock.rendered.push.bind(engineMock.rendered);
+		engineMock.rendered.push = (page: number) => {
+			if (page === 2) throw new Error('Corrupt page 2');
+			return original(page);
+		};
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+
+		expect(await screen.findByRole('alert')).toHaveTextContent('Corrupt page 2');
+		engineMock.rendered.push = original;
 	});
 
 	it('places the signature and downloads the signed PDF', async () => {
@@ -457,5 +509,18 @@ describe('ESignature', () => {
 
 	it('is exported under the upstream name ESignatureBlock', () => {
 		expect(ESignatureBlock).toBe(ESignature);
+	});
+});
+
+describe('e-signature docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/e-signature/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		const upstream = new Set(['default', 'ESignatureBlock']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
 	});
 });

@@ -2,6 +2,15 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { read, utils } from 'xlsx';
+import type { Locator } from '@playwright/test';
+
+/** The grid keeps focus (one Tab stop) and points at the active cell, like upstream. */
+async function expectActiveCell(editor: Locator, cell: Locator) {
+	const grid = editor.getByRole('grid');
+	await expect(grid).toBeFocused();
+	await expect(grid).toHaveAttribute('aria-activedescendant', (await cell.getAttribute('id')) as string);
+	await expect(cell).toHaveAttribute('aria-selected', 'true');
+}
 
 test('xlsx-editor preview renders the fixture grid', async ({ page }) => {
 	await page.goto('/xlsx-editor');
@@ -63,7 +72,7 @@ test('xlsx-editor double-click then typing replaces the value and Enter commits'
 	await expect(input).toHaveCount(0);
 	const edited = editor.getByRole('gridcell', { name: '999', exact: true });
 	await expect(edited).toBeVisible();
-	await expect(edited).toBeFocused();
+	await expectActiveCell(editor, edited);
 	await expect(editor.getByTestId('formula-bar')).toHaveValue('999');
 	await expect(page.getByTestId('last-change')).toContainText('999');
 });
@@ -83,13 +92,13 @@ test('xlsx-editor Escape cancels a typed edit and restores the value', async ({ 
 
 	await expect(editor.getByTestId('cell-input')).toHaveCount(0);
 	await expect(cell).toBeVisible();
-	await expect(cell).toBeFocused();
+	await expectActiveCell(editor, cell);
 	await expect(editor.getByRole('gridcell', { name: '999', exact: true })).toHaveCount(0);
 	await expect(editor.getByTestId('formula-bar')).toHaveValue('120');
 	await expect(page.getByTestId('last-change')).toContainText('none yet');
 });
 
-test('xlsx-editor Enter on a selected cell focuses the edit input', async ({ page }) => {
+test('xlsx-editor F2 on the active cell focuses the edit input', async ({ page }) => {
 	await page.goto('/xlsx-editor');
 
 	const editor = page.getByTestId('xlsx-editor').first();
@@ -97,7 +106,8 @@ test('xlsx-editor Enter on a selected cell focuses the edit input', async ({ pag
 	await expect(cell).toBeVisible();
 
 	await cell.click();
-	await page.keyboard.press('Enter');
+	// Like upstream, F2 edits; Enter on the grid moves down instead.
+	await page.keyboard.press('F2');
 
 	const input = editor.getByTestId('cell-input');
 	await expect(input).toBeVisible();
@@ -108,7 +118,56 @@ test('xlsx-editor Enter on a selected cell focuses the edit input', async ({ pag
 	await page.keyboard.type(' pro');
 	await expect(input).toHaveValue('Resistor kit pro');
 	await page.keyboard.press('Enter');
-	await expect(editor.getByRole('gridcell', { name: 'Resistor kit pro' })).toBeFocused();
+	await expectActiveCell(editor, editor.getByRole('gridcell', { name: 'Resistor kit pro' }));
+});
+
+test('xlsx-editor grid keyboard: one Tab stop, navigation, type to edit, Delete', async ({
+	page
+}) => {
+	await page.goto('/xlsx-editor');
+	const editor = page.getByTestId('xlsx-editor').first();
+	const grid = editor.getByRole('grid');
+	const address = editor.getByTestId('active-cell-address');
+	const kit = editor.getByRole('gridcell', { name: 'Resistor kit', exact: true });
+	await expect(kit).toBeVisible();
+
+	// Only the grid is focusable inside it.
+	expect(
+		await grid.evaluate(
+			(el) => el.querySelectorAll('[tabindex]:not([tabindex="-1"]), input, button').length
+		)
+	).toBe(0);
+	await expect(grid).toHaveAttribute('tabindex', '0');
+
+	await kit.click();
+	await expect(address).toHaveText('B2');
+	await page.keyboard.press('ArrowRight');
+	await expect(address).toHaveText('C2');
+	await page.keyboard.press('Tab');
+	await expect(address).toHaveText('D2');
+	await page.keyboard.press('Shift+Tab');
+	await expect(address).toHaveText('C2');
+	await page.keyboard.press('Enter');
+	await expect(address).toHaveText('C3');
+	await expect(grid).toBeFocused();
+
+	// Typing starts an edit that replaces the value; Enter commits and stays.
+	await page.keyboard.type('7');
+	await expect(editor.getByTestId('cell-input')).toHaveValue('7');
+	await page.keyboard.press('Enter');
+	await expect(address).toHaveText('C3');
+	await expectActiveCell(editor, editor.getByRole('gridcell', { name: '7', exact: true }));
+
+	// Delete clears the active cell.
+	await page.keyboard.press('ArrowUp');
+	await expect(address).toHaveText('C2');
+	await page.keyboard.press('Delete');
+	await expect(editor.getByRole('gridcell', { name: '120', exact: true })).toHaveCount(0);
+	await expect(editor.getByTestId('formula-bar')).toHaveValue('');
+
+	await page.keyboard.press('ControlOrMeta+End');
+	await expect(address).toHaveText('D6');
+	await expectActiveCell(editor, editor.getByRole('gridcell', { name: 'Reno' }).last());
 });
 
 test('xlsx-editor export produces an .xlsx download with the edits', async ({ page }) => {

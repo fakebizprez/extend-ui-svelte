@@ -198,3 +198,30 @@ test('several instances on the page add no duplicate landmarks (axe landmark-uni
 	);
 	expect(names).toEqual([]);
 });
+
+test('a rapid double click on Next page still renders the page', async ({ page }) => {
+	await page.goto('/e-signature');
+	const scope = page.getByTestId('e-signature').first();
+	await expect(scope).toHaveAttribute('data-pdf-ready', 'true', { timeout: 30000 });
+
+	await scope.getByRole('button', { name: 'Next page' }).dblclick();
+
+	await expect(scope.getByTestId('e-signature-page-indicator')).toHaveText('Page 3 of 3');
+	await page.waitForTimeout(500);
+	await expect(scope.getByRole('alert')).toHaveCount(0);
+	const preview = scope.getByTestId('e-signature-preview');
+	await expect(preview).toBeVisible();
+	await expect
+		.poll(() =>
+			preview.evaluate((element) => {
+				const canvas = element as HTMLCanvasElement;
+				const context = canvas.getContext('2d');
+				if (!context || canvas.width === 0) return 0;
+				const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+				let dark = 0;
+				for (let i = 0; i < data.length; i += 4) if (data[i] < 128 && data[i + 3] > 0) dark += 1;
+				return dark;
+			})
+		)
+		.toBeGreaterThan(0);
+});

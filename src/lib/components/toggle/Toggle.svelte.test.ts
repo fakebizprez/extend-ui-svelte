@@ -521,3 +521,83 @@ describe('ToggleGroupItem value', () => {
 		expect(bold).toHaveAttribute('aria-pressed', 'true');
 	});
 });
+
+// Base UI 1.4.1's composite root ignores arrow, Home, and End keys while Shift,
+// Control, Alt, or Meta is held, and only when it moves focus does it call
+// preventDefault() and stopPropagation().
+describe('ToggleGroup keyboard modifiers and propagation', () => {
+	function trackDocumentKeys() {
+		const seen: string[] = [];
+		const listener = (event: KeyboardEvent) => seen.push(event.key);
+		document.addEventListener('keydown', listener);
+		return { seen, stop: () => document.removeEventListener('keydown', listener) };
+	}
+
+	for (const modifier of ['altKey', 'metaKey', 'ctrlKey', 'shiftKey'] as const) {
+		it(`leaves arrows and Home/End alone while ${modifier} is held`, async () => {
+			render(ToggleGroupHarness);
+			const bold = screen.getByRole('button', { name: 'Bold' });
+			const italic = screen.getByRole('button', { name: 'Italic' });
+			const keys = trackDocumentKeys();
+
+			bold.focus();
+			expect(await fireEvent.keyDown(bold, { key: 'ArrowRight', [modifier]: true })).toBe(true);
+			expect(bold).toHaveFocus();
+			italic.focus();
+			expect(await fireEvent.keyDown(italic, { key: 'Home', [modifier]: true })).toBe(true);
+			expect(italic).toHaveFocus();
+			expect(keys.seen).toEqual(['ArrowRight', 'Home']);
+			keys.stop();
+		});
+	}
+
+	it('stops propagation and prevents default only when focus moves', async () => {
+		render(ToggleGroupHarness, { loopFocus: false });
+		const bold = screen.getByRole('button', { name: 'Bold' });
+		const italic = screen.getByRole('button', { name: 'Italic' });
+		const keys = trackDocumentKeys();
+
+		bold.focus();
+		expect(await fireEvent.keyDown(bold, { key: 'ArrowRight' })).toBe(false);
+		expect(italic).toHaveFocus();
+		// At the end without loopFocus nothing moves, so the key passes through.
+		expect(await fireEvent.keyDown(italic, { key: 'ArrowRight' })).toBe(true);
+		expect(italic).toHaveFocus();
+		expect(keys.seen).toEqual(['ArrowRight']);
+		keys.stop();
+	});
+});
+
+// Base UI 1.4.1 maps true state to empty data attributes: Toggle state is
+// { pressed, disabled }; ToggleGroup state is { disabled, multiple, orientation },
+// its composite root also adds aria-orientation, which the port leaves out:
+// ARIA does not allow it on role="group" (data-orientation carries it).
+describe('Base UI state attributes', () => {
+	it('renders data-pressed and data-disabled on a Toggle like Base UI', async () => {
+		const view = render(Toggle, { children: label('Bold'), 'aria-label': 'Bold', defaultPressed: true });
+		const button = screen.getByRole('button', { name: 'Bold' });
+		expect(button).toHaveAttribute('data-pressed', '');
+		expect(button).not.toHaveAttribute('data-disabled');
+
+		await view.rerender({ children: label('Bold'), 'aria-label': 'Bold', disabled: true });
+		expect(button).toHaveAttribute('data-disabled', '');
+	});
+
+	it('renders data-multiple, data-disabled and data-orientation (not aria-orientation) on a ToggleGroup', () => {
+		const single = render(ToggleGroupHarness);
+		const group = screen.getByRole('group');
+		expect(group).toHaveAttribute('data-orientation', 'horizontal');
+		expect(group).not.toHaveAttribute('aria-orientation');
+		expect(group).not.toHaveAttribute('data-multiple');
+		expect(group).not.toHaveAttribute('data-disabled');
+		single.unmount();
+
+		render(ToggleGroupHarness, { multiple: true, disabled: true, orientation: 'vertical' });
+		const other = screen.getByRole('group');
+		expect(other).toHaveAttribute('data-multiple', '');
+		expect(other).toHaveAttribute('data-disabled', '');
+		expect(other).toHaveAttribute('data-orientation', 'vertical');
+		expect(other).not.toHaveAttribute('aria-orientation');
+		expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('data-disabled', '');
+	});
+});

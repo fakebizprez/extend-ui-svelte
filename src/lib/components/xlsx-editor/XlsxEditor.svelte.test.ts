@@ -205,19 +205,20 @@ describe('XlsxEditor', () => {
 		expect(input.selectionStart).toBe('Resistor kit'.length);
 		expect(input.selectionEnd).toBe('Resistor kit'.length);
 
-		// Enter commits and hands focus back to the cell for keyboard use.
+		// Enter commits and, like upstream, keeps the cell active with focus on the grid.
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
-		expect(screen.getByRole('gridcell', { name: 'Resistor kit' })).toHaveFocus();
+		expect(screen.getByRole('grid')).toHaveFocus();
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('B2');
 
-		// Enter on the focused, selected cell edits it again with focus in the input.
-		await fireEvent.keyDown(screen.getByRole('gridcell', { name: 'Resistor kit' }), {
-			key: 'Enter'
-		});
-		expect(await screen.findByTestId('cell-input')).toHaveFocus();
+		// F2 edits the active cell again, caret at the end.
+		await fireEvent.keyDown(screen.getByRole('grid'), { key: 'F2' });
+		const again = (await screen.findByTestId('cell-input')) as HTMLInputElement;
+		expect(again).toHaveFocus();
+		expect(again.selectionStart).toBe('Resistor kit'.length);
 	});
 
-	it('returns focus to the cell after Escape cancels an edit', async () => {
+	it('returns focus to the grid after Escape cancels an edit', async () => {
 		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
 		await gridLoaded();
 
@@ -227,7 +228,128 @@ describe('XlsxEditor', () => {
 		await fireEvent.keyDown(input, { key: 'Escape' });
 
 		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
-		expect(screen.getByRole('gridcell', { name: '120' })).toHaveFocus();
+		expect(screen.getByRole('grid')).toHaveFocus();
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('C2');
+		expect(screen.getByRole('gridcell', { name: '120' })).toBeVisible();
+	});
+
+	it('is a single Tab stop: the grid is focusable, cells are not', async () => {
+		const { container } = render(XlsxEditor, { ...DARK, data: inventoryBytes() });
+		await gridLoaded();
+
+		expect(screen.getByRole('grid')).toHaveAttribute('tabindex', '0');
+		const focusableCells = container.querySelectorAll('[role="gridcell"][tabindex]:not([tabindex="-1"])');
+		expect(focusableCells).toHaveLength(0);
+	});
+
+	it('moves the active cell with the arrows, Tab, and Enter, like upstream', async () => {
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
+		await gridLoaded();
+		const grid = screen.getByRole('grid');
+		const address = () => screen.getByTestId('active-cell-address').textContent;
+
+		// With no active cell, keys start from A1.
+		grid.focus();
+		await fireEvent.keyDown(grid, { key: 'ArrowDown' });
+		expect(address()).toBe('A2');
+		await fireEvent.keyDown(grid, { key: 'ArrowRight' });
+		expect(address()).toBe('B2');
+		expect(screen.getByTestId('formula-bar')).toHaveValue('Resistor kit');
+		// The grid points assistive tech at the active cell.
+		const active = screen.getByRole('gridcell', { name: 'Resistor kit' });
+		expect(grid).toHaveAttribute('aria-activedescendant', active.id);
+		expect(active).toHaveAttribute('aria-selected', 'true');
+
+		await fireEvent.keyDown(grid, { key: 'Tab' });
+		expect(address()).toBe('C2');
+		await fireEvent.keyDown(grid, { key: 'Tab', shiftKey: true });
+		expect(address()).toBe('B2');
+		await fireEvent.keyDown(grid, { key: 'Enter' });
+		expect(address()).toBe('B3');
+		await fireEvent.keyDown(grid, { key: 'Enter', shiftKey: true });
+		expect(address()).toBe('B2');
+		await fireEvent.keyDown(grid, { key: 'End' });
+		expect(address()).toBe('D2');
+		await fireEvent.keyDown(grid, { key: 'Home', ctrlKey: true });
+		expect(address()).toBe('A1');
+		await fireEvent.keyDown(grid, { key: 'ArrowDown', ctrlKey: true });
+		expect(address()).toBe('A4');
+		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
+	});
+
+	it('starts editing when a printable key is typed, replacing the value', async () => {
+		const onCellChange = vi.fn();
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), onCellChange });
+		await gridLoaded();
+		await fireEvent.click(screen.getByRole('gridcell', { name: '120' }));
+		const grid = screen.getByRole('grid');
+		expect(grid).toHaveFocus();
+
+		await fireEvent.keyDown(grid, { key: '7' });
+		const input = (await screen.findByTestId('cell-input')) as HTMLInputElement;
+		expect(input).toHaveFocus();
+		expect(input).toHaveValue('7');
+		await fireEvent.input(input, { target: { value: '75' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		expect(await screen.findByRole('gridcell', { name: '75' })).toBeVisible();
+		expect(onCellChange).toHaveBeenCalledWith({ sheet: 'Inventory', row: 1, col: 2, value: 75 });
+		// Ctrl/Cmd shortcuts do not start an edit.
+		await fireEvent.keyDown(grid, { key: 'c', ctrlKey: true });
+		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
+	});
+
+	it('clears the active cell with Delete or Backspace', async () => {
+		const onCellChange = vi.fn();
+		render(XlsxEditor, { ...DARK, data: inventoryBytes(), onCellChange });
+		await gridLoaded();
+		await fireEvent.click(screen.getByRole('gridcell', { name: 'Resistor kit' }));
+		const grid = screen.getByRole('grid');
+
+		await fireEvent.keyDown(grid, { key: 'Delete' });
+		expect(screen.queryByRole('gridcell', { name: 'Resistor kit' })).not.toBeInTheDocument();
+		expect(screen.getByTestId('formula-bar')).toHaveValue('');
+		expect(onCellChange).toHaveBeenLastCalledWith({ sheet: 'Inventory', row: 1, col: 1, value: null });
+
+		await fireEvent.keyDown(grid, { key: 'ArrowRight' });
+		await fireEvent.keyDown(grid, { key: 'Backspace' });
+		expect(screen.queryByRole('gridcell', { name: '120' })).not.toBeInTheDocument();
+	});
+
+	it('commits and moves when an arrow key is pressed while editing, like upstream', async () => {
+		render(XlsxEditor, { ...DARK, data: inventoryBytes() });
+		await gridLoaded();
+		await fireEvent.dblClick(screen.getByRole('gridcell', { name: '120' }));
+		const input = await screen.findByTestId('cell-input');
+		await fireEvent.input(input, { target: { value: '121' } });
+
+		await fireEvent.keyDown(input, { key: 'ArrowDown' });
+		expect(screen.queryByTestId('cell-input')).not.toBeInTheDocument();
+		expect(screen.getByRole('gridcell', { name: '121' })).toBeVisible();
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('C3');
+		expect(screen.getByRole('grid')).toHaveFocus();
+	});
+
+	it('scrolls the virtualized grid to keep the active cell rendered', async () => {
+		const workbook = utils.book_new();
+		const data: (string | number)[][] = [['id']];
+		for (let i = 1; i < 500; i += 1) data.push([`row-${i}`]);
+		utils.book_append_sheet(workbook, utils.aoa_to_sheet(data), 'Big');
+		const bytes = new Uint8Array(write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+		render(XlsxEditor, { ...DARK, data: bytes, height: 340 });
+		await screen.findByRole('gridcell', { name: 'row-1' });
+		expect(screen.queryByRole('gridcell', { name: 'row-499' })).not.toBeInTheDocument();
+
+		const grid = screen.getByRole('grid');
+		grid.focus();
+		await fireEvent.keyDown(grid, { key: 'ArrowDown', ctrlKey: true });
+
+		const last = await screen.findByRole('gridcell', { name: 'row-499' });
+		expect(last).toHaveAttribute('aria-selected', 'true');
+		expect(screen.getByTestId('active-cell-address')).toHaveTextContent('A500');
+		expect(grid).toHaveAttribute('aria-activedescendant', last.id);
+		// Row 499 (0-based) ends at 500 * 34; the 340px viewport shows its last 10 rows.
+		expect(screen.getByTestId('virtual-viewport').scrollTop).toBe(500 * 34 - 340);
 	});
 
 	it('evaluates a formula entered into a cell', async () => {

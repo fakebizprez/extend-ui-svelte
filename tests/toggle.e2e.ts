@@ -41,7 +41,8 @@ test('a toggle flips on click and with Space and Enter', async ({ page }) => {
 
 	await bold.click();
 	await expect(bold).toHaveAttribute('aria-pressed', 'true');
-	await expect(bold).toHaveAttribute('data-pressed', 'true');
+	// Base UI renders true state as an empty data attribute.
+	await expect(bold).toHaveAttribute('data-pressed', '');
 	await expect(status).toHaveText('Bold is on');
 
 	await page.keyboard.press('Space');
@@ -179,4 +180,47 @@ test('a group item without a value still toggles, like Base UI', async ({ page }
 	await auto.click();
 	await expect(auto).toHaveAttribute('aria-pressed', 'true');
 	await expect(group.getByRole('button', { name: 'Small text' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('arrow keys with a modifier held are left for shortcuts, like Base UI', async ({ page }) => {
+	const group = page.getByRole('group', { name: 'Text alignment' });
+	const left = group.getByRole('button', { name: 'Align left' });
+	await page.evaluate(() => {
+		const w = window as unknown as { seenKeys: string[] };
+		w.seenKeys = [];
+		document.addEventListener('keydown', (event) =>
+			w.seenKeys.push(`${event.key}:${event.defaultPrevented}`)
+		);
+	});
+
+	for (const chord of ['Alt+ArrowRight', 'Shift+ArrowRight', 'Control+ArrowRight', 'Meta+ArrowRight']) {
+		await left.focus();
+		await page.keyboard.press(chord);
+		await expect(left).toBeFocused();
+	}
+	await page.keyboard.press('ArrowRight');
+	await expect(group.getByRole('button', { name: 'Align center' })).toBeFocused();
+
+	// Modified arrows reach the document unprevented; the plain arrow that moved focus does not.
+	const seen = await page.evaluate(() =>
+		(window as unknown as { seenKeys: string[] }).seenKeys.filter((key) => key.startsWith('Arrow'))
+	);
+	expect(seen).toEqual(Array(4).fill('ArrowRight:false'));
+});
+
+test('toggles and groups carry Base UI state attributes', async ({ page }) => {
+	const formatting = page.getByRole('group', { name: 'Text formatting' });
+	await expect(formatting).toHaveAttribute('data-multiple', '');
+	await expect(formatting).toHaveAttribute('data-orientation', 'horizontal');
+	await expect(formatting).not.toHaveAttribute('aria-orientation');
+	await expect(formatting.getByRole('button', { name: 'Bold' })).toHaveAttribute('data-pressed', '');
+
+	await expect(page.getByRole('group', { name: 'View mode' })).toHaveAttribute('data-orientation', 'vertical');
+	const alignment = page.getByRole('group', { name: 'Text alignment' });
+	await expect(alignment).not.toHaveAttribute('data-multiple');
+
+	const disabled = page.getByRole('group', { name: 'Disabled group' });
+	await expect(disabled).toHaveAttribute('data-disabled', '');
+	await expect(disabled.getByRole('button').first()).toHaveAttribute('data-disabled', '');
+	await expect(page.getByRole('button', { name: 'Disabled toggle' })).toHaveAttribute('data-disabled', '');
 });

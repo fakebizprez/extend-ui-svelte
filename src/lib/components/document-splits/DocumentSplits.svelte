@@ -11,8 +11,9 @@
 	  automated tests where native drag events are impractical.
 	- `class` is accepted alongside the upstream `className`. splits,
 	  activePage, onSelectPage, and onSplitsChange are required as in the
-	  upstream API table. Splits are also `$bindable` and mutations are pure
-	  helpers in ./splits.js, so `bind:splits` works too.
+	  upstream API table. Like upstream, splits are controlled: the component
+	  renders only what the parent passes and reports edits to onSplitsChange.
+	  Mutations are pure helpers in ./splits.js.
 	- New operations upstream inlines or lacks: rename via a title input,
 	  `Split <title> in two` (midpoint cut), and an `activePage` highlight
 	  (0 for none; upstream documents the prop but never renders it).
@@ -40,7 +41,6 @@
 		findGroupId,
 		getGroupPages,
 		getPageNumber,
-		INITIAL_SPLITS,
 		movePage,
 		movePageToAdjacentGroup,
 		movePageToGroup,
@@ -54,7 +54,7 @@
 	} from './splits.js';
 
 	interface Props {
-		/** Split groups. Required, like upstream; also `bind:splits`. */
+		/** Split groups. Required and controlled, like upstream. */
 		splits: DocumentSplit[];
 		/** 1-based page number highlighted as active (0 for none). Required, like upstream's docs. */
 		activePage: number;
@@ -77,7 +77,7 @@
 	}
 
 	let {
-		splits = $bindable(INITIAL_SPLITS),
+		splits,
 		activePage,
 		thumbnailImages = {},
 		pdfUrl = null,
@@ -103,8 +103,8 @@
 	let dropTargetGroup = $state<string | null>(null);
 
 	function commit(next: DocumentSplit[]): void {
+		// Controlled, like upstream: the parent decides whether the edit lands.
 		if (areSplitGroupsEqual(splits, next)) return;
-		splits = next;
 		onSplitsChange?.(next);
 	}
 

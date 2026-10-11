@@ -9,7 +9,9 @@
 	  portal). It keeps upstream's Popover behavior: aria-expanded on the
 	  trigger, focus moves in on open, Escape / outside press / tabbing out
 	  close it, and focus returns to the trigger.
-	- Copy buttons, focus-reselect, and alpha scrub-dragging are omitted.
+	- Channel-row copy buttons, focus-reselect, and alpha scrub-dragging are
+	  omitted. Copying a fully selected value field copies the CSS color, like
+	  upstream.
 	- Like upstream, `disabled` reaches only the channel and opacity fields
 	  inside the panel; the plane, sliders, eyedropper, value field, and format
 	  select stay interactive.
@@ -45,6 +47,7 @@
 	import {
 		clamp,
 		formatColorValue,
+		formatCssColor,
 		getOklchPlanePixels,
 		hslToRgb,
 		hsvToHsl,
@@ -270,6 +273,8 @@
 	const rawOklch = $derived(rgbToOklch(picker.rgb, hsva.h));
 	const oklch = $derived(withHueContinuity(rawOklch, hsva.h, rawOklch.c / 0.33));
 	const parts = $derived<ColorParts>({ rgb: picker.rgb, hsl, oklch, alpha: hsva.a });
+	// Copied from a fully selected value field, like upstream's `cssColor`.
+	const cssColor = $derived(formatCssColor(format, parts, { includeAlpha: showAlpha }));
 	const opaqueColor = $derived(
 		`rgb(${Math.round(picker.rgb.r)} ${Math.round(picker.rgb.g)} ${Math.round(picker.rgb.b)})`
 	);
@@ -610,6 +615,7 @@
 				<div class="flex h-8 min-w-0 flex-1 items-center rounded-md border border-input bg-popover">
 					<DraftInput
 						aria-label="Color value"
+						copyValue={() => cssColor}
 						class="h-full min-w-0 flex-1 rounded-[inherit] border-0 bg-transparent px-2 py-0 text-center text-sm leading-none tabular-nums outline-none"
 						value={formatColorValue(format, parts)}
 						onCommitText={commitText}
@@ -734,6 +740,7 @@
 				</button>
 				<DraftInput
 					aria-label="{label} value"
+					copyValue={() => cssColor}
 					class="h-full w-full min-w-0 grow border-0 bg-transparent px-[calc(--spacing(2.5)-1px)] text-base tabular-nums outline-none"
 					{disabled}
 					value={formatColorValue(format, parts)}

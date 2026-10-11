@@ -79,6 +79,9 @@
 			<code>SchemaJsonView</code> is exported like upstream, but renders plain preformatted JSON
 			instead of the syntax-highlighted, virtualized code file.
 		</li>
+		<li>
+			Port-only exports, the component under its port name, its props type, and the field factory helpers and type lists: <code>SchemaBuilder</code>, <code>SchemaBuilderProps</code>, <code>createSchemaBuilderEnumValue</code>, <code>createSchemaBuilderId</code>, <code>createSchemaBuilderProperty</code>, <code>normalizePropertyForType</code>, <code>SCHEMA_BUILDER_ARRAY_ITEM_TYPES</code>, and <code>SCHEMA_BUILDER_FIELD_TYPES</code>.
+		</li>
 	</ul>
 </section>
 

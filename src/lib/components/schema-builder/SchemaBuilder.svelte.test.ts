@@ -532,3 +532,16 @@ describe('serializeSchema', () => {
 		).toEqual({ type: 'object', properties: {} });
 	});
 });
+
+describe('schema-builder docs', () => {
+	it('lists every port-only export under Differences from upstream', async () => {
+		const exports = Object.keys(await import('./index.js'));
+		const page = (await import('../../../routes/schema-builder/+page.svelte?raw')).default as string;
+		const differences = page.slice(page.indexOf('Differences from upstream'));
+		const upstream = new Set(['default', 'SchemaBuilderPanel', 'SchemaJsonView', 'SAMPLE_SCHEMA', 'serializeSchema']);
+		const missing = exports.filter(
+			(name) => !upstream.has(name) && !differences.includes(`<code>${name}</code>`)
+		);
+		expect(missing).toEqual([]);
+	});
+});

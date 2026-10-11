@@ -9,7 +9,9 @@
 	theme), and no `ToggleGroupPrimitive` re-export (Base UI is React-only).
 	Like Base UI 1.4.1, the group is one Tab stop (the last focused item, else
 	the first in DOM order; a disabled first item passes it on) and arrow
-	keys, Home, and End move focus inside it.
+	keys, Home, and End move focus inside it. Keys held with Shift, Control,
+	Alt, or Meta are left alone, and only a key that moves focus is consumed
+	(preventDefault + stopPropagation).
 	`onPressedChange` and `onValueChange` get Base UI-style event details
 	(`cancel()` skips the change). A consumer `onkeydown` runs before
 	the built-in navigation; `event.preventDefault()` stands in for Base UI's
@@ -116,6 +118,8 @@
 	function handleKeyDown(event: KeyboardEvent) {
 		(onkeydown as ((event: KeyboardEvent) => void) | undefined)?.(event);
 		if (event.defaultPrevented) return;
+		// Like Base UI's composite root: leave shortcuts such as Alt+Left alone.
+		if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
 		const root = event.currentTarget as HTMLElement;
 		const items = Array.from(
 			root.querySelectorAll<HTMLButtonElement>('[data-slot="toggle-group-item"]:not(:disabled)')
@@ -130,9 +134,13 @@
 		else if (event.key === 'Home') next = 0;
 		else if (event.key === 'End') next = items.length - 1;
 		else return;
-		event.preventDefault();
 		if (loopFocus) next = (next + items.length) % items.length;
-		items[Math.min(Math.max(next, 0), items.length - 1)]?.focus();
+		next = Math.min(Math.max(next, 0), items.length - 1);
+		// Only a key that moves focus is consumed, as in Base UI.
+		if (next === index) return;
+		event.preventDefault();
+		event.stopPropagation();
+		items[next]?.focus();
 	}
 
 	// Roving tab stop, like Base UI's composite group: Tab enters the group
@@ -179,6 +187,8 @@
 		isDark && 'dark'
 	)}
 	data-orientation={orientation}
+	data-multiple={multiple ? '' : undefined}
+	data-disabled={disabled ? '' : undefined}
 	data-slot="toggle-group"
 	data-spacing={resolvedSpacing}
 	role="group"

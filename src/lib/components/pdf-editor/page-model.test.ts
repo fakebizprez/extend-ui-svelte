@@ -85,6 +85,11 @@ describe('deleteEditPage', () => {
 		const state = createEditState(2);
 		expect(deleteEditPage(state, 5)).toEqual(state);
 	});
+
+	it('refuses to delete the last page, like upstream', () => {
+		const state = createEditState(1);
+		expect(deleteEditPage(state, 0)).toBe(state);
+	});
 });
 
 describe('moveEditPage', () => {

@@ -76,6 +76,17 @@ describe('CsvTsvViewer', () => {
 		expect(screen.getByTestId('search-result-address')).toHaveTextContent('Status!C1');
 	});
 
+	it('closes the find popover on Escape and returns focus to the trigger, like upstream', async () => {
+		render(CsvTsvViewer, { data: SAMPLE_CSV, search: true });
+		const panel = await search('approved', '1 / 2');
+		const input = within(panel).getByRole('searchbox', { name: 'Search CSV' });
+		expect(input).toHaveFocus();
+
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(screen.queryByRole('dialog', { name: 'Search CSV' })).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Search CSV' })).toHaveFocus();
+	});
+
 	it('closes the find popover on an outside click, like upstream', async () => {
 		render(CsvTsvViewer, { data: SAMPLE_CSV, search: true });
 		const panel = await search('approved', '1 / 2');

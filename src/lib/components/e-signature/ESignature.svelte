@@ -259,13 +259,21 @@
 		};
 	});
 
+	// Only the latest render may report an error: a newer render on the same
+	// canvas cancels the older one, and PDF.js rejects it with
+	// RenderingCancelledException.
+	let renderGeneration = 0;
+
 	async function renderPreview(): Promise<void> {
 		const eng = engine;
 		const canvas = previewCanvas;
 		if (!eng || !canvas || status !== 'ready' || numPages === 0) return;
+		const generation = ++renderGeneration;
 		try {
 			await eng.renderPage(activePage, canvas, { scale: 1 });
 		} catch (failure: unknown) {
+			if (generation !== renderGeneration) return;
+			if (failure instanceof Error && failure.name === 'RenderingCancelledException') return;
 			status = 'error';
 			loadError =
 				failure instanceof Error ? failure.message : 'Unable to render the PDF preview.';

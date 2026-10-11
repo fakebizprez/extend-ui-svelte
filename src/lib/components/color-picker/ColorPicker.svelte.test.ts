@@ -355,3 +355,50 @@ describe('ColorPicker className alias', () => {
 		expect(container.firstElementChild).toHaveClass('panel-alias');
 	});
 });
+
+// Upstream's DraftInput copies the CSS color (formatCssColor) when the whole
+// value field is selected; a partial selection copies the selected text natively.
+describe('ColorPicker copy', () => {
+	async function copyFrom(field: HTMLInputElement, start = 0, end = field.value.length) {
+		field.focus();
+		field.setSelectionRange(start, end);
+		const setData = vi.fn();
+		const notPrevented = await fireEvent.copy(field, { clipboardData: { setData } });
+		return { setData, notPrevented };
+	}
+
+	it('copies the full CSS color from a fully selected panel value field', async () => {
+		render(ColorPicker, { value: '#FF7FFF', variant: 'panel', defaultFormat: 'rgb' });
+
+		const { setData, notPrevented } = await copyFrom(screen.getByLabelText('Color value') as HTMLInputElement);
+		expect(notPrevented).toBe(false);
+		expect(setData).toHaveBeenCalledWith('text/plain', 'rgb(255, 127, 255)');
+	});
+
+	it('keeps the # and alpha when copying hex from the input variant', async () => {
+		render(ColorPicker, { value: '#FF7FFF80', showAlpha: true });
+
+		const { setData } = await copyFrom(screen.getByLabelText('Choose color value') as HTMLInputElement);
+		expect(setData).toHaveBeenCalledWith('text/plain', '#FF7FFF80');
+	});
+
+	it('leaves a partial selection to the browser', async () => {
+		render(ColorPicker, { value: '#FF7FFF', variant: 'panel' });
+
+		const { setData, notPrevented } = await copyFrom(
+			screen.getByLabelText('Color value') as HTMLInputElement,
+			0,
+			2
+		);
+		expect(notPrevented).toBe(true);
+		expect(setData).not.toHaveBeenCalled();
+	});
+
+	it('copies channel fields as plain text, like upstream', async () => {
+		render(ColorPicker, { value: '#FF7FFF', variant: 'panel' });
+
+		const { setData, notPrevented } = await copyFrom(screen.getByLabelText('Red') as HTMLInputElement);
+		expect(notPrevented).toBe(true);
+		expect(setData).not.toHaveBeenCalled();
+	});
+});

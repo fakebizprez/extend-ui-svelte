@@ -306,3 +306,96 @@ test('legacy VML pictures keep their embedded data:image source and render', asy
 	expect(box?.width ?? 0).toBeGreaterThan(0);
 	expect(box?.height ?? 0).toBeGreaterThan(0);
 });
+
+/** Page number with the most visible height in the document viewport (rendered positions). */
+function mostVisiblePage(page: Page): Promise<number> {
+	return page.getByTestId('docx-viewport').evaluate((viewport) => {
+		const bounds = viewport.getBoundingClientRect();
+		let best = 0;
+		let bestVisible = 0;
+		for (const section of viewport.querySelectorAll<HTMLElement>('[data-docx-page]')) {
+			const rect = section.getBoundingClientRect();
+			const visible = Math.min(rect.bottom, bounds.bottom) - Math.max(rect.top, bounds.top);
+			if (visible > bestVisible) [best, bestVisible] = [Number(section.dataset.docxPage), visible];
+		}
+		return best;
+	});
+}
+
+for (const zoom of ['50', '100', 'fit-width']) {
+	test(`at zoom ${zoom}, Next walks every page and the indicator follows scrolling`, async ({
+		page
+	}) => {
+		await page.goto('/docx-viewer');
+		await waitForSettledNavigation(page);
+		await expect(page.getByTestId('docx-container')).toContainText(EXPECTED_TEXT, {
+			timeout: 20000
+		});
+		await page.getByTestId('docx-file-input').setInputFiles({
+			name: 'eight.docx',
+			mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+			buffer: await multiPageDocx(8)
+		});
+		const indicator = page.getByTestId('docx-page-indicator');
+		await expect(indicator).toContainText('of 8', { timeout: 20000 });
+		await page.getByRole('combobox', { name: 'Zoom level' }).selectOption(zoom);
+		const viewport = page.getByTestId('docx-viewport');
+		await viewport.evaluate((element) => element.scrollTo({ top: 0 }));
+		await expect(indicator).toHaveText(/Page\s+1\s+of 8/);
+
+		for (let target = 2; target <= 8; target += 1) {
+			await page.getByRole('button', { name: 'Next page' }).click();
+			await expect(indicator).toHaveText(new RegExp(`Page\\s+${target}\\s+of 8`));
+			// The page jumped to is on screen.
+			const visible = await page.locator(`[data-docx-page="${target}"]`).evaluate((section) => {
+				const viewportRect = section.closest('[data-testid="docx-viewport"]')!.getBoundingClientRect();
+				const rect = section.getBoundingClientRect();
+				return rect.bottom > viewportRect.top && rect.top < viewportRect.bottom;
+			});
+			expect(visible, `page ${target} visible`).toBe(true);
+		}
+		await expect(page.getByRole('button', { name: 'Next page' })).toBeDisabled();
+
+		// Free scrolling: the indicator names the most visible page.
+		for (const fraction of [0.15, 0.4, 0.65]) {
+			await viewport.evaluate((element, f) => {
+				element.scrollTop = (element.scrollHeight - element.clientHeight) * f;
+			}, fraction);
+			const expected = await mostVisiblePage(page);
+			await expect(indicator).toHaveText(new RegExp(`Page\\s+${expected}\\s+of 8`));
+		}
+	});
+}
+
+test('the thumbnail listbox moves through pages with the arrow, Home, and End keys', async ({
+	page
+}) => {
+	await page.goto('/docx-viewer');
+	await waitForSettledNavigation(page);
+	await expect(page.getByTestId('docx-container')).toContainText(EXPECTED_TEXT, {
+		timeout: 20000
+	});
+	await page.getByTestId('docx-file-input').setInputFiles({
+		name: 'eight.docx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		buffer: await multiPageDocx(8)
+	});
+	const indicator = page.getByTestId('docx-page-indicator');
+	await expect(indicator).toContainText('of 8', { timeout: 20000 });
+	await page.getByRole('button', { name: 'Toggle thumbnails' }).click();
+	const listbox = page.getByRole('listbox', { name: 'DOCX pages' });
+
+	await listbox.focus();
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('ArrowDown');
+	await expect(indicator).toHaveText(/Page\s+3\s+of 8/);
+	await expect(page.getByRole('option', { name: 'Page 3' })).toHaveAttribute('aria-selected', 'true');
+	await page.keyboard.press('End');
+	await expect(indicator).toHaveText(/Page\s+8\s+of 8/);
+	await expect(page.getByRole('option', { name: 'Page 8' })).toBeInViewport();
+	await page.keyboard.press('ArrowUp');
+	await expect(indicator).toHaveText(/Page\s+7\s+of 8/);
+	await page.keyboard.press('Home');
+	await expect(indicator).toHaveText(/Page\s+1\s+of 8/);
+	await expect(listbox).toBeFocused();
+});

@@ -49,7 +49,9 @@
 <ul>
 	<li>Document-level edits only (rotate, delete, reorder, reset, download). Not ported yet: annotate, sign, forms, redact, search, print, password prompts, undo/redo, and the imperative handle.</li>
 	<li>Keyboard shortcuts while the editor has focus: <kbd>⌘/Ctrl S</kbd> download, <kbd>⌘/Ctrl =</kbd> and <kbd>⌘/Ctrl -</kbd> zoom, <kbd>⌘/Ctrl 0</kbd> fit page. Upstream's undo/redo, print, search, and Escape/Delete annotation shortcuts are not ported.</li>
-	<li>A page list beside a single-page preview replaces the upstream scrolling workspace and side panels.</li>
+	<li>A page list beside a single-page preview replaces the upstream scrolling workspace and side panels. The list follows upstream's thumbnail listbox (focus the list, then ArrowUp/ArrowDown/Home/End); page actions (rotate, move, delete) sit in a toolbar above it, like upstream's pages panel.</li>
+	<li>Page actions apply to the one selected page. Not ported yet from upstream's pages panel: multi-page selection (Shift/⌘-click), insert blank page, append PDF, and extract pages.</li>
+	<li>Delete asks for confirmation in the editor and never removes the last page, like upstream; the notice shows inline instead of as a toast.</li>
 	<li>Renders with PDF.js through the shared engine and downloads with pdf-lib instead of EmbedPDF; zoom modes use EmbedPDF's formulas.</li>
 	<li>Dark mode is parent-controlled with <code>isDark</code> and <code>onIsDarkChange</code>; the editor renders no dark toggle.</li>
 	<li><code>class</code> and <code>className</code> are both accepted.</li>

@@ -66,7 +66,7 @@
 
 <div class="preview-frame">
 	<DocumentSplits
-		bind:splits
+		{splits}
 		activePage={selectedPage}
 		pdfUrl={PDF_URL}
 		{isDark}
@@ -86,7 +86,7 @@
 			Same export name, <code>DocumentSplits</code>. <code>class</code> is accepted alongside the
 			upstream <code>className</code>. <code>splits</code>, <code>activePage</code>,
 			<code>onSelectPage</code>, and <code>onSplitsChange</code> are required, as in the upstream
-			API table; <code>bind:splits</code> also works.
+			API table.
 		</li>
 		<li>
 			Native HTML5 drag-and-drop replaces dnd-kit, and every drag has a button equivalent (move
@@ -104,6 +104,9 @@
 		<li>
 			Dark mode is set by the parent through <code>isDark</code>; there is no theme switch inside
 			the component.
+		</li>
+		<li>
+			Port-only exports, the pure split helpers behind every edit (upstream keeps them private): <code>addSplit</code>, <code>areSplitGroupsEqual</code>, <code>arrayMove</code>, <code>createPageRangeLabel</code>, <code>findGroupId</code>, <code>getGroupPages</code>, <code>getPageNumber</code>, <code>movePage</code>, <code>movePageToAdjacentGroup</code>, <code>movePageToGroup</code>, <code>nextSplitId</code>, <code>removeSplit</code>, <code>renameSplit</code>, <code>reorderPageInGroup</code>, <code>reorderSplits</code>, and <code>splitGroup</code>.
 		</li>
 	</ul>
 </section>

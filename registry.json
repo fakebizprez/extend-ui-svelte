@@ -148,7 +148,11 @@
 					"path": "src/lib/components/xlsx-viewer/WorkbookSheetTabs.svelte",
 					"type": "registry:component"
 				},
-				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" }
+				{ "path": "src/lib/components/xlsx-viewer/index.ts", "type": "registry:lib" },
+				{
+					"path": "src/lib/components/xlsx-viewer/grid-navigation.ts",
+					"type": "registry:lib"
+				}
 			],
 			"registryDependencies": ["dark-mode", "engines", "virtual-list"]
 		},

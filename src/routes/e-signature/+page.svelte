@@ -71,6 +71,9 @@
 			>/<code>scale</code>, <code>penColor</code>, <code>backgroundColor</code>,
 			<code>showDownload</code>, and event callbacks.
 		</li>
+		<li>
+			Port-only exports, the component under its port name, and the placement and PDF stamping helpers and types: <code>ESignature</code>, <code>ESignatureProps</code>, <code>clampPage</code>, <code>clampScale</code>, <code>dataUrlToBytes</code>, <code>DEFAULT_POSITION_X</code>, <code>DEFAULT_POSITION_Y</code>, <code>DEFAULT_SCALE</code>, <code>DEFAULT_SIGNATURE_HEIGHT</code>, <code>DEFAULT_SIGNATURE_WIDTH</code>, <code>embedSignaturePng</code>, <code>ensurePdfExtension</code>, <code>getSignedDownloadFileName</code>, <code>MAX_SCALE</code>, <code>MIN_SCALE</code>, <code>resolvePlacement</code>, <code>SignaturePlacement</code>, and <code>SignaturePlacementInput</code>.
+		</li>
 	</ul>
 </section>
 

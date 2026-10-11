@@ -99,3 +99,28 @@ test('docs record the defaultPath and export differences', async ({ page }) => {
 	await expect(differences).toContainText('defaultPath');
 	await expect(differences).toContainText('FileSystemLoadChildrenArgs');
 });
+
+test('after collapsing the focused row\'s parent, Tab reaches that parent row', async ({ page }) => {
+	await openFileSystem(page);
+
+	await page.getByRole('button', { name: 'Expand invoices' }).click();
+	await page.getByRole('treeitem', { name: /2026/ }).click();
+	await page.getByRole('button', { name: 'Collapse invoices' }).click();
+
+	await page.getByLabel('Dark mode').focus();
+	await page.keyboard.press('Tab');
+	await expect(page.getByRole('treeitem', { name: /invoices/ })).toBeFocused();
+});
+
+test('arrow keys move the selection and report it, like upstream', async ({ page }) => {
+	await openFileSystem(page);
+
+	await page.getByRole('treeitem', { name: /invoices/ }).focus();
+	await page.keyboard.press('ArrowDown');
+
+	await expect(page.getByRole('treeitem', { name: /readme\.txt/ })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	await expect(page.getByTestId('file-system-selection')).toContainText('readme.txt');
+});

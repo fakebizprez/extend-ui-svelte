@@ -83,6 +83,14 @@
 		<code>XlsxEditor</code> is self-contained. Sheet tabs reuse the viewer's
 		<code>WorkbookSheetTabs</code>, as upstream does.
 	</li>
+	<li>
+		Keyboard follows upstream: the grid is one Tab stop; the arrows, Ctrl/Cmd+arrows, Home/End,
+		PageUp/PageDown, Tab/Shift+Tab, and Enter/Shift+Enter move the active cell; typing or F2
+		edits; Delete or Backspace clears. In the cell editor Enter commits and stays, Escape
+		cancels, and the arrows commit and move. Not ported: range selection (Shift+arrows move
+		instead of extending), undo/redo, copy/paste, and the column sort menu (upstream
+		<code>WorkbookTableHeaderMenu</code>).
+	</li>
 </ul>
 
 <p><a href="/">Back to all components</a></p>

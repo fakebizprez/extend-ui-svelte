@@ -144,7 +144,8 @@
 	class={cn(toggleVariants({ variant, size }), className, classNameAlias, isDark && 'dark')}
 	data-slot="toggle"
 	aria-pressed={pressed}
-	data-pressed={pressed || undefined}
+	data-pressed={pressed ? '' : undefined}
+	data-disabled={isDisabled ? '' : undefined}
 	disabled={isDisabled}
 	{tabindex}
 	bind:this={buttonEl}

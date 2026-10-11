@@ -31,10 +31,12 @@ async function blankPdfBytes(pages = 1): Promise<Uint8Array> {
 
 describe('signature placement helpers', () => {
 	it('exposes the documented defaults', () => {
-		expect(DEFAULT_SIGNATURE_WIDTH).toBe(150);
-		expect(DEFAULT_SIGNATURE_HEIGHT).toBe(50);
-		expect(DEFAULT_POSITION_X).toBe(72);
-		expect(DEFAULT_POSITION_Y).toBe(72);
+		// Upstream's INITIAL_FIELD bbox { x: 300, y: 504, width: 250, height: 58 } is
+		// measured from the top-left of a 612x792 page; y here is from the bottom.
+		expect(DEFAULT_SIGNATURE_WIDTH).toBe(250);
+		expect(DEFAULT_SIGNATURE_HEIGHT).toBe(58);
+		expect(DEFAULT_POSITION_X).toBe(300);
+		expect(DEFAULT_POSITION_Y).toBe(792 - (504 + 58));
 		expect(DEFAULT_SCALE).toBe(1);
 		expect(MIN_SCALE).toBe(0.25);
 		expect(MAX_SCALE).toBe(3);

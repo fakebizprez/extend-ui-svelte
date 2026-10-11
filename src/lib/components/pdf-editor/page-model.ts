@@ -46,9 +46,11 @@ export function rotateEditPage(
 	};
 }
 
-/** Remove the page at `index`. Out-of-range indexes return the state unchanged. */
+/** Remove the page at `index`; the last remaining page is never removed. Out-of-range indexes return the state unchanged. */
 export function deleteEditPage(state: PdfEditState, index: number): PdfEditState {
 	if (!Number.isInteger(index) || index < 0 || index >= state.pages.length) return state;
+	// Like upstream, a document always keeps at least one page.
+	if (state.pages.length <= 1) return state;
 	return { pages: state.pages.filter((_, i) => i !== index) };
 }
 

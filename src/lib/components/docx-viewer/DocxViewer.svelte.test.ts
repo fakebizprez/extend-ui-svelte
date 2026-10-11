@@ -2,7 +2,7 @@
 // Component tests: run in the Vitest client (jsdom) project.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import DocxViewer, { resolveZoomLevel } from './DocxViewer.svelte';
+import DocxViewer, { findMostVisiblePage, resolveZoomLevel } from './DocxViewer.svelte';
 import { DocxViewerPreview } from './index.js';
 
 vi.mock('../../engines/docx/index.js', () => ({
@@ -89,6 +89,27 @@ function deferredRender(text: string): { release: () => void; settled: Promise<u
 			return settled.then(() => new Promise((resolve) => setTimeout(resolve, 0)));
 		}
 	};
+}
+
+/**
+ * Gives the rendered pages zoomed geometry: each page is `zoomedHeight` px on
+ * screen while its offsetTop stays the unzoomed `naturalHeight` multiple, as
+ * CSS zoom reports it. The viewport is 600px tall and scrollTo scrolls it.
+ */
+function installZoomedGeometry(zoomedHeight = 500, naturalHeight = 1000): HTMLElement {
+	const viewport = screen.getByTestId('docx-viewport');
+	Object.defineProperty(viewport, 'clientHeight', { value: 600, configurable: true });
+	viewport.getBoundingClientRect = () => new DOMRect(0, 0, 800, 600);
+	viewport.scrollTo = ((options: ScrollToOptions) => {
+		viewport.scrollTop = options.top ?? 0;
+		viewport.dispatchEvent(new Event('scroll'));
+	}) as typeof viewport.scrollTo;
+	viewport.querySelectorAll<HTMLElement>('[data-docx-page]').forEach((page, index) => {
+		Object.defineProperty(page, 'offsetTop', { value: index * naturalHeight, configurable: true });
+		page.getBoundingClientRect = () =>
+			new DOMRect(0, index * zoomedHeight - viewport.scrollTop, 400, zoomedHeight);
+	});
+	return viewport;
 }
 
 function sidebarOptions(container: HTMLElement): NodeListOf<HTMLElement> {
@@ -180,6 +201,83 @@ describe('DocxViewer', () => {
 		expect(screen.getByTestId('docx-page-indicator')).toHaveTextContent('Page 1 of 3');
 	});
 
+	it('at a zoomed size, Next walks every page and scrolling tracks the most visible page', async () => {
+		mockManyPages(5);
+		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		const viewport = installZoomedGeometry();
+		const indicator = () => screen.getByTestId('docx-page-indicator');
+
+		for (const page of [2, 3, 4, 5]) {
+			await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+			expect(indicator()).toHaveTextContent(`Page ${page} of 5`);
+		}
+		// The rendered (zoomed) offset of page 3 is 1000px, not its unzoomed 2000px.
+		await fireEvent.click(screen.getByRole('button', { name: 'Current page 5. Edit page number' }));
+		const input = screen.getByRole('textbox', { name: 'Page number' });
+		await fireEvent.input(input, { target: { value: '3' } });
+		expect(viewport.scrollTop).toBe(1000);
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		// Page 3 spans 1000-1500 and page 4 1500-2000: at 1100, page 3 shows 400px.
+		viewport.scrollTop = 1100;
+		await fireEvent.scroll(viewport);
+		expect(indicator()).toHaveTextContent('Page 3 of 5');
+		// At 1350, page 4 shows 450px and page 3 only 150px.
+		viewport.scrollTop = 1350;
+		await fireEvent.scroll(viewport);
+		expect(indicator()).toHaveTextContent('Page 4 of 5');
+	});
+
+	it('navigates the thumbnail listbox with ArrowUp, ArrowDown, Home, and End, like upstream', async () => {
+		mockManyPages(5);
+		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		await fireEvent.click(screen.getByRole('button', { name: 'Toggle thumbnails' }));
+		const listbox = await screen.findByRole('listbox', { name: 'DOCX pages' });
+		const indicator = () => screen.getByTestId('docx-page-indicator');
+
+		// Upstream focus model: the listbox holds focus and points at the active option.
+		expect(listbox).toHaveAttribute('tabindex', '0');
+		const activeId = () => listbox.getAttribute('aria-activedescendant');
+		expect(document.getElementById(activeId() ?? '')).toHaveAccessibleName('Page 1');
+		expect(screen.getByRole('option', { name: 'Page 1' })).not.toHaveAttribute('tabindex');
+
+		await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+		await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+		expect(indicator()).toHaveTextContent('Page 3 of 5');
+		expect(document.getElementById(activeId() ?? '')).toHaveAccessibleName('Page 3');
+		await fireEvent.keyDown(listbox, { key: 'ArrowUp' });
+		expect(indicator()).toHaveTextContent('Page 2 of 5');
+		await fireEvent.keyDown(listbox, { key: 'End' });
+		expect(indicator()).toHaveTextContent('Page 5 of 5');
+		await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+		expect(indicator()).toHaveTextContent('Page 5 of 5');
+		await fireEvent.keyDown(listbox, { key: 'Home' });
+		expect(indicator()).toHaveTextContent('Page 1 of 5');
+		await fireEvent.keyDown(listbox, { key: 'ArrowUp' });
+		expect(indicator()).toHaveTextContent('Page 1 of 5');
+	});
+
+	it('scrolls the thumbnail rail to keep the keyboard-selected page in view', async () => {
+		mockManyPages(200);
+		const { container } = render(DocxViewer, { ...DARK, src: 'https://example.com/big.docx' });
+		await screen.findByText(FIXTURE_TEXT);
+		await fireEvent.click(screen.getByRole('button', { name: 'Toggle thumbnails' }));
+		const listbox = await screen.findByRole('listbox', { name: 'DOCX pages' });
+
+		await fireEvent.keyDown(listbox, { key: 'End' });
+
+		const rail = container.querySelector(
+			'[data-testid="docx-thumbnails"] [data-testid="virtual-viewport"]'
+		) as HTMLElement;
+		expect(rail.scrollTop).toBeGreaterThan(0);
+		expect(await screen.findByRole('option', { name: 'Page 200' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+	});
+
 	it('virtualizes the thumbnail sidebar instead of rendering every page', async () => {
 		mockManyPages(200);
 		const { container } = render(DocxViewer, { ...DARK, src: 'https://example.com/big.docx' });
@@ -225,6 +323,25 @@ describe('DocxViewer', () => {
 		expect(darkViewer.classList.contains('dark')).toBe(true);
 	});
 
+	it('disables the dark switch when there is no document, like upstream', () => {
+		render(DocxViewer, { ...DARK });
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+	});
+
+	it('disables the dark switch while loading and on error, like upstream', async () => {
+		let fail!: (error: Error) => void;
+		mockedRenderDocx.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (fail = reject))
+		);
+		render(DocxViewer, { ...DARK, src: 'https://example.com/doc.docx' });
+		await screen.findByText('Loading document…');
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+		await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+		fail(new Error('boom'));
+		await screen.findByRole('alert');
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+	});
+
 	it('notifies the parent when the dark-mode toggle is clicked', async () => {
 		const onIsDarkChange = vi.fn();
 		render(DocxViewer, {
@@ -233,6 +350,7 @@ describe('DocxViewer', () => {
 			isDark: false,
 			onIsDarkChange
 		});
+		await screen.findByText(FIXTURE_TEXT);
 
 		const toggle = await screen.findByRole('switch', { name: 'Toggle dark mode' });
 		expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -492,5 +610,19 @@ describe('resolveZoomLevel', () => {
 	it('returns null when the page or viewport has no size yet', () => {
 		expect(resolveZoomLevel('fit-width', { ...metrics, pageWidth: 0 })).toBeNull();
 		expect(resolveZoomLevel('fit-page', { ...metrics, viewportHeight: 0 })).toBeNull();
+	});
+});
+
+describe('findMostVisiblePage', () => {
+	it('picks the page with the largest visible height, preferring the earlier on ties', () => {
+		const pages = [
+			{ pageNumber: 1, top: -400, bottom: 100 },
+			{ pageNumber: 2, top: 100, bottom: 600 },
+			{ pageNumber: 3, top: 600, bottom: 1100 }
+		];
+		expect(findMostVisiblePage(0, 600, pages)).toBe(2);
+		expect(findMostVisiblePage(350, 850, pages)).toBe(2);
+		expect(findMostVisiblePage(0, 600, [])).toBeNull();
+		expect(findMostVisiblePage(0, 600, [{ pageNumber: 4, top: 700, bottom: 900 }])).toBeNull();
 	});
 });

@@ -99,6 +99,67 @@ describe('DocxEditor', () => {
 		expect(screen.queryByTestId('docx-editor-content')).not.toBeInTheDocument();
 	});
 
+	it('resets zoom to defaultZoomScale after an upload, like upstream', async () => {
+		render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		await screen.findAllByText(FIXTURE_TEXT);
+		const select = screen.getByRole('combobox', { name: 'Zoom level' }) as HTMLSelectElement;
+		await fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+		expect(select.value).toBe('110');
+
+		const input = screen.getByTestId('docx-editor-upload-input');
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'up.docx')] } });
+
+		await vi.waitFor(() =>
+			expect((screen.getByRole('combobox', { name: 'Zoom level' }) as HTMLSelectElement).value).toBe(
+				'100'
+			)
+		);
+	});
+
+	it('hides the old document while an upload loads and after it fails, like upstream', async () => {
+		render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		await screen.findAllByText(FIXTURE_TEXT);
+		let fail!: (error: Error) => void;
+		mockedRenderDocx.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (fail = reject))
+		);
+
+		const input = screen.getByTestId('docx-editor-upload-input');
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'broken.docx')] } });
+
+		expect(await screen.findByTestId('docx-editor-loading')).toBeVisible();
+		expect(screen.queryByRole('textbox', { name: 'Document editor' })).not.toBeInTheDocument();
+		expect(screen.getByTestId('docx-editor-content')).not.toBeVisible();
+
+		await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+		fail(new Error('not a zip'));
+
+		const alert = await screen.findByRole('alert');
+		expect(alert).toHaveTextContent('Unable to edit DOCX');
+		expect(alert).toHaveTextContent('not a zip');
+		expect(screen.queryByRole('textbox', { name: 'Document editor' })).not.toBeInTheDocument();
+		expect(screen.getByTestId('docx-editor-content')).toBeEmptyDOMElement();
+	});
+
+	it('disables the dark switch when there is no document, like upstream', () => {
+		render(DocxEditor, { ...DARK });
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+	});
+
+	it('disables the dark switch while loading and on error, like upstream', async () => {
+		let fail!: (error: Error) => void;
+		mockedRenderDocx.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (fail = reject))
+		);
+		render(DocxEditor, { ...DARK, src: 'https://example.com/a.docx' });
+		await screen.findByTestId('docx-editor-loading');
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+		await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+		fail(new Error('boom'));
+		await screen.findByRole('alert');
+		expect(screen.getByRole('switch', { name: 'Toggle dark mode' })).toBeDisabled();
+	});
+
 	it('accepts .docx only in the upload input, like upstream', () => {
 		render(DocxEditor, { ...DARK });
 
@@ -250,6 +311,8 @@ describe('DocxEditor', () => {
 			onIsDarkChange
 		});
 		const editor = await screen.findByTestId('docx-editor');
+		// The switch is enabled once the document is ready, like upstream.
+		await screen.findAllByText(FIXTURE_TEXT);
 
 		expect(editor).toHaveAttribute('data-dark', 'false');
 		expect(editor.classList.contains('dark')).toBe(false);

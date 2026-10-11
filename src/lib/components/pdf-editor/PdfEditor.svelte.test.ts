@@ -83,6 +83,24 @@ function stubPreviewSize(size: { width: number; height: number }): void {
 	}
 }
 
+/** Select a page through the thumbnail listbox, like a click in upstream's sidebar. */
+async function selectPage(position: number): Promise<void> {
+	await fireEvent.click(screen.getByRole('option', { name: `Page ${position}` }));
+}
+
+/** Run an action from the page toolbar on the selected page. */
+async function pageAction(name: string): Promise<void> {
+	const toolbar = screen.getByRole('toolbar', { name: 'Page actions' });
+	await fireEvent.click(within(toolbar).getByRole('button', { name }));
+}
+
+/** Delete the selected page through upstream's confirmation dialog. */
+async function deleteSelectedPage(): Promise<void> {
+	await pageAction('Delete pages');
+	const dialog = screen.getByRole('dialog', { name: 'Delete this page?' });
+	await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+}
+
 function previewPage(): HTMLElement {
 	const page = screen
 		.getByTestId('pdf-editor-preview')
@@ -215,21 +233,14 @@ describe('PdfEditor', () => {
 		render(PdfEditor, { src: SRC, onActivePageChange });
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Select page 3' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
+		await selectPage(3);
+		await deleteSelectedPage();
 		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 2 of 2');
 		expect(onActivePageChange.mock.calls).toEqual([[1], [3], [2]]);
 
-		// The selection follows its page: page 2 moves up to position 1.
-		await fireEvent.click(screen.getByRole('button', { name: 'Move page 2 up' }));
+		// The selection follows its page when it moves.
+		await pageAction('Move up');
 		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of 2');
-		expect(onActivePageChange).toHaveBeenLastCalledWith(1);
-
-		// Deleting a page above the selection shifts it up too.
-		await fireEvent.click(screen.getByRole('button', { name: 'Select page 1' }));
-		expect(onActivePageChange).toHaveBeenLastCalledWith(2);
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
-		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of 1');
 		expect(onActivePageChange).toHaveBeenLastCalledWith(1);
 	});
 
@@ -267,11 +278,11 @@ describe('PdfEditor', () => {
 		render(PdfEditor, { src: SRC, defaultZoom: 1 });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Select page 2' }));
+		await selectPage(2);
 
 		await vi.waitFor(() => expect(previewPage().style.width).toBe('792px'));
 		expect(previewPage().style.height).toBe('612px');
-		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 2 clockwise' }));
+		await pageAction('Rotate right');
 		expect(previewPage().style.width).toBe('612px');
 		expect(previewPage().style.height).toBe('792px');
 	});
@@ -281,7 +292,7 @@ describe('PdfEditor', () => {
 		const { container } = render(PdfEditor, { src: SRC, onPagesChange });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 1 clockwise' }));
+		await pageAction('Rotate right');
 
 		const entries = container.querySelectorAll('[data-testid="pdf-editor-page"]');
 		expect(entries[0]).toHaveAttribute('data-rotation', '90');
@@ -293,14 +304,15 @@ describe('PdfEditor', () => {
 		]);
 	});
 
-	it('deletes a page and updates the indicator', async () => {
+	it('deletes the selected page after confirmation and updates the indicator', async () => {
 		const onPagesChange = vi.fn();
 		const { container } = render(PdfEditor, { src: SRC, onPagesChange });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
+		await selectPage(2);
+		await deleteSelectedPage();
 
-		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of 2');
+		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 2 of 2');
 		expect(sourceOrder(container)).toEqual([1, 3]);
 		expect(onPagesChange).toHaveBeenLastCalledWith([
 			{ sourcePage: 1, rotation: 0 },
@@ -308,12 +320,12 @@ describe('PdfEditor', () => {
 		]);
 	});
 
-	it('reorders pages with the move controls', async () => {
+	it('reorders the selected page with the move actions', async () => {
 		const onPagesChange = vi.fn();
 		const { container } = render(PdfEditor, { src: SRC, onPagesChange });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Move page 1 down' }));
+		await pageAction('Move down');
 
 		expect(sourceOrder(container)).toEqual([2, 1, 3]);
 		expect(onPagesChange).toHaveBeenLastCalledWith([
@@ -322,7 +334,7 @@ describe('PdfEditor', () => {
 			{ sourcePage: 3, rotation: 0 }
 		]);
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Move page 1 up' }));
+		await pageAction('Move up');
 		expect(sourceOrder(container)).toEqual([1, 2, 3]);
 	});
 
@@ -330,8 +342,10 @@ describe('PdfEditor', () => {
 		const { container } = render(PdfEditor, { src: SRC });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 1 clockwise' }));
+		await selectPage(2);
+		await deleteSelectedPage();
+		await selectPage(1);
+		await pageAction('Rotate right');
 		expect(sourceOrder(container)).toEqual([1, 3]);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Reset edits' }));
@@ -346,8 +360,7 @@ describe('PdfEditor', () => {
 		render(PdfEditor, { src: SRC, onActivePageChange });
 
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		const entries = screen.getAllByTestId('pdf-editor-page');
-		await fireEvent.click(within(entries[1] as HTMLElement).getByRole('button', { name: 'Select page 2' }));
+		await selectPage(2);
 
 		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 2 of 3');
 		expect(onActivePageChange).toHaveBeenCalledWith(2);
@@ -383,8 +396,10 @@ describe('PdfEditor', () => {
 		render(PdfEditor, { src: SRC, fileName: 'edited-bank', onSave });
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Rotate page 1 clockwise' }));
+		await selectPage(3);
+		await deleteSelectedPage();
+		await selectPage(1);
+		await pageAction('Rotate right');
 		await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
 
 		expect(fetch).toHaveBeenCalledWith(SRC);
@@ -404,16 +419,73 @@ describe('PdfEditor', () => {
 		expect(exported.getPage(1).getSize().width).toBe(200);
 	});
 
-	it('disables export once every page is deleted', async () => {
-		render(PdfEditor, { src: SRC });
+	it('refuses to delete the last page, like upstream', async () => {
+		mockState.pageCount = 1;
+		const { container } = render(PdfEditor, { src: SRC });
 
+		expect(await screen.findByText('Page 1 of 1')).toBeVisible();
+		await pageAction('Delete pages');
+
+		expect(screen.getByRole('alert')).toHaveTextContent('A document needs at least one page.');
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(sourceOrder(container)).toEqual([1]);
+	});
+
+	it('confirms before deleting, and Cancel or Escape keeps the page', async () => {
+		const { container } = render(PdfEditor, { src: SRC });
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 1' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 2' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 3' }));
 
-		expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
-		expect(screen.getByTestId('pdf-editor-page-indicator')).toHaveTextContent('Page 1 of –');
+		await pageAction('Delete pages');
+		const dialog = screen.getByRole('dialog', { name: 'Delete this page?' });
+		expect(dialog).toHaveAttribute('aria-modal', 'true');
+		expect(dialog).toHaveAccessibleDescription(
+			'Content and annotations on the deleted pages are removed permanently.'
+		);
+		expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(sourceOrder(container)).toEqual([1, 2, 3]);
+
+		await pageAction('Delete pages');
+		await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(sourceOrder(container)).toEqual([1, 2, 3]);
+	});
+
+	it('uses upstream\'s listbox focus model and arrow keys for the page list', async () => {
+		const onActivePageChange = vi.fn();
+		render(PdfEditor, { src: SRC, onActivePageChange });
+		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+
+		const listbox = screen.getByRole('listbox', { name: 'Pages' });
+		expect(listbox).toHaveAttribute('tabindex', '0');
+		const options = within(listbox).getAllByRole('option');
+		expect(options.map((option) => option.getAttribute('aria-label'))).toEqual([
+			'Page 1',
+			'Page 2',
+			'Page 3'
+		]);
+		// Options hold no interactive controls; the page actions live in a toolbar.
+		for (const option of options) {
+			expect(option.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')).toHaveLength(0);
+		}
+		const active = () => document.getElementById(listbox.getAttribute('aria-activedescendant') ?? '');
+		expect(active()).toBe(options[0]);
+		expect(options[0]).toHaveAttribute('aria-selected', 'true');
+
+		await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+		expect(active()).toHaveAccessibleName('Page 2');
+		expect(screen.getByRole('option', { name: 'Page 2' })).toHaveAttribute('aria-selected', 'true');
+		expect(onActivePageChange).toHaveBeenLastCalledWith(2);
+		await fireEvent.keyDown(listbox, { key: 'End' });
+		expect(active()).toHaveAccessibleName('Page 3');
+		await fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+		expect(active()).toHaveAccessibleName('Page 3');
+		await fireEvent.keyDown(listbox, { key: 'Home' });
+		expect(active()).toHaveAccessibleName('Page 1');
+		await fireEvent.keyDown(listbox, { key: 'ArrowUp' });
+		expect(active()).toHaveAccessibleName('Page 1');
+		expect(await fireEvent.keyDown(listbox, { key: 'ArrowDown' })).toBe(false);
 	});
 
 	it('virtualizes a long page list instead of rendering every entry', async () => {
@@ -443,7 +515,7 @@ describe('PdfEditor', () => {
 
 		render(PdfEditor, { src: bytes, onSave });
 		expect(await screen.findByText('Page 1 of 3')).toBeVisible();
-		await fireEvent.click(screen.getByRole('button', { name: 'Delete page 1' }));
+		await deleteSelectedPage();
 		await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
 
 		await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
