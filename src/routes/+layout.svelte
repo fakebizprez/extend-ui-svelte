@@ -50,6 +50,11 @@
 	</aside>
 </div>
 
+<footer class="site-footer">
+	Built for Svelte by <a href="https://github.com/fakebizprez">Anthony Fecarotta</a> of
+	<a href="https://linehaul.ai">linehaul.ai</a>
+</footer>
+
 <style>
 	:global(body) {
 		margin: 0;
@@ -65,6 +70,19 @@
 		max-width: 90rem;
 		margin: 0 auto;
 		padding: 1.5rem;
+	}
+
+	.site-footer {
+		max-width: 90rem;
+		margin: 0 auto;
+		padding: 0 1.5rem 1rem;
+		color: var(--lh-muted);
+		font-size: 0.625rem;
+		text-align: right;
+	}
+
+	.site-footer a {
+		color: inherit;
 	}
 
 	.side,
@@ -139,6 +157,9 @@
 		.docs-shell {
 			grid-template-columns: minmax(0, 1fr);
 			padding: 1rem;
+		}
+		.site-footer {
+			padding: 0 1rem 1rem;
 		}
 		.side {
 			display: none;
