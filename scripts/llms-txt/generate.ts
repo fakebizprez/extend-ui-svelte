@@ -5,15 +5,14 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PREVIEW_COMPONENTS } from '../../src/routes/components';
+import { PREVIEW_COMPONENTS, SITE_TAGLINE } from '../../src/routes/components';
 import { NAV_GROUPS } from '../../src/routes/_shell/nav';
 
 export const BASE_URL = 'https://extend-ui-svelte.linehaul.ai';
 const REPO_URL = 'https://github.com/fakebizprez/extend-ui-svelte';
 const UPSTREAM_URL = 'https://github.com/extend-hq/ui';
 
-const TAGLINE =
-	'Svelte 5 component library for document-heavy apps: PDF, DOCX, XLSX, PPTX and CSV viewers and editors, file handling, and data-display primitives.';
+const TAGLINE = SITE_TAGLINE;
 
 const HOME_DESCRIPTION =
 	'Docs home with install instructions for the copy-in registry and the extend-ui-svelte npm package, plus the MIT license note.';

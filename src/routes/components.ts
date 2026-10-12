@@ -7,6 +7,9 @@ export interface PreviewComponent {
   description: string;
 }
 
+export const SITE_TAGLINE =
+  "Svelte 5 component library for document-heavy apps: PDF, DOCX, XLSX, PPTX and CSV viewers and editors, file handling, and data-display primitives.";
+
 export const PREVIEW_COMPONENTS: PreviewComponent[] = [
   {
     slug: "file-upload",

@@ -9,6 +9,7 @@
 	import Sidebar from './_shell/Sidebar.svelte';
 	import Toc from './_shell/Toc.svelte';
 	import { NAV_GROUPS, findComponent, groupOf, prevNext } from './_shell/nav';
+	import { SITE_TAGLINE } from './components';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -20,6 +21,10 @@
 	const group = $derived(slug ? groupOf(slug) : null);
 	const neighbors = $derived(slug ? prevNext(slug) : { prev: null, next: null });
 
+	const title = $derived(current ? `${current.title} | Extend UI Svelte` : 'Extend UI Svelte');
+	const description = $derived(current?.description ?? SITE_TAGLINE);
+	const canonical = $derived(page.url.href);
+
 	// Close the phone menu whenever the route changes.
 	$effect(() => {
 		void page.url.pathname;
@@ -28,7 +33,17 @@
 </script>
 
 <svelte:head>
-	<title>{current ? `${current.title} | Extend UI Svelte` : 'Extend UI Svelte'}</title>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:site_name" content="Extend UI Svelte" />
+	<meta property="og:type" content="website" />
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonical} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
 </svelte:head>
 
 <Header bind:menuOpen />
