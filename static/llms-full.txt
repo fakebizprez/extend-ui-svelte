@@ -1,0 +1,78 @@
+# Extend UI Svelte
+
+> Svelte 5 component library for document-heavy apps: PDF, DOCX, XLSX, PPTX and CSV viewers and editors, file handling, and data-display primitives.
+
+## Docs
+
+- [Extend UI Svelte](https://extend-ui-svelte.linehaul.ai/): Docs home with install instructions for the copy-in registry and the extend-ui-svelte npm package, plus the MIT license note.
+
+## Files
+
+Client-side file handling with Svelte 5 runes; dark mode is parent-controlled through isDark and onIsDarkChange.
+
+- [File Upload](https://extend-ui-svelte.linehaul.ai/file-upload): Drag-and-drop file picker with validation and per-file progress.
+- [File Thumbnail](https://extend-ui-svelte.linehaul.ai/file-thumbnail): Small preview tile that renders a file by type.
+- [File System](https://extend-ui-svelte.linehaul.ai/file-system): Folder and file tree with selection and navigation.
+
+## Viewers
+
+PDF pages, spreadsheet rows, and slide lists render virtualized; dark mode is parent-controlled through isDark and onIsDarkChange.
+
+- [Document Viewer Sidebar](https://extend-ui-svelte.linehaul.ai/document-viewer-sidebar): Sidebar shell for page thumbnails and outline next to a viewer.
+- [PDF Viewer](https://extend-ui-svelte.linehaul.ai/pdf-viewer): Virtualized PDF pages with zoom, search, and text selection.
+- [DOCX Viewer](https://extend-ui-svelte.linehaul.ai/docx-viewer): Read-only rendering of Word documents.
+- [XLSX Viewer](https://extend-ui-svelte.linehaul.ai/xlsx-viewer): Spreadsheet viewer with sheet tabs and virtualized rows.
+- [PPTX Viewer](https://extend-ui-svelte.linehaul.ai/pptx-viewer): Slide viewer with a thumbnail list for PowerPoint decks.
+- [CSV/TSV Viewer](https://extend-ui-svelte.linehaul.ai/csv-tsv-viewer): Virtualized table viewer for CSV and TSV files.
+
+## Editors
+
+In-browser editing with Svelte 5 runes; dark mode is parent-controlled through isDark and onIsDarkChange.
+
+- [PDF Editor](https://extend-ui-svelte.linehaul.ai/pdf-editor): PDF viewer with annotation and page editing tools.
+- [DOCX Editor](https://extend-ui-svelte.linehaul.ai/docx-editor): In-browser editor for Word documents.
+- [XLSX Editor](https://extend-ui-svelte.linehaul.ai/xlsx-editor): Spreadsheet editor with editable cells and sheet tabs.
+- [E-Signature](https://extend-ui-svelte.linehaul.ai/e-signature): Signature pad for drawing or typing a signature.
+
+## Data and layout
+
+Data-display components with Svelte 5 runes; dark mode is parent-controlled through isDark and onIsDarkChange.
+
+- [Document Splits](https://extend-ui-svelte.linehaul.ai/document-splits): Split a document into labeled page ranges.
+- [Schema Builder](https://extend-ui-svelte.linehaul.ai/schema-builder): Visual editor for extraction schemas and their fields.
+- [Layout Blocks](https://extend-ui-svelte.linehaul.ai/layout-blocks): Display parsed layout blocks such as text, tables, and figures.
+- [Bounding Box Citations](https://extend-ui-svelte.linehaul.ai/bounding-box-citations): Highlight cited regions on a page with bounding boxes.
+
+## Primitives
+
+Small controlled primitives with Svelte 5 runes; dark mode follows the parent isDark value.
+
+- [Group](https://extend-ui-svelte.linehaul.ai/group): Container that joins related controls into one visual unit.
+- [Color Picker](https://extend-ui-svelte.linehaul.ai/color-picker): Color selector with swatches and hex input.
+- [Toggle](https://extend-ui-svelte.linehaul.ai/toggle): Two-state button with a controlled pressed value.
+
+## Repository
+
+- [extend-ui-svelte repository](https://github.com/fakebizprez/extend-ui-svelte): MIT-licensed source for the Svelte 5 port, the docs site, the copy-in registry, and the npm package with its Vitest and Playwright suites.
+- [registry.json](https://github.com/fakebizprez/extend-ui-svelte/blob/main/registry.json): Shadcn-svelte style registry catalogue listing every component, its files, and its dependencies for copy-in installs.
+- [conversion-steps.md](https://github.com/fakebizprez/extend-ui-svelte/blob/main/docs/conversion-steps.md): Port inventory and conversion procedure documenting how each of the upstream React components maps to its Svelte 5 equivalent.
+- [migration-react-to-svelte.md](https://github.com/fakebizprez/extend-ui-svelte/blob/main/docs/migration-react-to-svelte.md): Migration note for React users of extend-hq/ui covering prop parity, the dark-mode contract, and Svelte runes usage.
+- [bun-migration.md](https://github.com/fakebizprez/extend-ui-svelte/blob/main/docs/bun-migration.md): Package-manager and tooling notes for the repo: Bun scripts, the pdf.worker.mjs teardown flake, and CI expectations.
+
+## Key Facts
+
+- Svelte 5 port of extend-hq/ui (https://github.com/extend-hq/ui) for document-heavy apps
+- 20 documented components in 5 groups: Files, Viewers, Editors, Data and layout, Primitives
+- Copy-in registry in the shadcn-svelte style, plus the extend-ui-svelte npm package for the heavy viewers and editors
+- Dark mode is parent-controlled through isDark and onIsDarkChange
+- MIT licensed
+- Viewers and editors reuse framework-free engines directly: PDF.js, SheetJS, docx-preview, pdf-lib, signature_pad, and papaparse
+- Large content stays virtualized: PDF pages, spreadsheet rows, and slide lists never render all at once
+- Browser-only engine code loads on the client with dynamic import() inside onMount
+
+## Contact
+
+- Website: https://extend-ui-svelte.linehaul.ai
+- Repository: https://github.com/fakebizprez/extend-ui-svelte
+- Upstream: https://github.com/extend-hq/ui
+
