@@ -10,6 +10,7 @@
 	import Toc from './_shell/Toc.svelte';
 	import { NAV_GROUPS, findComponent, groupOf, prevNext } from './_shell/nav';
 	import { SITE_TAGLINE } from './components';
+	import { jsonLdScript, techArticleJsonLd, websiteJsonLd } from '../lib/seo/jsonld';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -24,6 +25,11 @@
 	const title = $derived(current ? `${current.title} | Extend UI Svelte` : 'Extend UI Svelte');
 	const description = $derived(current?.description ?? SITE_TAGLINE);
 	const canonical = $derived(page.url.href);
+	const jsonLd = $derived(
+		current
+			? techArticleJsonLd(canonical, current.title, description)
+			: websiteJsonLd(canonical, description)
+	);
 
 	// Close the phone menu whenever the route changes.
 	$effect(() => {
@@ -44,6 +50,7 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
+	{@html jsonLdScript(jsonLd)}
 </svelte:head>
 
 <Header bind:menuOpen />
