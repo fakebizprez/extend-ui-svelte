@@ -21,7 +21,14 @@
 -->
 <script module lang="ts">
 	export type SchemaBuilderScalarType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
-	export type SchemaBuilderFieldType = SchemaBuilderScalarType | 'object' | 'array' | 'enum';
+	/** Extend's custom types, serialized with `extend:type` and a fixed shape. */
+	export type SchemaBuilderCustomType = 'date' | 'currency' | 'signature';
+	export type SchemaBuilderFieldType =
+		| SchemaBuilderScalarType
+		| SchemaBuilderCustomType
+		| 'object'
+		| 'array'
+		| 'enum';
 	export type SchemaBuilderArrayScalarType = Exclude<SchemaBuilderScalarType, 'null'>;
 	export type SchemaBuilderArrayItemType = SchemaBuilderArrayScalarType | 'object' | 'enum';
 
@@ -55,6 +62,7 @@
 
 	export interface SerializedSchemaProperty {
 		type: string;
+		'extend:type'?: SchemaBuilderCustomType;
 		description?: string;
 		enum?: string[];
 		enumDescriptions?: Record<string, string>;
@@ -77,8 +85,45 @@
 		'null',
 		'object',
 		'array',
-		'enum'
+		'enum',
+		'date',
+		'currency',
+		'signature'
 	];
+
+	export const SCHEMA_BUILDER_CUSTOM_TYPES: SchemaBuilderCustomType[] = [
+		'date',
+		'currency',
+		'signature'
+	];
+
+	// Extend's fixed shapes for the custom types (docs.extend.ai custom types).
+	const CUSTOM_TYPE_SHAPES: Record<
+		SchemaBuilderCustomType,
+		Omit<SerializedSchemaProperty, 'description'>
+	> = {
+		date: { type: 'string', 'extend:type': 'date' },
+		currency: {
+			type: 'object',
+			'extend:type': 'currency',
+			properties: {
+				amount: { type: 'number' },
+				iso_4217_currency_code: { type: 'string' }
+			},
+			required: ['amount', 'iso_4217_currency_code']
+		},
+		signature: {
+			type: 'object',
+			'extend:type': 'signature',
+			properties: {
+				printed_name: { type: 'string' },
+				signature_date: { type: 'string', 'extend:type': 'date' },
+				is_signed: { type: 'boolean' },
+				title_or_role: { type: 'string' }
+			},
+			required: ['printed_name', 'signature_date', 'is_signed', 'title_or_role']
+		}
+	};
 
 	export const SCHEMA_BUILDER_ARRAY_ITEM_TYPES: SchemaBuilderArrayItemType[] = [
 		'string',
@@ -259,6 +304,11 @@
 						.map((option) => [option.value, option.description])
 				)
 			};
+		}
+
+		if (property.type === 'date' || property.type === 'currency' || property.type === 'signature') {
+			const { type, ...shape } = CUSTOM_TYPE_SHAPES[property.type];
+			return { type, ...base, ...structuredClone(shape) };
 		}
 
 		if (property.type === 'object') {

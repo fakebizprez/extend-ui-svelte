@@ -81,7 +81,13 @@
 			instead of the syntax-highlighted, virtualized code file.
 		</li>
 		<li>
-			Port-only exports, the component under its port name, its props type, and the field factory helpers and type lists: <code>SchemaBuilder</code>, <code>SchemaBuilderProps</code>, <code>createSchemaBuilderEnumValue</code>, <code>createSchemaBuilderId</code>, <code>createSchemaBuilderProperty</code>, <code>normalizePropertyForType</code>, <code>SCHEMA_BUILDER_ARRAY_ITEM_TYPES</code>, and <code>SCHEMA_BUILDER_FIELD_TYPES</code>.
+			Port-only exports, the component under its port name, its props type, and the field factory helpers and type lists: <code>SchemaBuilder</code>, <code>SchemaBuilderProps</code>, <code>createSchemaBuilderEnumValue</code>, <code>createSchemaBuilderId</code>, <code>createSchemaBuilderProperty</code>, <code>normalizePropertyForType</code>, <code>SCHEMA_BUILDER_ARRAY_ITEM_TYPES</code>, <code>SCHEMA_BUILDER_CUSTOM_TYPES</code>, and <code>SCHEMA_BUILDER_FIELD_TYPES</code>.
+		</li>
+		<li>
+			Extend's custom types <code>date</code>, <code>currency</code> and <code>signature</code> are
+			field types. Each serializes with <code>extend:type</code> and Extend's fixed shape: a date is
+			a string; a currency is <code>{'{'}amount, iso_4217_currency_code{'}'}</code>; a signature is
+			<code>{'{'}printed_name, signature_date, is_signed, title_or_role{'}'}</code>.
 		</li>
 	</ul>
 </section>

@@ -4,6 +4,8 @@ import { tick } from 'svelte';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import SchemaBuilder, {
 	SAMPLE_SCHEMA,
+	createSchemaBuilderProperty,
+	normalizePropertyForType,
 	serializeSchema,
 	type SchemaBuilderSchema,
 	type SerializedSchema
@@ -530,6 +532,64 @@ describe('serializeSchema', () => {
 				properties: [{ id: 'b', key: '   ', type: 'string', description: '' }]
 			})
 		).toEqual({ type: 'object', properties: {} });
+	});
+});
+
+describe('custom field types', () => {
+	it('offers date, currency and signature in the field type select', async () => {
+		render(SchemaBuilder, { defaultSchema: EMPTY_SCHEMA });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add field' }));
+		const typeSelect = within(getFieldRows()[0]).getByLabelText('Field type');
+		const options = within(typeSelect as HTMLElement)
+			.getAllByRole('option')
+			.map((o) => (o as HTMLOptionElement).value);
+
+		expect(options).toEqual(expect.arrayContaining(['date', 'currency', 'signature']));
+	});
+
+	it('serializes custom types with extend:type and their fixed shapes', () => {
+		expect(
+			serializeSchema({
+				properties: [
+					{ id: 'd', key: 'pickup_date', type: 'date', description: 'Pickup', required: true },
+					{ id: 'c', key: 'total', type: 'currency', description: '' },
+					{ id: 's', key: 'shipper_signature', type: 'signature', description: '' }
+				]
+			})
+		).toEqual({
+			type: 'object',
+			properties: {
+				pickup_date: { type: 'string', description: 'Pickup', 'extend:type': 'date' },
+				total: {
+					type: 'object',
+					'extend:type': 'currency',
+					properties: {
+						amount: { type: 'number' },
+						iso_4217_currency_code: { type: 'string' }
+					},
+					required: ['amount', 'iso_4217_currency_code']
+				},
+				shipper_signature: {
+					type: 'object',
+					'extend:type': 'signature',
+					properties: {
+						printed_name: { type: 'string' },
+						signature_date: { type: 'string', 'extend:type': 'date' },
+						is_signed: { type: 'boolean' },
+						title_or_role: { type: 'string' }
+					},
+					required: ['printed_name', 'signature_date', 'is_signed', 'title_or_role']
+				}
+			},
+			required: ['pickup_date']
+		});
+	});
+
+	it('drops nested children when a field becomes a custom type', () => {
+		const object = normalizePropertyForType(createSchemaBuilderProperty('object'), 'currency');
+		expect(object.properties).toBeUndefined();
+		expect(object.type).toBe('currency');
 	});
 });
 

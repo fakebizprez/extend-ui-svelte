@@ -14,12 +14,14 @@ export {
 	normalizePropertyForType,
 	SAMPLE_SCHEMA,
 	SCHEMA_BUILDER_ARRAY_ITEM_TYPES,
+	SCHEMA_BUILDER_CUSTOM_TYPES,
 	SCHEMA_BUILDER_FIELD_TYPES,
 	serializeSchema
 } from './SchemaBuilder.svelte';
 export type {
 	SchemaBuilderArrayItemType,
 	SchemaBuilderArrayScalarType,
+	SchemaBuilderCustomType,
 	SchemaBuilderEnumValue,
 	SchemaBuilderFieldType,
 	SchemaBuilderProperty,
